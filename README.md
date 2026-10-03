@@ -127,4 +127,3 @@ A task is Done when acceptance criteria pass, relevant tests and live-AWS eviden
 
 The team has not selected an open-source license. Public visibility does not grant a new license for project code or third-party corpus/model artifacts. Record source permissions before ingestion.
 
-Delivery-board structure was inspired by [AutoWash Pro Delivery](https://github.com/users/harry-leon/projects/4); AI Exam Bank's scope, backlog and documentation are specific to this project.
