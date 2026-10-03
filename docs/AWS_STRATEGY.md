@@ -33,7 +33,7 @@ SG ưu tiên reference security groups và least access. NACL dùng default ho�
 
 ## Infrastructure as Code and delivery
 
-Chọn một IaC tool, protected state và reviewable plan. Separate dev/staging configuration; secrets không ở example files. CI planned flow: build → tests/security checks → artifact → IaC validate/plan → environment-controlled deploy → migration strategy → smoke → deployment record. CI execution chưa tồn tại ở bootstrap; M2-04/05 implement.
+Chọn một IaC tool, protected state và reviewable plan. Separate dev/staging configuration; secrets không ở example files. CI planned flow: build → tests/security checks → artifact → IaC validate/plan → environment-controlled deploy → migration strategy → smoke → deployment record. Repository hygiene CI đã có; application build/test/deploy CI vẫn thuộc M2-04/05.
 
 Migrations phải backward-compatible khi rollback code; pre-deploy backup; DB restore có quy trình riêng. Một owner khác phải thử clean deploy/rollback/restore theo runbook tại tuần 9. Console-only exceptions có inventory và remediation issue.
 

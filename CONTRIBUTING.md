@@ -18,6 +18,12 @@ Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, fai
 
 .NET controls business rules; domain không depend AWS DTOs; controller thin; EF queries có scope/paging/index evidence; async dùng cancellation/timeouts hợp lý. Frontend reflects API state/permissions, không dùng local-only business state thay server. AI/model/retrieval outputs validated/untrusted. Không introduce microservices/Kubernetes hay extra AWS services nếu chưa có ADR/requirement.
 
+## Repository checks and merge policy
+
+Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Workflow `Repository quality` chạy trên PR và main; không dùng badge này để claim product tests hoặc AWS deployment đã pass.
+
+Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. CODEOWNERS hiện fallback @Hungle2910; required code-owner approval chưa bật cho đến khi có ít nhất hai owners độc lập phù hợp. Thêm per-module owners khi accounts được xác nhận. Tác giả không tự duyệt PR của mình. Không bypass protections để thay thế người review còn thiếu.
+
 ## Documentation and evidence
 
 Update OpenAPI/config examples/runbooks/ADRs cùng PR. Evidence redacted; source/prompt/model/release versions rõ. AWS MUST cần live proof; mock providers chỉ dùng isolated tests/dev. Issue chỉ Done khi DoD đạt; cập nhật Actual Hours và status/issue state nhất quán.

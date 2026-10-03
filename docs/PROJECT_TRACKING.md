@@ -8,7 +8,7 @@ Board structure tham khảo [AutoWash Pro Delivery](https://github.com/users/har
 |---|---|
 | Title / Task ID | Stable M1–M5 + week ID; title describes concrete output |
 | Owner | Gia Hưng / Hữu Phước / Minh Phúc / Thiên Phúc / Gia Bảo; một người primary |
-| Assignees | Confirmed GitHub usernames; còn trống nếu chưa nhận mapping |
+| Assignees | M1 Gia Hưng = @Hungle2910; bốn member còn lại chờ usernames |
 | Status | Backlog → Ready → In progress → In review → Done; Blocked khi cần upstream action |
 | Priority | P0 critical-path/core foundation; P1 mandatory hardening; P2 gated extension |
 | Epic | Foundation, Identity/Approval, Question Bank/RAG, Exam Workflow, Cloud/Import, Reliability/ML |
@@ -28,7 +28,7 @@ Board structure tham khảo [AutoWash Pro Delivery](https://github.com/users/har
 
 ## Saved views
 
-Delivery Table, Delivery Board, Prioritized Backlog, Roadmap, In Review, My Assigned Items, All Tasks và 5 Owner views. Thêm MVP & Core, Extensions và Blocked để nhìn critical path/capacity. `My Assigned Items` có thể trống trước khi usernames được xác nhận; Owner views vẫn đầy đủ.
+Delivery Table, Delivery Board, Prioritized Backlog, Roadmap, In Review, My Assigned Items, All Tasks và 5 Owner views. Thêm MVP & Core, Extensions và Blocked để nhìn critical path/capacity. `My Assigned Items` hiển thị 10 task M1 cho @Hungle2910; các member khác vẫn dùng Owner views đến khi usernames được xác nhận.
 
 Nếu chưa chốt ngày bắt đầu, dates để trống và Roadmap theo date chỉ có ý nghĩa khi điền baseline; Week/milestones vẫn dùng để tracking. Không lấy iteration dates từ project mẫu của người khác.
 

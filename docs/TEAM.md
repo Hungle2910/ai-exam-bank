@@ -18,7 +18,7 @@ Import thuộc M2 và gọi domain writer của M4. Approval/audit/UI thuộc M3
 
 ## GitHub identities
 
-Chưa nhận usernames được xác nhận cho 5 thành viên. Owner field dùng họ tên; chưa gán đại tất cả issues cho repository owner và chưa gửi collaborator invitations. Khi usernames được xác nhận, project owner cập nhật Assignees và cấp repository/project permissions phù hợp. Không đoán accounts từ display names.
+Gia Hưng (M1) đã xác nhận là repository owner **[@Hungle2910](https://github.com/Hungle2910)**; 10 issues M1 đã gán Assignees cho tài khoản này. Bốn thành viên còn lại chưa cung cấp usernames: Owner field vẫn dùng họ tên, Assignees chưa gán và chưa gửi invitations. Khi được xác nhận, cấp repository/project access phù hợp và thêm module owners vào CODEOWNERS. PR của Gia Hưng cần người khác có quyền review; không tự duyệt thay cho peer review.
 
 ## Capacity and role fit
 
