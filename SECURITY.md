@@ -6,7 +6,7 @@ Repository đang planning/bootstrap, chưa có supported runtime release. Securi
 
 ## Reporting a vulnerability
 
-Không đăng secret/access key/token/password hoặc learner/question data nhạy cảm vào public issue. Liên hệ riêng repository owner qua kênh đã thống nhất; dùng GitHub private vulnerability reporting nếu tính năng đã được bật cho repository. Chưa công bố SLA phản hồi hoặc email không được xác nhận.
+Không đăng secret/access key/token/password hoặc learner/question data nhạy cảm vào public issue. Private vulnerability reporting đã được bật: [báo cáo riêng cho maintainers](https://github.com/Hungle2910/ai-exam-bank/security/advisories/new). Chưa công bố SLA phản hồi hoặc email không được xác nhận.
 
 Report cần scope/affected release, reproduction steps, authorization context, impact và redacted evidence. Không mở rộng kiểm thử sang AWS accounts/systems ngoài quyền của đội.
 

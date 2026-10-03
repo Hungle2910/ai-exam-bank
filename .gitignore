@@ -32,6 +32,8 @@ Thumbs.db
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+*.tfvars.json
+!*.tfvars.json.example
 cdk.out/
 # Local datasets / backups / setup manifests
 *.bak
