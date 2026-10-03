@@ -1,0 +1,41 @@
+# Secrets and local runtime configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+*.pfx
+*.p12
+credentials
+appsettings.Local.json
+appsettings.*.Local.json
+# Generated artifacts / tool caches
+bin/
+obj/
+node_modules/
+.next/
+dist/
+coverage/
+TestResults/
+*.log
+__pycache__/
+.venv/
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# IaC state/config containing deployment-specific values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+cdk.out/
+# Local datasets / backups / setup manifests
+*.bak
+*.dump
+local-data/
+local-backups/
+.setup/

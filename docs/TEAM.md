@@ -1,0 +1,25 @@
+# Team & ownership
+
+Tên thành viên do project owner cung cấp. Task IDs giữ M1–M5 để các dependencies ổn định.
+
+| ID | Member | Role | Hours | Primary modules | Peer reviewers |
+|---|---|---|---:|---|---|
+| M1 | Gia Hưng | Solution Architect & Exam Workflow Lead | 184 | Contracts, Blueprint, Generation, Final Preview | Thiên Phúc domain; Gia Bảo resilience |
+| M2 | Hữu Phước | Cloud & DevOps Engineer + Import Owner | 186 | IaC/network/deploy, Import, Infrastructure Health | Thiên Phúc schema; Gia Bảo jobs; Minh Phúc IAM |
+| M3 | Minh Phúc | Security & Approval Platform Engineer | 180 | Identity/RBAC, Review/Approval, Audit | Gia Hưng transitions; Thiên Phúc evidence |
+| M4 | Thiên Phúc | Question Bank & RAG Product Engineer | 196 | Question Bank, Revisions, Knowledge/RAG; optional Lex | Gia Hưng domain; Minh Phúc access |
+| M5 | Gia Bảo | Reliability & ML Evaluation Engineer | 180 | Jobs/Retry/Monitoring; optional ML | Hữu Phước infra; Gia Hưng worker contracts |
+
+## Shared ownership rules
+
+Mỗi thành viên có ít nhất một vertical slice DB → API → UI → AWS/integration → tests → docs. M2 provision AWS resources; owner module viết SDK adapter/telemetry; M3 review permissions. M1 chốt contracts và integration conflicts, không viết thay mọi feature.
+
+Import thuộc M2 và gọi domain writer của M4. Approval/audit/UI thuộc M3, sử dụng citations/evidence do M4 cung cấp. Job state/retry thuộc M5, business handlers thuộc M1/M2/M4. Mỗi owner instrument metrics module mình; M5 quản reliability signals, M2 quản infra/log pipeline.
+
+## GitHub identities
+
+Chưa nhận usernames được xác nhận cho 5 thành viên. Owner field dùng họ tên; chưa gán đại tất cả issues cho repository owner và chưa gửi collaborator invitations. Khi usernames được xác nhận, project owner cập nhật Assignees và cấp repository/project permissions phù hợp. Không đoán accounts từ display names.
+
+## Capacity and role fit
+
+Planning estimate 926h, khoảng 18.5h/người/tuần; cần dung lượng dự phòng. M4 tuần 4–5 có tải cao nhất; Lex được hoãn trước nếu cần. M5 làm reliability từ tuần 1; ML chỉ mở sau MVP gate. Các role-specific skills/bài kiểm tra và weekly outputs được ghi trong [Implementation plan](IMPLEMENTATION_PLAN.md).
