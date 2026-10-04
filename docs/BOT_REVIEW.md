@@ -2,8 +2,9 @@
 
 ## Rollout status
 
-Repository auto-merge is disabled. CodeRabbit is installed on Hungle2910/ai-exam-bank.
-A real review/approval trial is in progress on the configuration PR.
+Repository auto-merge is disabled. CodeRabbit is installed only on
+Hungle2910/ai-exam-bank. Bot review is running on this configuration PR;
+successful re-review and approval of the latest commit are not yet verified.
 Existing main protection remains in force; do not remove required checks or bypass
 approval to bootstrap the bot. CI currently checks repository hygiene, not product correctness.
 
