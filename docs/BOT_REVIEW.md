@@ -2,15 +2,15 @@
 
 ## Rollout status
 
-Repository auto-merge is disabled. CodeRabbit installation and a real review/approval
-trial are pending. This configuration alone does not install the GitHub App.
+Repository auto-merge is disabled. CodeRabbit is installed on Hungle2910/ai-exam-bank.
+A real review/approval trial is in progress on the configuration PR.
 Existing main protection remains in force; do not remove required checks or bypass
 approval to bootstrap the bot. CI currently checks repository hygiene, not product correctness.
 
 ## Activate
 
-1. Sign in as the repository administrator and install the official
-   [CodeRabbit GitHub App](https://github.com/apps/coderabbitai) for **only Hungle2910/ai-exam-bank**.
+1. Confirm the [CodeRabbit GitHub App installation](https://github.com/settings/installations)
+   remains limited to **Hungle2910/ai-exam-bank**.
 2. Review this configuration PR with an independent human reviewer and merge it.
 3. Open a small disposable PR. Confirm review on creation and after a new commit.
    CodeRabbit must request changes for an actionable finding, then review the fix
