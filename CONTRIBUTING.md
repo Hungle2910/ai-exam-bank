@@ -26,9 +26,10 @@ Main yêu cầu PR, một independent approval, required `Repository quality` ch
 
 ## Bot review rollout
 
-See [bot review and author merge](docs/BOT_REVIEW.md) for installation, verification,
-independent-human exceptions and daily workflow. Auto-merge is available but does
-not bypass approval or CI. Bot-only merging is not active until rollout gates pass.
+See [bot review and manual author merge](docs/BOT_REVIEW.md) for installation,
+verification, independent-human exceptions and daily workflow. The author clicks
+Squash and merge after approval and CI. Bot-only approval is not active until
+rollout gates pass.
 
 ## Documentation and evidence
 

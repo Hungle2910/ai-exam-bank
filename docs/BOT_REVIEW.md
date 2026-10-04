@@ -1,8 +1,8 @@
-# Bot review and author merge
+# Bot review and manual author merge
 
 ## Rollout status
 
-Repository auto-merge is enabled. CodeRabbit installation and a real review/approval
+Repository auto-merge is disabled. CodeRabbit installation and a real review/approval
 trial are pending. This configuration alone does not install the GitHub App.
 Existing main protection remains in force; do not remove required checks or bypass
 approval to bootstrap the bot. CI currently checks repository hygiene, not product correctness.
@@ -31,8 +31,8 @@ approval to bootstrap the bot. CI currently checks repository hygiene, not produ
 - Let the bot verify addressed threads. Clicking Resolve is not evidence of a fix.
   Discuss false positives with a reviewer and record the reason.
 - Once the latest commit is approved, CI passes, discussions are resolved and
-  GitHub reports no conflicts, the author with Write access can Squash and merge
-  or enable auto-merge for that PR.
+  GitHub reports no conflicts, the author with Write access manually clicks
+  Squash and merge. Auto-merge is disabled for this repository.
 - New changes invalidate old approvals. Review limits or outages mean waiting or
   obtaining a human review under the repository policy, not forcing a bot approval.
 
@@ -65,4 +65,4 @@ build, unit/integration/E2E tests and IaC checks when those components exist.
 
 - [CodeRabbit approval workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow)
 - [Automatic review controls](https://docs.coderabbit.ai/configuration/auto-review)
-- [GitHub auto-merge](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/automatically-merging-a-pull-request)
+- [GitHub branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
