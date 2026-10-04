@@ -18,7 +18,15 @@ Import thuộc M2 và gọi domain writer của M4. Approval/audit/UI thuộc M3
 
 ## GitHub identities
 
-Gia Hưng (M1) đã xác nhận là repository owner **[@Hungle2910](https://github.com/Hungle2910)**; 10 issues M1 đã gán Assignees cho tài khoản này. Bốn thành viên còn lại chưa cung cấp usernames: Owner field vẫn dùng họ tên, Assignees chưa gán và chưa gửi invitations. Khi được xác nhận, cấp repository/project access phù hợp và thêm module owners vào CODEOWNERS. PR của Gia Hưng cần người khác có quyền review; không tự duyệt thay cho peer review.
+| Member | GitHub account | Repository task assignment |
+|---|---|---|
+| Gia Hưng (M1) | [@Hungle2910](https://github.com/Hungle2910) | 10/10 |
+| Hữu Phước (M2) | [@HuuPhuoc-NH](https://github.com/HuuPhuoc-NH) | Chờ chấp nhận lời mời repo; 0/10 |
+| Minh Phúc (M3) | [@Lancelot-sys25](https://github.com/Lancelot-sys25) | 10/10 |
+| Thiên Phúc (M4) | [@flwndyy](https://github.com/flwndyy) | 10/10 |
+| Gia Bảo (M5) | [@TranGiaBao2005](https://github.com/TranGiaBao2005) | 10/10 |
+
+Bốn thành viên M2–M5 đã được cấp quyền Write trên Project; repo invitations đã gửi. GitHub Assignees của M2 sẽ được gán sau khi Hữu Phước chấp nhận lời mời repo. Owner field vẫn giữ họ tên để các view hiện có hoạt động. Thêm module owners vào CODEOWNERS khi repo access ổn định. PR của Gia Hưng cần người khác có quyền review; không tự duyệt thay cho peer review.
 
 ## Capacity and role fit
 
