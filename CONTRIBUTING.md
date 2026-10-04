@@ -24,6 +24,12 @@ Chạy `python -m unittest discover -s tests/repository -v` và `python tools/ch
 
 Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. CODEOWNERS hiện fallback @Hungle2910; required code-owner approval chưa bật cho đến khi có ít nhất hai owners độc lập phù hợp. Thêm per-module owners khi accounts được xác nhận. Tác giả không tự duyệt PR của mình. Không bypass protections để thay thế người review còn thiếu.
 
+## Bot review rollout
+
+See [bot review and author merge](docs/BOT_REVIEW.md) for installation, verification,
+independent-human exceptions and daily workflow. Auto-merge is available but does
+not bypass approval or CI. Bot-only merging is not active until rollout gates pass.
+
 ## Documentation and evidence
 
 Update OpenAPI/config examples/runbooks/ADRs cùng PR. Evidence redacted; source/prompt/model/release versions rõ. AWS MUST cần live proof; mock providers chỉ dùng isolated tests/dev. Issue chỉ Done khi DoD đạt; cập nhật Actual Hours và status/issue state nhất quán.
