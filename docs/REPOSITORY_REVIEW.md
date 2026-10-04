@@ -28,7 +28,7 @@ CI hygiene is a small guardrail, not a comprehensive secret scan, Markdown synta
 
 Public visibility enables branch protection on this repository's current GitHub plan. Policy for main: PR-only changes, one independent approval, dismiss stale approvals, required `Repository quality` check on up-to-date code, resolved conversations, linear history, no force-push/deletion, administrators included. Required code-owner approval remains disabled until at least two eligible independent owners are configured. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
 
-All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access. Repository invitations were sent to all four; M2 still needs to accept before its ten issues can receive GitHub Assignees. Gia Hưng's own PRs need another authorized reviewer; CODEOWNERS does not allow self-approval. Add eligible per-module code owners after repository access settles and before making code-owner review mandatory. Do not weaken controls to simulate peer review.
+All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng's own PRs need another authorized reviewer; CODEOWNERS does not allow self-approval. Add eligible per-module code owners when module paths stabilize and before making code-owner review mandatory. Do not weaken controls to simulate peer review.
 
 Private vulnerability reporting, GitHub secret scanning/push protection and dependency alerts should be enabled when supported. These controls complement, not replace, runtime RBAC, IAM and audit.
 
