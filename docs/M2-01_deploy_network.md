@@ -1,0 +1,390 @@
+# M2-01 – Thiết kế deploy/network và contract import
+
+*AI Exam Bank – Intelligent Exam Management & AI-Assisted Exam Generation Platform on AWS*
+
+| Task | Owner | Milestone | Trạng thái |
+| --- | --- | --- | --- |
+| M2-01 Thiết kế deploy/network và contract import | Hữu Phước (M2) – AWS/DevOps, import, infrastructure health | W01 Foundation and Contracts | Bản nháp đề xuất – chờ team xác nhận |
+
+> *Cách đọc tài liệu: các mục được sắp theo đúng thứ tự issue M2-01. Mục ghi "Không cần làm" chỉ là mô tả đề bài. Ô để trống = cần quyền AWS, cần team chốt hoặc cần M1/M3/M4/M5 làm cùng. Mọi nội dung điền sẵn là đề xuất, không phải xác nhận đã triển khai.*
+
+## 1. Goal
+
+**Không cần làm.** Chỉ là mục tiêu: thiết kế deploy/network và contract import.
+
+## 2. Context
+
+**Không cần làm.** Chỉ là bối cảnh dự án (.NET modular monolith + durable workers trên AWS).
+
+## 3. Scope (IN SCOPE)
+
+**Không cần làm.** Phạm vi đã có trong đề bài: import/health API contracts; wireframe import + health; ERD ImportBatch/Row/DeploymentRecord. Các mục này được làm ở phần 5 và 7.
+
+## 4. Out of scope
+
+**Không cần làm.** Lưu ý khi làm: không thêm Kubernetes/microservices/AWS service chỉ để tăng số lượng; AI không approve/publish; Lex/SageMaker/VPN không chặn core MVP.
+
+## 5. Implementation checklist
+
+### 5.1 ☐ Chốt Region, ngân sách, frontend hosting/HTTPS entry, DB hosting và egress NAT/endpoints
+
+| Hạng mục | Đề xuất có thể ghi ngay | Cần xác nhận | Ghi chú |
+| --- | --- | --- | --- |
+| AWS Region | ap-southeast-1 (Singapore) | | Gần Việt Nam, latency hợp lý cho demo, hỗ trợ các dịch vụ cần dùng. Cần kiểm tra Bedrock model/KB có ở region này. |
+| Ngân sách tối đa cho demo | | | Team chốt. Cần có trước khi build hạ tầng. |
+| Frontend hosting / HTTPS entry | Public HTTPS entry (443) vào reverse proxy hoặc ALB, sau đó chuyển vào app private | | Demo nhỏ có thể dùng reverse proxy trên EC2 public entry nếu team chấp nhận; ALB tốn thêm chi phí. |
+| Backend hosting | API và worker đặt private subnet, không public cổng ứng dụng | | Quản trị qua SSM, không mở SSH inbound. |
+| DB hosting | Private relational DB. DB trên EC2 (tiết kiệm) hoặc RDS (nếu ngân sách cho phép) | | Cần M1/M3 chốt DB engine và security baseline. |
+| Outbound egress | So sánh NAT Gateway và VPC endpoints; ưu tiên phương án rẻ và đủ đường ra Bedrock, S3, SSM, CloudWatch | | NAT dễ cấu hình nhưng tính tiền theo giờ + data. Endpoint tính theo từng service và region. |
+| Cost baseline | | | Điền sau khi có ngân sách và giá thực tế theo region (xem mục 7.2). |
+
+### 5.2 ☐ Vẽ VPC/CIDR/routes/SG, lựa chọn một công cụ IaC và quản lý state
+
+#### Sơ đồ network đề xuất
+
+```text
+Internet User
+  -> HTTPS entry (443) ............ public subnet
+  -> .NET API + worker ............ private app subnet
+  -> Private relational DB ........ private DB subnet
+  -> Private S3 bucket, Bedrock ... qua IAM role
+  -> CloudWatch Logs/Metrics, SNS alerts
+
+Admin access
+  -> AWS SSM Session Manager
+  -> Không mở SSH inbound mặc định
+```
+
+#### VPC, CIDR, subnet, route table
+
+| Thành phần | Đề xuất | Cần xác nhận | Ghi chú |
+| --- | --- | --- | --- |
+| VPC CIDR | 10.20.0.0/16 | | Đổi nếu trùng mạng trường hoặc VPN tương lai. |
+| Public subnet | 10.20.1.0/24 – HTTPS entry | | Route ra Internet Gateway. |
+| Private app subnet | 10.20.11.0/24 – API và worker | | Không public IP. Outbound qua NAT hoặc endpoints. |
+| Private DB subnet | 10.20.21.0/24 – database | | Chỉ nhận traffic từ app security group. |
+| Route table public | 0.0.0.0/0 -> Internet Gateway | | |
+| Route table private | 0.0.0.0/0 -> NAT Gateway hoặc service endpoints theo ADR | | Phụ thuộc quyết định egress ở 5.1. |
+
+#### Security group (bảng traffic chi tiết ở mục 8.1)
+
+| Security group | Inbound cho phép | Outbound |
+| --- | --- | --- |
+| sg-entry | 443 từ Internet | App port tới sg-app |
+| sg-app | App port từ sg-entry | DB port tới sg-db; 443 tới S3/Bedrock/SSM/CloudWatch |
+| sg-db | DB port từ sg-app | Không cần outbound đặc biệt |
+
+#### IaC và quản lý state (ADR nháp – cần team chốt)
+
+| Hạng mục | Đề xuất | Cần xác nhận |
+| --- | --- | --- |
+| IaC tool | Terraform | |
+| Lý do | Phổ biến, dễ review plan, phù hợp VPC/EC2/S3/IAM/SSM, tái chạy được để phát hiện drift. | |
+| State backend | | |
+| State locking | | |
+| Outputs cần có | VPC ID, subnet IDs, SG IDs, instance IDs, bucket name, health endpoint, deployment version. | |
+| Nguyên tắc apply | Mọi thay đổi hạ tầng có plan, review, apply với log đã redact; không sửa tay trên console nếu không ghi lại. | |
+| Repeatability | Chạy lại plan sau apply không tạo thay đổi ngoài dự kiến. | |
+
+### 5.3 ☐ Cùng M4/M5 định nghĩa CSV contract, ImportBatch/Row và wireframe upload/preview/result
+
+> *Phần này cần M4 (schema câu hỏi) và M5 (job retry/idempotency) xác nhận. Cột "M4/M5 xác nhận" để trống.*
+
+#### CSV schema đề xuất
+
+| Cột | Bắt buộc | Kiểu | Validate | Ghi chú | M4/M5 xác nhận |
+| --- | --- | --- | --- | --- | --- |
+| subject | Có | text | Không rỗng | Môn học | |
+| topic | Có | text | Không rỗng | Chủ đề | |
+| difficulty | Có | text/number | Nằm trong rubric team chốt | easy/medium/hard hoặc 1/2/3 | |
+| question_text | Có | text | Không rỗng, trong giới hạn độ dài | Nội dung câu hỏi | |
+| option_a | Có | text | Không rỗng | | |
+| option_b | Có | text | Không rỗng | | |
+| option_c | Có | text | Không rỗng | | |
+| option_d | Có | text | Không rỗng | | |
+| correct_option | Có | A/B/C/D | Phải khớp một option | MVP: MCQ một đáp án đúng | |
+| source | Khuyến nghị | text | URL hoặc mô tả nguồn | Provenance và review | |
+
+#### Data model (ImportBatch / ImportRow / DeploymentRecord)
+
+| Entity | Fields đề xuất | Ghi chú |
+| --- | --- | --- |
+| ImportBatch | id, file_name, uploaded_by, status, total_rows, valid_rows, invalid_rows, created_at, committed_at, idempotency_key | Một lần upload CSV. |
+| ImportRow | id, batch_id, row_number, raw_values, normalized_values, validation_status, error_code, error_message, question_revision_id | Kết quả validate từng dòng. |
+| DeploymentRecord | id, environment, source_version, deployed_by, deployed_at, health_status, artifact_version, notes | Phục vụ health và evidence deploy. |
+
+Wireframe: xem mục 7.1 (upload, preview, commit result, health panel).
+
+## 6. Dependencies
+
+**Không cần làm.** Phụ thuộc M1-01 do M1 chốt; M2 chỉ theo dõi. Ghi chú đề bài: M1-01 đang chốt, quyền AWS từ đội.
+
+| Dependency | Chủ sở hữu | Trạng thái | Link / ngày xác nhận |
+| --- | --- | --- | --- |
+| M1-01 | M1 – Gia Hưng | | |
+
+## 7. Required deliverables
+
+### 7.1 Backend / frontend / DB-data
+
+#### Import / health API contracts (endpoint là đề xuất, ADR của M1 quyết định path cuối)
+
+| Method | Endpoint | Mục đích | Response chính | Security |
+| --- | --- | --- | --- | --- |
+| POST | /imports/upload | Upload CSV, tạo batch và validate | batchId, status, row summary | Teacher hoặc Admin có quyền import |
+| GET | /imports/{batchId}/preview | Xem kết quả validate từng dòng | valid rows, invalid rows, errors | Owner hoặc Admin |
+| POST | /imports/{batchId}/commit | Commit dòng hợp lệ thành DRAFT questions | committed count, skipped count, row results | Cần idempotency key |
+| GET | /imports/{batchId}/result | Xem kết quả sau commit | batch status, row mapping | Owner hoặc Admin |
+| GET | /admin/infrastructure/health | Health hạ tầng và deployment record | status UNKNOWN/UP/DOWN, timestamp, deployment version | Admin only |
+
+#### Quy tắc chung của import (đề xuất)
+
+- Câu hỏi sau commit chỉ ở trạng thái DRAFT, phải qua human review mới dùng được.
+- Commit lặp lại với cùng idempotency key không tạo thêm câu hỏi (M5 xác nhận).
+- Lỗi từng dòng không làm hỏng cả batch: dòng hợp lệ vẫn commit được, dòng lỗi ghi error_code và error_message.
+- Kiểm tra quyền phía server (RBAC/resource permission), không tin kiểm tra ở UI.
+
+#### ERD ImportBatch / ImportRow / DeploymentRecord
+
+```text
+ImportBatch 1 ---- n ImportRow
+ImportRow   n ---- 0..1 QuestionRevision   (qua question_revision_id, thuộc M4)
+ImportBatch n ---- 1 User                   (uploaded_by, thuộc M3)
+DeploymentRecord: độc lập, không khóa ngoại tới ImportBatch
+```
+
+| Quan hệ | Khóa | Ghi chú |
+| --- | --- | --- |
+| ImportBatch – ImportRow | ImportRow.batch_id -> ImportBatch.id | Một batch có nhiều dòng; unique (batch_id, row_number). |
+| ImportRow – QuestionRevision | ImportRow.question_revision_id (nullable) | Chỉ có giá trị sau commit. Cần M4 xác nhận tên bảng. |
+| ImportBatch – User | ImportBatch.uploaded_by | Cần M3 xác nhận bảng user. |
+| ImportBatch.idempotency_key | Unique | Cần M5 xác nhận cách sinh và thời hạn key. |
+
+#### Wireframe upload / preview / result / health panel
+
+```text
+[1] UPLOAD CSV
++--------------------------------------------------+
+| Chọn file CSV  [ Browse... ]                     |
+| Schema yêu cầu: subject, topic, difficulty, ...  |
+| Giới hạn: chỉ .csv, tối đa [__] MB, [__] dòng    |
+|                                    [ Upload ]    |
++--------------------------------------------------+
+
+[2] PREVIEW
++--------------------------------------------------+
+| Tổng: __ | Hợp lệ: __ | Lỗi: __                   |
+| Row | Cột lỗi | Error code | Message              |
+| ... | ....... | .......... | .......              |
+|                    [ Hủy ]  [ Commit dòng hợp lệ ]|
++--------------------------------------------------+
+
+[3] COMMIT RESULT
++--------------------------------------------------+
+| Câu hỏi DRAFT đã tạo: __ | Dòng bị skip: __       |
+| Link batch result | [ Retry an toàn ]            |
++--------------------------------------------------+
+
+[4] HEALTH PANEL (Admin)
++--------------------------------------------------+
+| Environment | Deployment version | Last deployed |
+| App: UP/DOWN/UNKNOWN | Database: ... | S3: ...    |
+| Bedrock access: ...  | Log correlation ID         |
++--------------------------------------------------+
+```
+
+### 7.2 AWS / integration
+
+#### Network inventory (nháp)
+
+| Tài nguyên | Số lượng dự kiến | Public? | Ghi chú |
+| --- | --- | --- | --- |
+| VPC | 1 | | 10.20.0.0/16 |
+| Subnet public / private app / private DB | 1 / 1 / 1 | Chỉ subnet public | Có thể thêm AZ thứ hai nếu dùng RDS. |
+| Internet Gateway | 1 | Có | |
+| NAT Gateway hoặc VPC endpoints | | | Chờ quyết định egress. |
+| EC2 (entry, app/worker, DB nếu tự host) | | | Chờ quyết định hosting. |
+| S3 bucket | 1 (private) | Không | Block public access, mã hóa. |
+| CloudWatch Logs/Metrics, SNS | | Không | Retention có giới hạn. |
+
+#### IAM inventory (nháp, nguyên tắc least privilege; M3 review)
+
+| Role | Gắn cho | Quyền cần có (đề xuất) | Cần xác nhận |
+| --- | --- | --- | --- |
+| app-runtime-role | EC2 chạy API và worker | Đọc/ghi đúng bucket S3 của dự án; gọi Bedrock model/KB cần dùng; ghi CloudWatch Logs; SSM core | |
+| entry-role | EC2/ALB entry | SSM core, ghi CloudWatch Logs | |
+| deploy-role / user | Người chạy Terraform | Quyền tạo VPC, EC2, S3, IAM tối thiểu theo plan | |
+| db-role (nếu DB trên EC2) | EC2 database | SSM core, ghi log, backup lên S3 | |
+
+#### Ước tính chi phí theo region (điền sau khi có giá và ngân sách)
+
+| Hạng mục | Đơn giá | Số lượng/tháng | Thành tiền | Ghi chú |
+| --- | --- | --- | --- | --- |
+| EC2 (entry, app, DB) | | | | |
+| Storage (EBS/S3) | | | | |
+| Public IPv4 | | | | |
+| NAT Gateway hoặc VPC endpoints | | | | So sánh 2 phương án |
+| CloudWatch logs/metrics | | | | |
+| Bedrock KB + token estimate | | | | Cần M4/M5 ước lượng lượng gọi |
+| Tổng | | | | |
+
+#### Kế hoạch SSM
+
+- Mọi EC2 gắn instance profile có quyền SSM core; truy cập quản trị bằng Session Manager.
+- Không mở inbound 22; không dùng key pair cho truy cập thường ngày.
+- Instance trong private subnet đến được SSM qua NAT hoặc VPC endpoints (ssm, ssmmessages, ec2messages) theo quyết định egress.
+- Bật log session (CloudWatch hoặc S3) khi ngân sách cho phép; chưa xác nhận.
+- Secret lấy từ SSM Parameter Store hoặc Secrets Manager, không hard-code, không đưa vào docs.
+
+### 7.3 Security
+
+| Yêu cầu | Cách đáp ứng (đề xuất) | Xác nhận |
+| --- | --- | --- |
+| Backend/DB private | API, worker, DB ở private subnet, không public IP, SG chỉ nhận từ SG cấp trên | |
+| SSH inbound không mặc định mở | Không có rule 22; dùng SSM Session Manager | |
+| Upload giới hạn loại/kích thước | Chỉ nhận .csv, kiểm tra MIME và phần mở rộng, giới hạn dung lượng và số dòng (giá trị cụ thể do team chốt) | |
+| Secret | Không hard-code; không ghi credentials vào docs; evidence phải redact | |
+| Phân quyền import | Server-side RBAC: Teacher/Admin upload; Owner/Admin xem batch; health chỉ Admin | M3 |
+
+## 8. Validation
+
+### 8.1 ☐ Review routes/SG bằng bảng traffic; CSV fixtures valid/invalid
+
+#### Bảng traffic
+
+| Nguồn | Đích | Port | Hướng | Cho phép | Ghi chú | Kết quả review |
+| --- | --- | --- | --- | --- | --- | --- |
+| Internet | HTTPS entry | 443 | Inbound | Có | Chỉ entry mở 443 | |
+| Internet | API app | App port | Inbound | Không | API không public | |
+| Internet | DB | DB port | Inbound | Không | DB không public | |
+| sg-entry | sg-app | App port | Inbound | Có | Chỉ từ SG của entry | |
+| sg-app | sg-db | DB port | Inbound | Có | Chỉ từ app SG | |
+| sg-app | S3/Bedrock/SSM/CloudWatch | 443 | Outbound | Có | Qua NAT hoặc endpoints | |
+| Admin | EC2 | 22 | Inbound | Không | Dùng SSM thay SSH | |
+
+#### CSV fixture hợp lệ (valid_import.csv) – nháp, M4 xác nhận schema
+
+```csv
+subject,topic,difficulty,question_text,option_a,option_b,option_c,option_d,correct_option,source
+Toán,Đại số,easy,"2 + 3 bằng bao nhiêu?",4,5,6,7,B,Sách giáo khoa lớp 6
+Tin học,Mạng máy tính,medium,"Giao thức nào dùng để truy cập web an toàn?",HTTP,FTP,HTTPS,SMTP,C,Giáo trình Mạng máy tính
+Vật lý,Cơ học,hard,"Đơn vị của lực trong hệ SI là gì?",Joule,Newton,Watt,Pascal,B,Sách giáo khoa lớp 10
+```
+
+#### CSV fixture có lỗi (invalid_import.csv)
+
+```csv
+subject,topic,difficulty,question_text,option_a,option_b,option_c,option_d,correct_option,source
+Toán,Đại số,easy,"2 + 3 bằng bao nhiêu?",4,5,6,7,B,Sách giáo khoa lớp 6
+Toán,Đại số,easy,"3 + 3 bằng bao nhiêu?",5,6,,8,B,
+Toán,Đại số,easy,"4 + 4 bằng bao nhiêu?",6,7,8,9,E,
+Toán,Đại số,extreme,"5 + 5 bằng bao nhiêu?",9,10,11,12,B,
+Toán,Đại số,easy,,1,2,3,4,A,
+```
+
+| Row | Lỗi | Error code (đề xuất) | Kết quả mong đợi |
+| --- | --- | --- | --- |
+| 2 | Không lỗi | | VALID |
+| 3 | Thiếu option_c | MISSING_REQUIRED_FIELD | INVALID, nêu rõ cột option_c |
+| 4 | correct_option = E | INVALID_CORRECT_OPTION | INVALID |
+| 5 | difficulty không thuộc rubric | INVALID_DIFFICULTY | INVALID |
+| 6 | Thiếu question_text | MISSING_REQUIRED_FIELD | INVALID |
+
+> *Preview mong đợi: tổng 5 dòng, 1 hợp lệ, 4 lỗi. Tên error code cần team thống nhất.*
+
+### 8.2 ☐ API/UI/failure/permission cases pass; kết quả được link bên dưới
+
+| Case | Loại | Kết quả mong đợi | Kết quả thực tế | Link |
+| --- | --- | --- | --- | --- |
+| Upload CSV hợp lệ | API | 200, batch tạo, valid_rows đúng | | |
+| Upload CSV có lỗi từng dòng | API | Preview liệt kê đúng row, cột, error code | | |
+| Upload file không phải CSV | Failure | Từ chối, trả lỗi rõ ràng | | |
+| Upload vượt giới hạn dung lượng | Failure | Từ chối, không tạo batch | | |
+| Commit hai lần cùng idempotency key | API | Lần hai không tạo trùng câu hỏi | | |
+| Commit thiếu idempotency key | Failure | Từ chối | | |
+| User không có quyền import gọi upload | Permission | 403 | | |
+| User khác xem batch của người khác | Permission | 403 hoặc 404 | | |
+| Non-admin gọi /admin/infrastructure/health | Permission | 403 | | |
+| Health panel khi một thành phần DOWN | UI | Hiển thị trạng thái đúng, không lộ secret | | |
+
+### 8.3 ☐ Live AWS evidence cho các yêu cầu AWS MUST (mock không phải bằng chứng deploy)
+
+> *Cần quyền AWS và hạ tầng thật. Để trống đến khi có kết quả.*
+
+| Evidence | Trạng thái | Đường dẫn / ghi chú |
+| --- | --- | --- |
+| Terraform plan/apply output (đã redact) | | |
+| Ảnh/log truy cập SSM Session Manager | | |
+| Health endpoint trả về deployment version | | |
+| Xác nhận DB và backend không truy cập được từ Internet | | |
+| Xác nhận outbound tới S3/Bedrock/CloudWatch hoạt động | | |
+
+## 9. Documentation / evidence
+
+### 9.1 ☐ Network diagram, cost sheet, IaC/deploy ADR
+
+| Evidence | Nội dung cần có | Trạng thái | Đường dẫn / ghi chú |
+| --- | --- | --- | --- |
+| Network diagram | Public entry, private app, private DB, S3, Bedrock, CloudWatch, SSM | Có bản text ở 5.2; chưa có hình | |
+| Cost sheet | Region, EC2, storage, IPv4, NAT/endpoints, logs, Bedrock KB, token estimate | Khung ở 7.2; chưa có số | |
+| IaC/deploy ADR | Lý do chọn IaC, state, plan/apply, outputs, rollback | Nháp ở 5.2; cần team chốt | |
+| Routes/SG review | Bảng traffic được phép và bị chặn | Nháp ở 8.1 | |
+| CSV fixtures valid/invalid | Ít nhất một CSV hợp lệ và một CSV lỗi từng dòng | Nháp ở 8.1 | |
+| Secret handling | Không hard-code secret, không đưa credentials vào docs, evidence redact | Đã ghi nguyên tắc ở 7.3 | |
+| AWS proof | SSM access, plan/apply output redact, health endpoint evidence | | |
+
+### 9.2 ☐ OpenAPI/contracts/runbooks/config/ADR cập nhật, evidence đã redact, có release/source/job versions
+
+| Tài liệu | Đã cập nhật? | Release / source / job version | Đường dẫn |
+| --- | --- | --- | --- |
+| OpenAPI cho import và health | Nháp ở 7.1 | | |
+| Runbook deploy và SSM | | | |
+| Config mẫu (không chứa secret) | | | |
+| ADR region / egress / IaC | | | |
+
+## 10. Acceptance Criteria
+
+**Không cần làm.** Chỉ tick khi PR hoàn tất và đã có bằng chứng; hiện để trống.
+
+- [ ] Phương án deploy có đường truy cập HTTPS và outbound AWS rõ; import có input/output contract.
+- [ ] Scope/validation/authorization/domain invariants hold; không hard-code secret hoặc task blocker chưa giải quyết.
+- [ ] PR được peer-review, checks liên quan pass, migrations/config tái tạo được, docs/evidence đã link.
+- [ ] Actual Hours và checklist đã cập nhật; issue và Project status phản ánh tiến độ đã kiểm chứng.
+
+## 11. Risk / Blocker
+
+Rủi ro theo đề bài: account permission/quota, ngân sách chưa chốt; tránh build hạ tầng trước khi tính chi phí.
+
+#### Các mục còn chờ xác nhận (từ bản nháp)
+
+- Ngày bắt đầu và deadline thật của W01.
+- AWS account và quyền deploy.
+- Region chốt chính thức; ngân sách tối đa cho demo.
+- DB engine và hosting; lựa chọn NAT Gateway hay VPC endpoints.
+- IaC state backend và state locking.
+- CSV schema chốt với M4; job idempotency chốt với M5.
+
+| Actual blocker | Điều kiện cụ thể | Upstream owner | Next action |
+| --- | --- | --- | --- |
+| | | | |
+| | | | |
+
+> *Risk không đồng nghĩa feature đã lỗi. Chỉ ghi vào Actual blocker khi đã xác nhận.*
+
+## 12. PR / evidence / work log
+
+| Mục | Giá trị |
+| --- | --- |
+| PR | |
+| Tests/API/UI/AWS evidence | |
+| Actual hours | |
+| Reviewer (theo docs/TEAM.md) | |
+
+#### Work log
+
+| Ngày       | Nội dung đã làm | Số giờ | Link |
+| 07/10/2026 | M2-01           | 4      | ---  |
+| | | | |
+| | | | |
+| | | | |
+| | | | |
