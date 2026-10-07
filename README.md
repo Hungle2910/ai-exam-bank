@@ -2,6 +2,8 @@
 
 **Intelligent Exam Management & AI-Assisted Exam Generation Platform on AWS**
 
+**AWS FCAJ 2026 Internship · Group: AWS Hello World**
+
 [![Repository quality](https://github.com/Hungle2910/ai-exam-bank/actions/workflows/repository-quality.yml/badge.svg)](https://github.com/Hungle2910/ai-exam-bank/actions/workflows/repository-quality.yml)
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
@@ -52,15 +54,15 @@ This is the **target design**, not a deployment inventory. Backend/frontend vers
 
 ## Team and ownership
 
-| Member | Name | Responsibility | Planned effort |
-|---|---|---|---:|
-| M1 | **Gia Hưng — [@Hungle2910](https://github.com/Hungle2910)** | Architecture, contracts, blueprint, generation, final preview | 184h |
-| M2 | **Hữu Phước** | AWS/DevOps, import, infrastructure health | 186h |
-| M3 | **Minh Phúc** | Identity/RBAC, approval, audit and security | 180h |
-| M4 | **Thiên Phúc** | Question Bank, revisions, knowledge/RAG; optional Lex | 196h |
-| M5 | **Gia Bảo** | Jobs, reliability, monitoring; optional ML evaluation | 180h |
+| Member | Official name (ASCII) | GitHub account | Responsibility | Planned effort |
+|---|---|---|---|---:|
+| M1 | **Le Doan Gia Hung** | [@Hungle2910](https://github.com/Hungle2910) | Architecture, contracts, blueprint, generation, final preview | 184h |
+| M2 | **Nguyen Huynh Huu Phuoc** | [@HuuPhuoc-NH](https://github.com/HuuPhuoc-NH) | AWS/DevOps, import, infrastructure health | 186h |
+| M3 | **Nguyen Hoang Phuc** | [@Lancelot-sys25](https://github.com/Lancelot-sys25) | Identity/RBAC, approval, audit and security | 180h |
+| M4 | **Nguyen Thien Phuc** | [@flwndyy](https://github.com/flwndyy) | Question Bank, revisions, knowledge/RAG; optional Lex | 196h |
+| M5 | **Tran Gia Bao** | [@TranGiaBao2005](https://github.com/TranGiaBao2005) | Jobs, reliability, monitoring; optional ML evaluation | 180h |
 
-Each owner delivers **DB → API → UI → AWS/integration → tests → documentation**. M1's ten issues are assigned to @Hungle2910; the remaining GitHub identities await confirmation. [Detailed ownership and reviewers](docs/TEAM.md).
+The group name and official member names follow the AWS FCAJ 2026 roster. Existing task IDs and some issue titles use short labels; **M3 may appear as “Minh Phúc” in older task text and refers to Nguyen Hoang Phuc / @Lancelot-sys25**. Each owner delivers **DB → API → UI → AWS/integration → tests → documentation**. All five GitHub accounts are official project collaborators and have ten assigned issues each. [Detailed ownership and reviewers](docs/TEAM.md).
 
 ## Getting started
 
@@ -92,7 +94,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 | W07–W08 | Reliability/security/performance hardening; gated Lex/ML; feature freeze |
 | W09–W10 | E2E acceptance, restore/recovery proof, release and handover |
 
-**50 work packages · 10 weekly milestones · 926 planned hours.** Dates remain unset until the team confirms a start date. The Project is the live status source; estimates and elapsed time do not prove completion. [Backlog index](docs/BACKLOG.md) · [Tracking process](docs/PROJECT_TRACKING.md).
+**50 work packages · 10 weekly milestones · 926 planned hours.** The schedule starts Monday, 05 Oct 2026; each week's Target Date is Sunday, from 11 Oct through 13 Dec 2026. The Project is the live status source; estimates and elapsed time do not prove completion. [Backlog index](docs/BACKLOG.md) · [Tracking process](docs/PROJECT_TRACKING.md).
 
 ## Engineering and AWS standards
 
