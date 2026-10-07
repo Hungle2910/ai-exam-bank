@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
+    "impeccable@impeccable": true,
     "superpowers@claude-plugins-official": true,
-    "impeccable@impeccable": true
+    "context7@claude-plugins-official": true
   }
 }
