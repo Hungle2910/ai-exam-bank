@@ -26,7 +26,11 @@ gh pr comment 123 --body "Recorded the new flow end to end." --attach ./settings
 gh issue comment 456 --body "Failure state after submitting the form." --attach ./failure.png
 ```
 
-Reference the file in the body as `![alt](./settings-after.png)` to place it inline and `gh` rewrites the path to the uploaded URL. Unreferenced attachments are appended at the end in flag order.
+Reference the file in the body as follows to place it inline and `gh` rewrites the path to the uploaded URL. Unreferenced attachments are appended at the end in flag order.
+
+```markdown
+![alt](./settings-after.png)
+```
 
 ## Limits
 
