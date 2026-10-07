@@ -12,7 +12,7 @@ When to use each design sub-skill.
 | logo-design | AI logo generation (55 styles, 30 palettes) | SKILL.md + 4 references + 2 scripts |
 | cip-design | Corporate Identity Program (50 deliverables) | SKILL.md + 3 references + 3 scripts |
 | slides | HTML presentations with Chart.js | SKILL.md + 4 references |
-| banner-design | Banners for social, ads, web, print (22 styles) | SKILL.md + 1 reference |
+| banner (built-in) | Banners for social, ads, web, print (22 styles) | `references/banner-sizes-and-styles.md` |
 | icon-design | SVG icon generation (15 styles, Gemini 3.1 Pro) | SKILL.md + 1 reference + 1 script |
 
 ## Routing by Task Type
@@ -71,7 +71,7 @@ When to use each design sub-skill.
 - Use layout patterns and design tokens
 
 ### Banner Design Tasks
-**→ banner-design**
+**→ design (built-in banner reference)**
 
 - Design banners for social media (Facebook, Twitter, LinkedIn, YouTube, Instagram)
 - Create ad banners (Google Ads, Meta Ads)
@@ -103,9 +103,9 @@ When to use each design sub-skill.
 | "Create a pitch deck" | slides |
 | "Design brand identity package" | cip-design |
 | "What logo style fits my industry?" | logo-design |
-| "Design a Facebook cover" | banner-design |
-| "Create ad banners for Google" | banner-design |
-| "Make a website hero banner" | banner-design |
+| "Design a Facebook cover" | design (banner) |
+| "Create ad banners for Google" | design (banner) |
+| "Make a website hero banner" | design (banner) |
 | "Generate a settings icon" | icon-design |
 | "Create SVG icons for my app" | icon-design |
 | "Design an icon set" | icon-design |
@@ -193,7 +193,7 @@ Use **logo-design + cip-design** when:
 Use **logo-design + cip-design + slides** when:
 - Brand pitch: generate logo, create CIP mockups, build pitch deck
 
-Use **banner-design + brand** when:
+Use **design (banner) + brand** when:
 - Social media presence: branded banners across all platforms
 
 Use **icon-design + design-system** when:
