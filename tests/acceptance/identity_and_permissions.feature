@@ -17,24 +17,59 @@ Feature: Ministry, school, department and teacher authorization
 
   Scenario: A Teacher prepares and submits a school exam
     When Alice creates a Mathematics blueprint for School A
-    And Alice writes or edits questions with optional AI assistance
+    And AI suggests a question for the draft
+    And Alice checks its content, answer, difficulty, and source
+    And Alice accepts, edits, or discards that suggestion
     Then the exam is a draft owned by Alice in School A
     And AI cannot approve the draft
+    And Alice's choice does not approve a shared question-bank revision
     When Alice submits the draft for review
     Then that revision is fixed and pending selection by the assigned DepartmentHead
+
+  Scenario: A DepartmentHead selects the whole school exam
+    Given Alice submitted a school exam containing a Teacher-checked AI suggestion
+    When Hanh checks the blueprint and full exam and selects Alice's current revision
+    Then the exam revision is selected without a separate AI-question review step
+    And the decision does not automatically approve that question for the shared bank
+
+  Scenario: A Teacher cannot inspect another school's draft
+    Given another Teacher owns a draft at School B
+    When Alice directly requests that draft or its answer key
+    Then the response status is 403
+    And no draft content or answer key is returned
 
   Scenario: Editing after submission creates a new version
     Given Alice submitted revision 1 for selection
     When Alice edits the exam again
     Then the submitted revision 1 is unchanged
     And Alice's edits belong to a new draft revision
+    When Alice submits revision 2 for the same test
+    Then revision 1 is retained in the history as "SUPERSEDED"
+    And only revision 2 remains an eligible candidate for selection
+
+  Scenario: Submitting a revision does not replace an already selected exam
+    Given Hanh selected Alice's revision 1 for a School A test event
+    When Alice submits revision 2 for the same test event
+    Then revision 1 remains unchanged and selected for that event
+    And revision 2 is pending selection
+    And the selected revision changes only after an explicit DepartmentHead decision
 
   Scenario: A DepartmentHead chooses one of several school exams
-    Given Alice and another Teacher submitted exams for the same School A Mathematics test
+    Given Alice and another Teacher submitted exams for the same School A Mathematics grade 9 test event
     When Hanh compares the submitted exams and chooses Alice's current revision
     Then only Alice's revision is selected for that test
-    And the other submitted exam remains in the history without being selected
+    And the other exam is "NOT_SELECTED"
+    And "NOT_SELECTED" does not assert whether that exam is valid
+    And the other exam remains in the history
     And a ReviewDecision and AuditEvent identify Hanh and the selected revision
+
+  Scenario: No submitted school exam meets the requirements
+    Given Alice and another Teacher submitted exams for the same School A Mathematics grade 9 test event
+    And neither exam meets the blueprint requirements
+    When Hanh returns both exams with a reason for each
+    Then both submitted revisions are "REJECTED"
+    And no exam is selected for that test
+    And each Teacher can create and submit a new revision
 
   Scenario: A DepartmentHead reviews a valid school exam
     Given Alice's School A Mathematics exam is pending review at revision 1
@@ -133,12 +168,21 @@ Feature: Ministry, school, department and teacher authorization
     And writing its AuditEvent will fail
     When an authorized reviewer attempts to "<decision>" it
     Then the exam remains pending review
+    And the event's selected revision remains unchanged
     And no ReviewDecision is saved
 
     Examples:
       | decision |
       | APPROVE  |
       | REJECT   |
+
+  Scenario: Selection cannot leave a partial event decision
+    Given two school exams are pending for the same test event
+    And updating the event's selected revision will fail
+    When Hanh selects one exam
+    Then both exams remain pending
+    And the event's selected revision remains unchanged
+    And no ReviewDecision or AuditEvent is saved
 
   Scenario: Revoking a role takes effect in an existing session
     Given Hanh opened an eligible exam while authorized
