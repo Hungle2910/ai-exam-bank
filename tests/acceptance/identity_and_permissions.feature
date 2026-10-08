@@ -3,8 +3,9 @@
 # scenarios, not passing product tests or evidence of enforcement.
 
 Feature: Ministry, school, department and teacher authorization
-  Teachers request AI-generated school exams. DepartmentHeads review exams
-  in assigned school departments. SchoolAdmins manage their schools.
+  Teachers prepare school exams manually or with AI assistance.
+  DepartmentHeads choose exams in assigned school departments.
+  SchoolAdmins manage their schools without ministry involvement.
   MinistryAdmins manage the system and independently prepare and confirm
   assigned ministry-level exams.
 
@@ -14,13 +15,26 @@ Feature: Ministry, school, department and teacher authorization
     And Sam is a SchoolAdmin for School A
     And Mai and Minh are MinistryAdmins assigned to national exam N
 
-  Scenario: A Teacher requests an AI-generated school exam
+  Scenario: A Teacher prepares and submits a school exam
     When Alice creates a Mathematics blueprint for School A
-    And Alice requests AI exam generation
-    Then the generated exam is a draft owned by Alice in School A
-    And AI cannot approve that exam
+    And Alice writes or edits questions with optional AI assistance
+    Then the exam is a draft owned by Alice in School A
+    And AI cannot approve the draft
     When Alice submits the draft for review
-    Then the exam is pending review by the assigned DepartmentHead
+    Then that revision is fixed and pending selection by the assigned DepartmentHead
+
+  Scenario: Editing after submission creates a new version
+    Given Alice submitted revision 1 for selection
+    When Alice edits the exam again
+    Then the submitted revision 1 is unchanged
+    And Alice's edits belong to a new draft revision
+
+  Scenario: A DepartmentHead chooses one of several school exams
+    Given Alice and another Teacher submitted exams for the same School A Mathematics test
+    When Hanh compares the submitted exams and chooses Alice's current revision
+    Then only Alice's revision is selected for that test
+    And the other submitted exam remains in the history without being selected
+    And a ReviewDecision and AuditEvent identify Hanh and the selected revision
 
   Scenario: A DepartmentHead reviews a valid school exam
     Given Alice's School A Mathematics exam is pending review at revision 1
@@ -54,6 +68,19 @@ Feature: Ministry, school, department and teacher authorization
     When Sam directly attempts to grant MinistryAdmin to a School A user
     Then the response status is 403
     And that user's role assignments remain unchanged
+
+  Scenario: A SchoolAdmin cannot select an exam
+    Given a School A exam is pending selection
+    When Sam directly attempts to select it
+    Then the response status is 403
+    And the exam remains pending selection
+
+  Scenario: A MinistryAdmin does not participate in school exam selection
+    Given Mai has no School A business role
+    And a School A exam is pending selection
+    When Mai directly requests its content or attempts to select it
+    Then the response status is 403
+    And no school exam content or review decision is returned
 
   Scenario: A MinistryAdmin drafts a national exam for an assigned event
     When Mai manually prepares revision 1 of national exam N
