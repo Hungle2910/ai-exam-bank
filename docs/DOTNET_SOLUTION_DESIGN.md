@@ -25,7 +25,7 @@ AiExamBank.slnx
 global.json                       SDK feature band đã pin
 Directory.Build.props             net10.0, nullable, warnings-as-errors
 src/
-  Api/                             ✓ HTTP host, DI, auth middleware, route groups
+  Api/                             ✓ HTTP host, DI; + auth middleware, route groups
   Modules/
     Identity/                      + M3: users, roles, sessions, scope
     Questions/                     + M4: question identity, revision, taxonomy
