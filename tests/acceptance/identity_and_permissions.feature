@@ -242,9 +242,19 @@ Feature: Ministry, school, department and teacher authorization
     Then the response status is 403
     And no ReviewDecision is recorded
 
-  Scenario: Revoking a Ministry exam assignment takes effect in an existing session
+  Scenario: Revoking a Ministry exam assignment blocks reading in an existing session
     Given Mai opened national exam N while assigned to that event
     And Mai's assignment to national exam N was revoked
-    When Mai requests its content or attempts to confirm it using the same session
+    When Mai requests its content using the same session
     Then the response status is 403
-    And no national exam content or ReviewDecision is returned
+    And no national exam content is returned
+
+  Scenario: Revoking a Ministry exam assignment blocks confirmation in an existing session
+    Given Mai authored revision 1 of national exam N
+    And Minh is a different MinistryAdmin assigned to confirm exam N
+    And Minh opened revision 1 while authorized
+    And Minh's assignment to national exam N was revoked
+    When Minh attempts to confirm revision 1 using the same session
+    Then the response status is 403
+    And revision 1 remains pending review
+    And no ReviewDecision is recorded
