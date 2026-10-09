@@ -14,6 +14,7 @@ PRIVATE_KEY = re.compile(rb"(?m)^-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
 LINK = re.compile(r"\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)")
 FENCE = re.compile(r"(?ms)^```[^\n]*\n.*?^```[^\n]*$")
 SENSITIVE_SUFFIXES = {'.pem', '.ppk', '.key', '.pfx', '.p12', '.tfstate', '.bak', '.dump'}
+MODULE_OWNER = re.compile(r'^/src/Modules/([^/]+)/\s+(@\S+)\s+(@\S+)\s*$')
 
 
 def inspect_file(root: Path, relative: Path) -> list[str]:
@@ -59,11 +60,35 @@ def inspect_file(root: Path, relative: Path) -> list[str]:
     return issues
 
 
+def inspect_module_ownership(root: Path) -> list[str]:
+    """Keep the module owner/reviewer table aligned with CODEOWNERS routing."""
+    codeowners = (root / '.github' / 'CODEOWNERS').read_text(encoding='utf-8')
+    module_readme = (root / 'src' / 'Modules' / 'README.md').read_text(encoding='utf-8')
+    routed = {
+        match.group(1): (match.group(2), match.group(3))
+        for line in codeowners.splitlines()
+        if (match := MODULE_OWNER.fullmatch(line.strip()))
+    }
+    documented: dict[str, tuple[str, str]] = {}
+    for line in module_readme.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip('|').split('|')]
+        if len(cells) < 3 or not cells[1].startswith('@') or not cells[2].startswith('@'):
+            continue
+        for module in cells[0].split(' and '):
+            documented[module] = (cells[1], cells[2])
+    return [
+        f'src/Modules/{module}: owner/reviewer differ between CODEOWNERS and module README'
+        for module in sorted(routed.keys() | documented.keys())
+        if routed.get(module) != documented.get(module)
+    ]
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(['git', 'ls-files', '-z'], cwd=root, check=True, capture_output=True)
     files = [Path(name.decode('utf-8')) for name in result.stdout.split(b'\0') if name]
     issues = [issue for file in files for issue in inspect_file(root, file)]
+    issues.extend(inspect_module_ownership(root))
     for issue in issues:
         print(issue)
     print(f'Checked {len(files)} tracked files; {len(issues)} issue(s).')

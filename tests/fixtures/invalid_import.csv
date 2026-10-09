@@ -1,0 +1,6 @@
+subject,topic,difficulty,question_text,option_a,option_b,option_c,option_d,correct_option,source
+Math,Algebra,easy,"What is 2 + 3?",4,5,6,7,B,Grade 6 Textbook
+Math,Algebra,easy,"What is 3 + 3?",5,6,,8,B,
+Math,Algebra,easy,"What is 4 + 4?",6,7,8,9,E,
+Math,Algebra,extreme,"What is 5 + 5?",9,10,11,12,B,
+Math,Algebra,easy,,1,2,3,4,A,

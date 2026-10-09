@@ -1,6 +1,6 @@
 # Architecture baseline
 
-**Status:** Proposed; foundation ADRs và implementation issues quyết định cấu hình cuối. Không có runtime code được claim trong tài liệu này.
+**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. `dev` có API host và bảy module projects với hợp đồng ban đầu; chưa có workflow nghiệp vụ hoặc AWS runtime. Xem [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md) cho cây project, hợp đồng, giao dịch và quy tắc phụ thuộc.
 
 ## Module boundaries
 
@@ -54,7 +54,7 @@ Endpoint names là proposed, không implemented:
 - `/jobs/*`, `/admin/infrastructure/health`: status, recovery và protected health.
 - Knowledge/difficulty/Lex adapters reused by authenticated .NET use cases; không tạo anonymous bypass.
 
-Error contract có `code`, `message`, validation details và correlation ID. Semantics: 401 missing/expired identity; 403 denied permission/scope; 409 state/revision conflict. OpenAPI cần examples và negative cases.
+API host hiện trả RFC Problem Details cho JSON clients khi có lỗi HTTP chưa được xử lý hoặc route không tồn tại, kèm `traceId` để đối chiếu log. Contract nghiệp vụ cần thêm `code` ổn định, thông điệp an toàn, validation details và correlation ID; semantics: 401 missing/expired identity; 403 denied permission/scope; 409 state/revision conflict. OpenAPI cần examples và negative cases khi có endpoint nghiệp vụ.
 
 ## Decisions to record
 
