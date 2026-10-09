@@ -350,14 +350,14 @@ Math,Algebra,easy,,1,2,3,4,A,
 
 - [ ] Deployment architecture includes secure HTTPS access and clear AWS outbound routing; import contracts define inputs/outputs.
 - [ ] Scope, validation, authorization, and domain invariants hold; no hard-coded secrets or unresolved blockers remain.
-- [ ] PR is peer-reviewed, related checks pass, migrations/configs are reproducible, and documentation/evidence are linked.
+- [ ] Required PR checks pass, findings are resolved, migrations/configs are reproducible, and documentation/evidence are linked; request peer review for high-risk changes.
 - [ ] Actual hours and checklists are updated; issue and Project status reflect verified progress.
 
 ## 11. Risk / Blocker
 
 Identified risks: account permissions/quotas, unconfirmed budget; avoid provisioning infrastructure before cost analysis.
 
-#### Open Items Pending Confirmation (from draft)
+### Open Items Pending Confirmation (from draft)
 
 - Start date and actual deadline for W01.
 - AWS account and deployment permissions.
@@ -382,7 +382,7 @@ Identified risks: account permissions/quotas, unconfirmed budget; avoid provisio
 | Actual Hours | |
 | Reviewer (per docs/TEAM.md) | |
 
-#### Work log
+### Work log
 
 | Date | Work Performed | Hours | Link |
 | --- | --- | --- | --- |
