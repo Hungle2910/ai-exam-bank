@@ -128,7 +128,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 
 ## Definition of Done
 
-A task is Done when acceptance criteria pass, relevant tests and live-AWS evidence are attached, authorization/failure cases are covered, required PR checks pass and findings are resolved, migrations/config are reproducible, and docs/runbooks are current. High-risk changes should receive peer review; promotion to `main` requires independent human approval. Core MVP must work with Lex/ML/VPN disabled. Mock providers are not live deployment evidence.
+A task is Done when acceptance criteria pass, relevant tests and scope-specific evidence are attached, authorization/failure cases are covered where applicable, required PR checks pass and findings are resolved, migrations/config are reproducible where applicable, and docs/runbooks are current. Tasks that change or validate AWS behavior need live-AWS evidence; documentation and repository-maintenance tasks need evidence relevant to their scope. High-risk changes should receive peer review; promotion to `main` requires independent human approval. Core MVP must work with Lex/ML/VPN disabled. Mock providers are not live deployment evidence.
 
 ## Licensing and attribution
 
