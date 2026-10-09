@@ -1,10 +1,10 @@
-# Đề xuất vai trò và phân quyền
+# Vai trò và phân quyền nhiều trường/cấp Bộ
 
-**Trạng thái:** Proposed — thay đổi phạm vi cần nhóm duyệt trước khi triển khai
+**Trạng thái:** Phạm vi MVP được project owner chốt ngày 09/10/2026; đây là hợp đồng thiết kế, chưa có auth/API thực thi.
 **Người thực hiện:** Minh Phúc — Lancelot-sys25
 **Liên quan:** M3-01 (thiết kế đã merge); M3-02 (triển khai đăng nhập và phân quyền)
 
-## 1. Phạm vi đề xuất
+## 1. Phạm vi MVP
 
 Hệ thống có bốn role: `MinistryAdmin` (quản trị cấp Bộ), `SchoolAdmin`
 (quản trị cấp trường), `DepartmentHead` (trưởng bộ môn) và `Teacher`
@@ -20,10 +20,10 @@ tham gia nội dung đề khi có kỳ thi cấp Bộ và tài khoản đó đư
 kỳ thi. Nếu dùng AI, Teacher tự kiểm tra và chấp nhận, sửa hoặc bỏ từng
 gợi ý trước khi gửi đề; AI không tự duyệt nội dung.
 
-Đây là đề xuất **mở rộng** so với MVP một trường trong `README.md` và
-`docs/IMPLEMENTATION_PLAN.md`. Tài liệu này chưa tự thay đổi phạm vi MVP,
-kiến trúc dữ liệu hoặc backlog. Nhóm cần chốt có triển khai nhiều trường
-ngay hay đưa luồng cấp Bộ vào giai đoạn sau.
+MVP bao gồm nhiều trường và kỳ thi cấp Bộ. Phạm vi này thay thế giả định
+một trường trong kế hoạch ban đầu. Các endpoint, migration và quyền vận
+hành vẫn phải được triển khai và kiểm thử; quyết định phạm vi không đồng
+nghĩa tính năng đã hoàn thành. Xem [ADR 0004](adr/0004-multi-school-ministry-mvp.md).
 
 ## 2. Phạm vi dữ liệu và gán role
 
@@ -77,7 +77,7 @@ một quyết định riêng nêu rõ lý do và cách kiểm soát.
 2. Teacher chọn môn, chủ đề, độ khó, số câu và số điểm rồi tự soạn đề.
    Teacher có thể dùng AI để gợi ý câu hỏi. Với mỗi gợi ý, Teacher tự
    kiểm tra nội dung, đáp án, độ khó và nguồn nếu có, rồi chấp nhận,
-   sửa hoặc bỏ. Teacher chịu trách nhiệm về nội dung đề mình gửi.
+   sửa hoặc bỏ vào bản nháp. Teacher chịu trách nhiệm về nội dung đề mình gửi.
 3. Khi hài lòng, Teacher gửi **một phiên bản cố định** của đề. Sau khi
    gửi, Teacher không sửa trực tiếp phiên bản đó. Nếu muốn thay đổi,
    Teacher tạo phiên bản mới và gửi lại; bản cũ được lưu lịch sử và
@@ -99,10 +99,11 @@ một quyết định riêng nêu rõ lý do và cách kiểm soát.
    dụng tại trường. `SchoolAdmin` không mặc định có quyền chọn đề.
 
 Teacher chấp nhận một gợi ý AI nghĩa là đưa nó vào **bản nháp đề của
-mình**, không tự cấp quyền dùng câu đó trong ngân hàng câu hỏi chung.
-DepartmentHead xem và chọn **toàn bộ đề**, không có bước bắt buộc một
-người khác duyệt riêng từng gợi ý AI. Nếu nhóm muốn dùng lại những câu
-AI này trong ngân hàng chung, cần chốt quy trình duyệt câu hỏi riêng.
+mình**, không tự cấp quyền dùng câu đó trong đề cuối hay ngân hàng chung.
+Trước khi một đề có thể được chọn và chốt, **mọi QuestionRevision trong
+đề phải ở trạng thái APPROVED** theo luồng Review/Audit hiện có. Quyết
+định chọn toàn bộ đề của DepartmentHead không thay thế quyết định duyệt
+từng QuestionRevision; người soạn không được tự duyệt câu mình tạo.
 
 ## 5. Luồng kỳ thi cấp Bộ
 
@@ -138,7 +139,9 @@ kiến trúc đề thi của nhóm.
 sai. `SUPERSEDED` là phiên bản **đang chờ chọn** được thay bằng phiên bản
 mới của cùng giáo viên cho cùng đợt kiểm tra; bản cũ vẫn bất biến và
 được giữ để truy vết. Bản đã `APPROVED` không tự chuyển sang
-`SUPERSEDED` khi giáo viên nộp bản mới.
+`SUPERSEDED` khi giáo viên nộp bản mới. Bản đã `NOT_SELECTED` hoặc
+`REJECTED` cũng giữ nguyên trạng thái lịch sử khi có bản mới; chỉ bản
+`PENDING_REVIEW` chưa được quyết định mới chuyển sang `SUPERSEDED`.
 Lịch sử có thể giữ một phiên bản từng được `APPROVED`; phiên bản hiện
 được dùng cho đợt kiểm tra luôn được xác định bằng con trỏ lựa chọn của
 `ExamEvent`, không chỉ dựa vào trạng thái của các phiên bản trong lịch sử.
@@ -154,6 +157,8 @@ Lịch sử có thể giữ một phiên bản từng được `APPROVED`; phiê
 - Teacher có thể chấp nhận gợi ý AI vào bản nháp mình sở hữu, nhưng
   không thể chuyển đề hoặc `QuestionRevision` trong ngân hàng chung
   sang `APPROVED` bằng thao tác đó.
+- Mọi câu trong đề được chọn/finalize phải tham chiếu `QuestionRevision`
+  đã được người có quyền duyệt, đúng scope và đúng phiên bản.
 - Người tạo không được duyệt chính phiên bản đề của mình, kể cả khi có
   nhiều role hoặc là `MinistryAdmin`.
 - Quyết định dựa trên phiên bản cũ bị từ chối; chỉ phiên bản người duyệt
@@ -191,9 +196,12 @@ API quản lý role, tạo đề, danh sách chờ duyệt và quyết định d
 - Nếu nhiều Teacher nộp đề cho cùng kỳ kiểm tra, chỉ một phiên bản được
   chọn; đề còn lại là `NOT_SELECTED` hoặc `REJECTED` theo quyết định và
   vẫn giữ lịch sử.
+- Hai DepartmentHead chọn đồng thời hai phiên bản khác nhau cho cùng
+  `ExamEvent`: chỉ một giao dịch thành công; giao dịch còn lại nhận `409`.
 - Khi Teacher nộp phiên bản sửa, bản đã nộp trước đó không bị thay đổi và
   không còn là ứng viên chờ chọn. Nếu bản cũ đã được chọn, lựa chọn đó
   chỉ đổi khi DepartmentHead chọn phiên bản khác.
+- Bản cũ `NOT_SELECTED` hoặc `REJECTED` không đổi trạng thái khi nộp bản mới.
 - Nếu không đề nào đạt, DepartmentHead trả lại kèm lý do; không có đề
   nào chuyển sang `APPROVED`.
 - SchoolAdmin tạo tài khoản ở trường khác hoặc cấp role `MinistryAdmin`
@@ -208,16 +216,11 @@ API quản lý role, tạo đề, danh sách chờ duyệt và quyết định d
   chuyển trạng thái và con trỏ đều rollback.
 - Sau khi thu hồi role hoặc phạm vi, phiên đăng nhập cũ không còn quyền.
 
-## 9. Các quyết định cần nhóm chốt
+## 9. Các quyết định triển khai còn mở
 
-1. Có mở phạm vi nhiều trường và kỳ thi cấp Bộ trong MVP hay chỉ thiết
-   kế trước rồi triển khai sau? README và kế hoạch hiện ghi MVP một trường.
-2. Ai được tạo kỳ thi cấp Bộ, ai được giao soạn và ai được giao xác nhận?
-   Bản đề xuất yêu cầu hai tài khoản `MinistryAdmin` độc lập.
-3. Luồng đề cấp trường ở trên cho Teacher tự kiểm tra gợi ý AI và
-   DepartmentHead chọn toàn bộ đề; không yêu cầu người khác duyệt riêng
-   từng gợi ý. Kiến trúc hiện tại chỉ cho chọn `QuestionRevision`
-   đã được duyệt từ ngân hàng chung, nên M1/M4/M3 phải thống nhất cách
-   lưu câu AI trong bản nháp và cập nhật hợp đồng trước khi triển khai.
-4. Cách đăng nhập, quản lý phiên, phạm vi trường–bộ môn và bảo vệ nội
-   dung đề thi sẽ được ghi trong ADR trước khi triển khai M3-02.
+1. M3/M1 phải chốt API gán hai `MinistryAdmin` độc lập vào từng kỳ thi
+   và quy trình cấp/thu hồi quyền trước khi mở endpoint soạn/xác nhận.
+2. M1/M3/M4 phải chốt hợp đồng bản nháp câu AI → `QuestionRevision` →
+   review độc lập → câu đủ điều kiện chọn, rồi kiểm thử toàn luồng.
+3. Cách đăng nhập, quản lý phiên và bảo vệ nội dung đề thi vẫn theo
+   ADR 0003 đang đề xuất; cần chốt trước khi triển khai M3-02.

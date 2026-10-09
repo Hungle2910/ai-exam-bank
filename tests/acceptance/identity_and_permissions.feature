@@ -1,4 +1,4 @@
-# Proposed acceptance cases for docs/IDENTITY_AND_PERMISSIONS.md.
+# MVP acceptance cases for docs/IDENTITY_AND_PERMISSIONS.md.
 # No application runner or step definitions exist yet. These are reviewable
 # scenarios, not passing product tests or evidence of enforcement.
 
@@ -26,11 +26,19 @@ Feature: Ministry, school, department and teacher authorization
     When Alice submits the draft for review
     Then that revision is fixed and pending selection by the assigned DepartmentHead
 
-  Scenario: A DepartmentHead selects the whole school exam
+  Scenario: A DepartmentHead selects an exam only after its questions are approved
     Given Alice submitted a school exam containing a Teacher-checked AI suggestion
+    And an independent reviewer approved every QuestionRevision in that exam
     When Hanh checks the blueprint and full exam and selects Alice's current revision
-    Then the exam revision is selected without a separate AI-question review step
-    And the decision does not automatically approve that question for the shared bank
+    Then the exam revision is selected
+    And the selection decision does not change any QuestionRevision approval state
+
+  Scenario: A Teacher-checked AI suggestion cannot enter the final exam unapproved
+    Given Alice accepted an AI suggestion in her school exam draft
+    And its QuestionRevision is still pending review
+    When Hanh attempts to select or finalize that exam revision
+    Then the request is rejected with a state conflict
+    And the event's selected revision remains unchanged
 
   Scenario: A Teacher cannot inspect another school's draft
     Given another Teacher owns a draft at School B
@@ -54,6 +62,17 @@ Feature: Ministry, school, department and teacher authorization
     And revision 2 is pending selection
     And the selected revision changes only after an explicit DepartmentHead decision
 
+  Scenario Outline: Submitting a new revision preserves a terminal decision
+    Given Alice's revision 1 has status "<status>" for a School A test event
+    When Alice submits revision 2 for the same event
+    Then revision 1 remains "<status>" in history
+    And only revision 2 is pending selection
+
+    Examples:
+      | status       |
+      | NOT_SELECTED |
+      | REJECTED     |
+
   Scenario: A DepartmentHead chooses one of several school exams
     Given Alice and another Teacher submitted exams for the same School A Mathematics grade 9 test event
     When Hanh compares the submitted exams and chooses Alice's current revision
@@ -62,6 +81,14 @@ Feature: Ministry, school, department and teacher authorization
     And "NOT_SELECTED" does not assert whether that exam is valid
     And the other exam remains in the history
     And a ReviewDecision and AuditEvent identify Hanh and the selected revision
+
+  Scenario: Concurrent selections for one event cannot both succeed
+    Given two DepartmentHeads can select different approved exam revisions for the same School A event
+    When they submit their selections concurrently using the same event version
+    Then exactly one selection succeeds
+    And the other receives a 409 conflict
+    And the event points to exactly one selected revision
+    And the decision and audit records match that selected revision
 
   Scenario: No submitted school exam meets the requirements
     Given Alice and another Teacher submitted exams for the same School A Mathematics grade 9 test event
@@ -73,13 +100,13 @@ Feature: Ministry, school, department and teacher authorization
 
   Scenario: A DepartmentHead reviews a valid school exam
     Given Alice's School A Mathematics exam is pending review at revision 1
-    When Hanh approves revision 1
-    Then the exam is approved at revision 1
+    When Hanh selects revision 1
+    Then the exam is selected at revision 1
     And a ReviewDecision and AuditEvent identify Hanh and revision 1
 
   Scenario Outline: A DepartmentHead cannot cross school or department scope
     Given an exam is pending at "<school>" in "<department>"
-    When Hanh directly requests its content or an approval
+    When Hanh directly requests its content or selection
     Then the response status is 403
     And no review decision is recorded
 
@@ -88,9 +115,9 @@ Feature: Ministry, school, department and teacher authorization
       | School B | Mathematics |
       | School A | Science     |
 
-  Scenario: A Teacher cannot approve an exam by calling the API
+  Scenario: A Teacher cannot select an exam by calling the API
     Given a school exam is pending review
-    When Alice directly sends an approval request
+    When Alice directly sends a selection request
     Then the response status is 403
     And the exam remains pending review
 
@@ -150,10 +177,10 @@ Feature: Ministry, school, department and teacher authorization
     Then the response status is 403
     And no exam content is returned
 
-  Scenario: A stale revision cannot be approved
+  Scenario: A stale revision cannot be selected
     Given Hanh opened Alice's pending exam at revision 1
     And Alice's exam changed to revision 2
-    When Hanh attempts to approve revision 1
+    When Hanh attempts to select revision 1
     Then the response status is 409
     And revision 2 is still pending review
 
@@ -187,6 +214,6 @@ Feature: Ministry, school, department and teacher authorization
   Scenario: Revoking a role takes effect in an existing session
     Given Hanh opened an eligible exam while authorized
     And Sam revoked Hanh's DepartmentHead role
-    When Hanh tries to approve the exam using the same session
+    When Hanh tries to select the exam using the same session
     Then the response status is 403
     And the exam remains pending review
