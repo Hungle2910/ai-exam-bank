@@ -1,9 +1,9 @@
 # M5-01: ML Dataset Spec (Khung dữ liệu cho AI)
 
 ## Mục đích
-Chuẩn bị cấu trúc Rubric (Dataset Schema) để phục vụ cho việc huấn luyện hoặc đánh giá độ khó của câu hỏi bởi AI (Amazon SageMaker / Bedrock) vào Tuần 7.
+Đây là **đề xuất cho nhánh ML tùy chọn**, không phải yêu cầu triển khai M5-01 hoặc dịch vụ đang chạy. Chỉ sử dụng câu hỏi/đáp án khi chủ dữ liệu cho phép, người dùng có quyền với phạm vi trường/kỳ thi, và bộ dữ liệu được lưu mã hóa với quyền truy cập/retention xác định. Không đưa nội dung đề thi mật hoặc dữ liệu học sinh vào dataset mặc định.
 
-## Cấu trúc Rubric (JSON Schema)
+## Cấu trúc Rubric (bản nháp JSON Schema)
 
 Dữ liệu để AI đánh giá độ khó sẽ bao gồm nội dung câu hỏi, các lựa chọn, đáp án đúng, và các tiêu chí sư phạm (Bloom's Taxonomy).
 
@@ -60,6 +60,6 @@ Dữ liệu để AI đánh giá độ khó sẽ bao gồm nội dung câu hỏi
 ```
 
 ## Giải thích sử dụng
-1. Khi có một lượng lớn câu hỏi được import, hệ thống sẽ trích xuất dữ liệu theo định dạng JSON trên.
-2. Dataset này có thể được sử dụng làm input prompt cho LLM để nhờ LLM gán nhãn lại độ khó hoặc so sánh độ khó giữa các câu.
-3. Trong tương lai, tập dữ liệu này nếu có thêm trường `ActualStudentPerformance` (% học sinh làm đúng) sẽ được dùng để fine-tune ML models.
+1. Chỉ tạo dataset khi nhánh ML được duyệt, có quyền sử dụng nội dung và đánh giá chi phí/bảo mật.
+2. Giữ nhãn do giáo viên gán là nhãn gốc; kết quả AI là advisory, không tự ghi đè câu đã duyệt.
+3. Dữ liệu kết quả học sinh nếu được xem xét sau này cần một quyết định privacy và consent riêng, không thuộc schema này.

@@ -2,7 +2,7 @@
 
 ## 1. Màn hình Quản lý Background Jobs (Job Tracker)
 
-Giao diện này cho phép Quản trị viên (Admin) hoặc người dùng xem trạng thái các tác vụ chạy ngầm của họ.
+Đây là wireframe đề xuất, chưa có UI/API chạy thật. Người dùng chỉ xem job của mình trong phạm vi trường hoặc kỳ thi cấp Bộ được giao; vai trò quản trị không mặc định đọc nội dung job khác phạm vi.
 
 ```mermaid
 graph TD
@@ -24,19 +24,19 @@ graph TD
 |  +-------------------+  | ID Tác vụ | Loại Tác Vụ      | Trạng Thái  | Tiến Độ | Hành Động|
 |                         | --------- | ---------------- | ----------- | ------- | -------- |
 |                         | #AB123... | Sinh Đề Thi AI   | [Running]   | 45%     | [Huỷ]    |
-|                         | #CD456... | Import Excel     | [Failed]    | 100%    | [Thử lại]|
-|                         | #EF789... | Import Excel     | [Completed] | 100%    | [Xem KQ] |
-|                         | #AA012... | Chấm điểm        | [Pending]   | 0%      | [Huỷ]    |
+|                         | #CD456... | Import CSV       | [Failed]    | —       | [Sửa file]|
+|                         | #EF789... | Import CSV       | [Completed] | 100%    | [Xem KQ] |
+|                         | #AA012... | Sinh đề AI       | [Pending]   | —       | [Huỷ]    |
 |                         ----------------------------------------------------------------- |
 |                                                                                           |
 |  [ Panel Chi tiết lỗi (Nếu bấm vào dòng Failed) ]                                         |
 |  Lỗi Tác vụ #CD456:                                                                       |
 |  - Error: Dữ liệu dòng 15 bị thiếu trường 'Đáp án đúng'.                                  |
-|  - Hướng xử lý: Vui lòng sửa lại file Excel và import lại hoặc bấm [Thử lại].             |
+|  - Hướng xử lý: Sửa file CSV và tạo yêu cầu import mới.                                   |
 =============================================================================================
 ```
 
 ## 2. Ý tưởng tương tác (UX Notes)
-1. **Tiến độ (Progress):** Cột Tiến Độ sẽ tự động được cập nhật (auto-refresh) thông qua cơ chế Polling API 5 giây/lần hoặc dùng WebSockets (SignalR).
-2. **Nút Thử lại (Retry):** Chỉ xuất hiện đối với các Jobs bị lỗi (Failed). Khi bấm vào, UI sẽ gọi lại API để tạo ra một Attempt mới cho Job này (nếu lỗi đó là có thể thử lại - retriable).
+1. **Tiến độ (Progress):** Chỉ hiển thị % khi handler đo được; nếu không, hiển thị trạng thái không có % giả. Polling/API interval và SignalR là lựa chọn còn phải kiểm chứng theo tải/chi phí.
+2. **Thử lại (Retry):** Chỉ hiển thị cho lỗi tạm thời và người còn quyền. Không cho reset vô hạn attempt; lỗi validation yêu cầu sửa dữ liệu và tạo yêu cầu mới. Backend kiểm lại phạm vi ở mỗi thao tác.
 3. **Nút Xem KQ (View Result):** Dành cho các Job thành công, ví dụ bấm vào sẽ chuyển hướng sang màn hình Chi tiết Đề thi vừa sinh ra.

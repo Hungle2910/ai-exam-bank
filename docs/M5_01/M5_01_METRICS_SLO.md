@@ -1,27 +1,17 @@
-# M5-01: Reliability Metrics Catalog & Initial SLO
+# M5-01 — Telemetry and candidate SLOs
 
-## 1. Metric Catalog (Danh mục chỉ số đo lường)
-Để theo dõi sức khỏe của hệ thống Background Job, chúng ta cần thu thập và xuất các chỉ số (metrics) sau ra CloudWatch (AWS):
+**Status:** Design only. No metrics, dashboards, alerts or measured SLOs are deployed. Thresholds below are starting hypotheses and must be calibrated with staging load and AWS cost evidence.
 
-| Metric Name | Type | Description (Ý nghĩa) | Dimensions (Phân loại theo) |
-| :--- | :--- | :--- | :--- |
-| `JobEnqueuedCount` | Counter | Số lượng Job được đẩy vào hàng đợi (mới khởi tạo). | `JobType` |
-| `JobCompletedCount` | Counter | Số lượng Job hoàn thành thành công. | `JobType` |
-| `JobFailedCount` | Counter | Số lượng Job bị lỗi (Sau khi đã thử lại hết số lần cho phép). | `JobType`, `ErrorCategory` |
-| `JobRetryCount` | Counter | Số lần hệ thống phải tự động thử lại (do AWS chập chờn, hoặc Worker sập). | `JobType` |
-| `JobProcessingTime` | Histogram/Timer | Thời gian từ lúc Worker bắt đầu xử lý đến lúc hoàn thành (tính bằng giây). | `JobType` |
-| `JobQueueWaitTime` | Histogram/Timer | Thời gian một Job phải nằm chờ trong hàng đợi trước khi có Worker rảnh để gắp ra làm. | `JobType` |
-| `ActiveWorkersCount` | Gauge | Số lượng máy chủ (Worker) đang rảnh/đang bận trong hệ thống. | `Status` |
+| Metric | Type | Low-cardinality dimensions |
+|---|---|---|
+| `jobs_enqueued_total` | Counter | Job type, scope kind |
+| `jobs_completed_total` / `jobs_failed_total` | Counter | Job type, error category |
+| `job_attempts_total` | Counter | Job type, outcome |
+| `job_queue_wait_seconds` | Histogram | Job type |
+| `job_processing_seconds` | Histogram | Job type |
+| `jobs_pending` / `jobs_running` | Gauge | Job type |
+| `job_lease_recoveries_total` | Counter | Job type |
 
-## 2. Initial SLO Đề xuất (Cam kết chất lượng dịch vụ ban đầu)
-SLO (Service Level Objective) là những con số mục tiêu mà đội ngũ kỹ thuật cam kết với người dùng/chủ sản phẩm. Nếu vi phạm các chỉ số này, hệ thống sẽ tự động bắn cảnh báo (Alert) cho kỹ sư trực hệ thống.
+Do not put user IDs, school IDs, exam IDs, job IDs, payload text or error messages in metric dimensions. Structured logs may carry a correlation/job ID for authorized investigation, with retention and access controls; no raw answer keys, prompt content, credentials or personal data. Metrics go to CloudWatch only after an implementation PR provisions bounded retention, budget and alert delivery tests.
 
-*   **SLO 1 - Tỷ lệ thành công (Success Rate):**
-    *   *Mục tiêu:* **99.5%** các Background Jobs (Import/Generate Exam) phải hoàn thành thành công trong ngày.
-    *   *Cảnh báo:* Bắn alert Slack nếu tỷ lệ thành công rớt xuống dưới 95% trong 1 giờ.
-*   **SLO 2 - Thời gian chờ (Queue Wait Time):**
-    *   *Mục tiêu:* **95%** các yêu cầu (P95) phải được Worker bắt đầu xử lý trong vòng **10 giây** kể từ khi bấm Submit.
-    *   *Cảnh báo:* Nếu có hơn 50 Jobs nằm kẹt ở trạng thái `Pending` quá 3 phút (chứng tỏ đang thiếu Worker).
-*   **SLO 3 - Thời gian xử lý (Processing Time):**
-    *   *Mục tiêu:* Sinh đề thi bằng AI phải xong trong dưới **2 phút** (P90). Import file Excel 1000 dòng phải xong trong dưới **1 phút** (P90).
-    *   *Cảnh báo:* Bắn alert nếu quá 30% Job bị kẹt ở trạng thái `Running` lố thời gian timeout.
+Candidate objectives for review: measure daily terminal success rate, p95 queue wait and lease recovery latency per job type. Do not publish a 99.5% success or 10-second p95 commitment until workload, sample size, exclusions and observation window are agreed and measured. Alert initially on sustained queue age, repeated terminal failures and lease recoveries, with SNS recipient and runbook approved by M2/M5. SageMaker/ML evaluation has its own optional workload budget.
