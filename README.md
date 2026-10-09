@@ -62,7 +62,7 @@ This is the **target design**, not a deployment inventory. Backend/frontend vers
 | M4 | **Nguyen Thien Phuc** | [@flwndyy](https://github.com/flwndyy) | Question Bank, revisions, knowledge/RAG; optional Lex | 196h |
 | M5 | **Tran Gia Bao** | [@TranGiaBao2005](https://github.com/TranGiaBao2005) | Jobs, reliability, monitoring; optional ML evaluation | 180h |
 
-The group name and official member names follow the AWS FCAJ 2026 roster. Existing task IDs and some issue titles use short labels; **M3 may appear as “Minh Phúc” in older task text and refers to Nguyen Hoang Phuc / @Lancelot-sys25**. Each owner delivers **DB → API → UI → AWS/integration → tests → documentation**. All five GitHub accounts are official project collaborators and have ten assigned issues each. [Detailed ownership and reviewers](docs/TEAM.md).
+The group name and official member names follow the AWS FCAJ 2026 roster. Existing task IDs and some issue titles use short labels; **M3 may appear as “Minh Phúc” in older task text and refers to Nguyen Hoang Phuc / @Lancelot-sys25**. Each owner delivers **DB → API → UI → AWS/integration → tests → documentation**. All five GitHub accounts are official project collaborators; the baseline has ten assigned tasks per member, with extra maintenance tracked separately. [Detailed ownership and reviewers](docs/TEAM.md).
 
 ## Getting started
 
@@ -106,7 +106,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 - Private backend/DB, least-privilege IAM, runtime roles, controlled SSM access and safe secret delivery.
 - Durable recovery, measured query performance, logs/metrics with bounded retention, alert delivery proof and tested restores.
 - Region-specific cost estimates, token/attempt limits, resource tagging and cleanup of idle ML/NAT/storage resources.
-- PRs with independent review, required CI, pinned Actions, Dependabot and documented ownership. Runtime build/test/deploy checks join CI when the application exists.
+- PRs with independent review, required repository CI, pinned Actions, Dependabot and documented ownership. API build/liveness checks run in Application CI; product tests and deploy checks join CI with their implementations.
 
 Design review follows the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html). This is an engineering baseline, not an AWS certification or claim of production readiness. [AWS strategy](docs/AWS_STRATEGY.md) · [Current controls and remaining gates](docs/REPOSITORY_REVIEW.md).
 
