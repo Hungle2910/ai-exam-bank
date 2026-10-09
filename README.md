@@ -8,7 +8,7 @@
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
 
-**Status: Foundation.** Repository hiện có tài liệu, backlog và CI cho repository hygiene. Application, IaC deployment và product tests đang được triển khai theo roadmap; badge trên chỉ phản ánh repository checks.
+**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks.
 
 [Delivery board](https://github.com/users/Hungle2910/projects/4) · [Issues](https://github.com/Hungle2910/ai-exam-bank/issues) · [Architecture](docs/ARCHITECTURE.md) · [Getting involved](CONTRIBUTING.md) · [Readiness review](docs/REPOSITORY_REVIEW.md)
 
@@ -73,16 +73,18 @@ cd ai-exam-bank
 
 Read the architecture and your issue's dependencies/acceptance criteria before implementation. Use a short branch such as `feat/M4-02-question-bank`; submit a PR with tests, evidence and linked issue.
 
-**Checks available today** — Python 3.12 and Git, no Python packages required:
+**Checks available today** — Python 3.12, Git và .NET 10 SDK (xem `global.json`); không cần Python packages:
 
 ```bash
 python -m unittest discover -s tests/repository -v
 python tools/check_repository.py
+dotnet build AiExamBank.slnx --configuration Release
+python tests/smoke/test_api_health.py
 ```
 
 The checker inspects tracked files, local Markdown file links, forbidden environment/state/backup files and private-key markers. It does not validate external URLs, heading anchors, full Markdown syntax or application security. Stage new files before checking them locally.
 
-**Application setup is pending foundation tasks.** There is no runnable backend/frontend yet. M1–M5 must add the real projects, pinned toolchain, lockfiles, migrations/seed and safe config examples before publishing tested build/run commands. See [implementation plan](docs/IMPLEMENTATION_PLAN.md).
+**Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. M1–M5 will add module behavior, Worker/Web, database migrations, dependency lockfiles and safe config examples with the relevant implementation PRs. See [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
 
 ## Delivery roadmap
 
@@ -118,6 +120,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 | [Team](docs/TEAM.md) | Roles, vertical slices, reviewer ownership and capacity |
 | [Project tracking](docs/PROJECT_TRACKING.md) | Fields, views, workflow and completion rules |
 | [Repository review](docs/REPOSITORY_REVIEW.md) | What is implemented, what is enforced and what remains |
+| [Repository workflow ADR](docs/adr/0001-repository-workflow.md) | Layout, branch model and merge ownership |
 | [Contributing](CONTRIBUTING.md) | Branch, PR, test, documentation and review expectations |
 | [Security](SECURITY.md) | Vulnerability reporting and sensitive-data handling |
 

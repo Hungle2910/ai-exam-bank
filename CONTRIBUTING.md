@@ -8,6 +8,8 @@
 
 Branch đề xuất: `feat/M4-02-question-bank`, `fix/M5-03-idempotency`, `docs/M2-05-deploy-runbook`. PR nhỏ, một outcome coherent, link issue bằng `Refs #N` hoặc `Closes #N` khi toàn DoD đạt. Commits có purpose rõ; không commit credentials/keys/DB dumps/datasets không được phép.
 
+Tạo nhánh từ `main` và mở PR trở lại `main`; dùng thống nhất tiền tố `feat/`, `fix/`, `docs/`, `chore/`. Môi trường AWS `dev` là môi trường triển khai, không yêu cầu nhánh Git `Dev`. Nhánh `Dev` cũ chỉ được ngừng sử dụng sau khi kiểm tra công việc chưa tích hợp. Xem [ADR về repo](docs/adr/0001-repository-workflow.md).
+
 ## Pull request requirements
 
 Describe problem/resulting behavior, scope, validation và material limitations. Include backend/frontend/data/AWS changes, migration/rollback notes nếu có, security/resource authorization effects và evidence links. Không claim test/AWS deploy đã pass nếu chưa chạy.
@@ -20,9 +22,9 @@ Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, fai
 
 ## Repository checks and merge policy
 
-Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Workflow `Repository quality` chạy trên PR và main; không dùng badge này để claim product tests hoặc AWS deployment đã pass.
+Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Với thay đổi ứng dụng, chạy thêm `dotnet build AiExamBank.slnx --configuration Release` và `python tests/smoke/test_api_health.py`. `Repository quality` và `Application CI` chạy trên PR và main; không dùng các check này để claim product tests hoặc AWS deployment đã pass.
 
-Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. CODEOWNERS hiện fallback @Hungle2910; required code-owner approval chưa bật cho đến khi có ít nhất hai owners độc lập phù hợp. Thêm per-module owners khi accounts được xác nhận. Tác giả không tự duyệt PR của mình. Không bypass protections để thay thế người review còn thiếu.
+Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. `Application CI` chạy trên PR nhưng chỉ trở thành required check sau khi đã chứng minh ổn định. CODEOWNERS định tuyến reviewer theo module và có reviewer dự phòng; required code-owner approval chưa bật. Tác giả không tự duyệt PR của mình. Admin hiện chưa bị branch protection cưỡng chế; Gia Hưng tuân thủ cùng quy trình và nhóm sẽ bật enforce-admins sau khi các checks ổn định.
 
 ## Bot review rollout
 
