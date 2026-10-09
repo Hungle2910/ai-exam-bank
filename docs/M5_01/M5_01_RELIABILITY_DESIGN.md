@@ -8,7 +8,7 @@
 
 ## Proposed persistence model
 
-The draft `BackgroundJob` and `JobAttempt` classes are **not** mapped entities yet. EF mapping, migrations and transaction tests belong to the first durable Worker slice. A job needs ID, type, scoped requester, payload reference, idempotency key, correlation ID, status and timestamps. An attempt needs ID, job ID, sequence number, worker ID, heartbeat/lease expiry, terminal status and safe error code. Use UTC `DateTimeOffset` consistently.
+The draft `BackgroundJob` and `JobAttempt` classes are **not** mapped entities yet. EF mapping, migrations and transaction tests belong to the first durable Worker slice. A job needs ID, type, scoped requester, payload reference, idempotency key, request fingerprint, correlation ID, status, next available time and timestamps. An attempt needs ID, job ID, sequence number, worker ID, lease token, heartbeat/lease expiry, terminal status and safe error code. Use UTC `DateTimeOffset` consistently.
 
 The idempotency uniqueness key is `(scope kind, scope resource ID, requester ID, job type, idempotency key)`; a duplicate with the same request fingerprint returns the original job, while the same key with different inputs is a conflict. Enqueue and the initiating business request must commit atomically; if that cannot be achieved with the chosen transaction boundary, document and test an outbox before implementing. A worker claims one job atomically with a lease token/version. Heartbeat extends the lease only for its owner. Recovery of an expired lease fences the old owner and creates the next attempt, so late workers cannot commit duplicate effects. Each downstream effect needs its own idempotency key.
 

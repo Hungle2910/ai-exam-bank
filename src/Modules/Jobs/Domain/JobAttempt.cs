@@ -16,6 +16,7 @@ public sealed class JobAttempt
     public int AttemptNumber { get; set; }
     public AttemptStatus Status { get; set; }
     public required string WorkerId { get; set; }
+    public Guid LeaseToken { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset HeartbeatAt { get; set; }
     public DateTimeOffset LeaseExpiresAt { get; set; }
