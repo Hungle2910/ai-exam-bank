@@ -17,7 +17,7 @@ Một repository chuyên nghiệp phải giúp người mới biết sản phẩ
 | Landing README | Concise overview, truthful status, architecture, team, working checks and documentation links |
 | Ownership | CODEOWNERS routes module paths to confirmed GitHub accounts and a peer reviewer; code-owner approval is not required yet |
 | Repository CI | Workflow runs unit tests for hygiene checker, local Markdown file links, forbidden runtime/state/backup files, private-key markers and module reviewer consistency with CODEOWNERS |
-| .NET baseline in PR #59 | Pinned SDK, centralized compiler settings, API liveness, HTTP Problem Details and build/smoke checks; pending required checks/merge |
+| .NET baseline merged from PR #59 | Pinned SDK, centralized compiler settings, API liveness, HTTP Problem Details and required build/smoke check on `dev`; business behavior remains unimplemented |
 | CI supply chain | Actions pinned to verified commit SHAs, read-only contents permission, credentials not persisted, job timeout |
 | Dependency maintenance | Weekly Dependabot for GitHub Actions; no application dependency checks claimed before manifests exist |
 | Consistent editing | EditorConfig and LF attributes |

@@ -4,7 +4,7 @@
 
 ## Context and requirement
 
-Five owners must build exam, question, review, import, knowledge and job features concurrently over ten weeks. A single .NET API host exists in PR #59; no business module, database or Worker exists yet. The MVP is one organization, one relational database and AWS deployment. Cross-module state changes include approval + audit and approved-only exam snapshots. The design must let each owner deliver a vertical slice without creating a distributed transaction or making M1 the sole implementer.
+Five owners must build exam, question, review, import, knowledge and job features concurrently over ten weeks. PR #59 has placed a single .NET API host on `dev`; no business module, database or Worker exists yet. The MVP is one organization, one relational database and AWS deployment. Cross-module state changes include approval + audit and approved-only exam snapshots. The design must let each owner deliver a vertical slice without creating a distributed transaction or making M1 the sole implementer.
 
 ## Options considered
 
