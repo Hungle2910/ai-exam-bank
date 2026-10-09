@@ -41,3 +41,5 @@ cdk.out/
 local-data/
 local-backups/
 .setup/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

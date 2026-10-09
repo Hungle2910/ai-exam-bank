@@ -1,10 +1,10 @@
 # Repository readiness review
 
-Review date: 04/10/2026. Owner: Gia Hưng / [Hungle2910](https://github.com/Hungle2910).
+Review date: 09/10/2026. Owner: Gia Hưng / [Hungle2910](https://github.com/Hungle2910).
 
 ## Assessment
 
-Repository có product scope, module ownership, 50 issues, dependencies, 10 weekly milestones và delivery views tốt cho giai đoạn foundation. Chưa có runtime application/IaC nên không thể đánh giá production readiness, coverage, latency, availability hoặc chi phí vận hành thực tế.
+Repository có product scope, module ownership, 50 issues, dependencies, 10 weekly milestones và delivery views tốt cho giai đoạn foundation. API liveness host, HTTP Problem Details, shared .NET build settings và application build/smoke CI được đề xuất trong foundation PR; chưa có business application/IaC nên không thể đánh giá production readiness, coverage, latency, availability hoặc chi phí vận hành thực tế. Xem [mức hoàn thành khung .NET](DOTNET_FOUNDATION.md).
 
 Một repository chuyên nghiệp phải giúp người mới biết sản phẩm làm gì, chạy phần hiện có ra sao, nhận task nào, thay đổi code qua review thế nào và chứng minh thay đổi an toàn bằng kiểm thử. README dài hoặc nhiều AWS services không thay thế những bằng chứng này.
 
@@ -15,26 +15,27 @@ Một repository chuyên nghiệp phải giúp người mới biết sản phẩ
 | Public repository/project | Owner explicitly requested public visibility |
 | Confirmed identity | M1 Gia Hưng = @Hungle2910; 10 M1 issues assigned |
 | Landing README | Concise overview, truthful status, architecture, team, working checks and documentation links |
-| Ownership | CODEOWNERS fallback to confirmed maintainer; add module owners after usernames/access confirmed |
-| Repository CI | Workflow runs unit tests for hygiene checker, local Markdown file links, forbidden runtime/state/backup files and private-key markers |
+| Ownership | CODEOWNERS routes module paths to confirmed GitHub accounts and a peer reviewer; code-owner approval is not required yet |
+| Repository CI | Workflow runs unit tests for hygiene checker, local Markdown file links, forbidden runtime/state/backup files, private-key markers and module reviewer consistency with CODEOWNERS |
+| .NET baseline in PR #59 | Pinned SDK, centralized compiler settings, API liveness, HTTP Problem Details and build/smoke checks; pending required checks/merge |
 | CI supply chain | Actions pinned to verified commit SHAs, read-only contents permission, credentials not persisted, job timeout |
 | Dependency maintenance | Weekly Dependabot for GitHub Actions; no application dependency checks claimed before manifests exist |
 | Consistent editing | EditorConfig and LF attributes |
-| Contribution flow | Short branches, PR/evidence, squash merge, follow-up issue for unresolved work |
+| Contribution flow | Short branches to `dev`, reviewed promotion PR to `main`, merge commits preserve branch ancestry |
 
 CI hygiene is a small guardrail, not a comprehensive secret scan, Markdown syntax validator, external-link checker or product test suite. Application security/testing and AWS runtime evidence remain required by implementation issues.
 
 ## Protection and access policy
 
-Public visibility enables branch protection on this repository's current GitHub plan. Policy for main: PR-only changes, one independent approval, dismiss stale approvals, required `Repository quality` check on up-to-date code, resolved conversations, linear history, no force-push/deletion, administrators included. Required code-owner approval remains disabled until at least two eligible independent owners are configured. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
+Public visibility enables branch protection on this repository's current GitHub plan. Both `dev` and `main` require PRs, up-to-date required checks and resolved conversations. On `dev`, no human approval is required; `Repository quality`, `Application build and smoke` and `CodeRabbit` are required. The author confirms the bot actually reviewed the latest change, resolves findings and manually merges. A green bot status that says “review skipped” is not review evidence. `main` retains one independent human approval for `dev → main` promotion. Force pushes and deletion are disabled, and `enforce_admins` is enabled on both branches, including for Gia Hưng. Merge commits preserve ancestry for repeated promotions. Required code-owner approval remains disabled while owner routing is tested. The source gate for `main` becomes a required check after it lands and passes on a promotion PR. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
 
-Gia Hưng is currently the only confirmed GitHub account. His own PRs require another authorized reviewer once strict protection is enabled; CODEOWNERS does not allow self-approval. Add the other four accounts with suitable repository access and per-module ownership before normal team development. Add an eligible second code owner for paths Gia Hưng changes before making code-owner review mandatory. Do not invent usernames, auto-approve PRs or weaken controls to simulate peer review.
+All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng can merge his own PRs into `dev` after required checks; his release PRs into `main` need another authorized reviewer. Module owner entries are defined for expected paths, with required code-owner approval deferred until PR routing is verified.
 
 Private vulnerability reporting, GitHub secret scanning/push protection and dependency alerts should be enabled when supported. These controls complement, not replace, runtime RBAC, IAM and audit.
 
 ## Remaining maturity gates
 
-1. **Foundation:** accept toolchain/frontend/DB/IaC ADRs; add real .NET solution/frontend, lockfiles, version-pinned prerequisites, safe configuration examples and tested local setup commands. Owners M1–M5, W01–W02.
+1. **Foundation:** review the proposed .NET 10 API baseline; accept frontend/DB/IaC ADRs; add Worker/frontend, dependency lockfiles where packages exist, safe configuration examples and tested local setup commands. Owners M1–M5, W01–W02.
 2. **Working product:** CRUD/import/auth/blueprint/review/generation with domain, authorization, concurrency and frontend tests. Each module owner delivers the full vertical slice, W02–W06.
 3. **Repeatable deployment:** IaC, CI build/test/artifact, AWS OIDC roles, private networking, environment controls, migration/rollback and restore evidence. M2 with M3/feature owners, W02–W07.
 4. **Operational readiness:** meaningful SLOs, alerts with delivery proof, cost budget/retention, incident/runbooks, corpus/model evaluation and failure drills. M2/M4/M5, W05–W09.

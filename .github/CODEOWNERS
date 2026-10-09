@@ -1,4 +1,13 @@
-# Gia Hưng is the confirmed repository maintainer.
-# Add per-module owners when their GitHub usernames and write access are confirmed.
-# This fallback is not a substitute for independent review of the maintainer's PRs.
-* @Hungle2910
+# Ownership routes optional peer review; dev author merge is gated by bot/CI.
+# Main promotion still requires an independent human approval.
+* @Hungle2910 @Lancelot-sys25
+/.github/ @Hungle2910 @HuuPhuoc-NH
+/src/Api/ @Hungle2910 @Lancelot-sys25
+/src/Modules/Identity/ @Lancelot-sys25 @Hungle2910
+/src/Modules/Review/ @Lancelot-sys25 @Hungle2910
+/src/Modules/Questions/ @flwndyy @Lancelot-sys25
+/src/Modules/Knowledge/ @flwndyy @Hungle2910
+/src/Modules/Exams/ @Hungle2910 @flwndyy
+/src/Modules/Import/ @HuuPhuoc-NH @flwndyy
+/src/Modules/Jobs/ @TranGiaBao2005 @HuuPhuoc-NH
+/infrastructure/ @HuuPhuoc-NH @Lancelot-sys25

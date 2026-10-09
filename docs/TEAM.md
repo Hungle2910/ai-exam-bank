@@ -1,14 +1,14 @@
 # Team & ownership
 
-Tên thành viên do project owner cung cấp. Task IDs giữ M1–M5 để các dependencies ổn định.
+Nhóm tham gia **AWS FCAJ 2026 Internship** với tên nhóm **AWS Hello World**. Tên chính thức không dấu dưới đây theo roster nhóm; task IDs giữ M1–M5 để các dependencies ổn định. Một số issue cũ dùng nhãn ngắn “Minh Phúc” cho M3.
 
-| ID | Member | Role | Hours | Primary modules | Peer reviewers |
-|---|---|---|---:|---|---|
-| M1 | Gia Hưng | Solution Architect & Exam Workflow Lead | 184 | Contracts, Blueprint, Generation, Final Preview | Thiên Phúc domain; Gia Bảo resilience |
-| M2 | Hữu Phước | Cloud & DevOps Engineer + Import Owner | 186 | IaC/network/deploy, Import, Infrastructure Health | Thiên Phúc schema; Gia Bảo jobs; Minh Phúc IAM |
-| M3 | Minh Phúc | Security & Approval Platform Engineer | 180 | Identity/RBAC, Review/Approval, Audit | Gia Hưng transitions; Thiên Phúc evidence |
-| M4 | Thiên Phúc | Question Bank & RAG Product Engineer | 196 | Question Bank, Revisions, Knowledge/RAG; optional Lex | Gia Hưng domain; Minh Phúc access |
-| M5 | Gia Bảo | Reliability & ML Evaluation Engineer | 180 | Jobs/Retry/Monitoring; optional ML | Hữu Phước infra; Gia Hưng worker contracts |
+| ID | Official name (ASCII) | Task label | Role | Hours | Primary modules | Peer reviewers |
+|---|---|---|---|---:|---|---|
+| M1 | Le Doan Gia Hung | Gia Hưng | Solution Architect & Exam Workflow Lead | 184 | Contracts, Blueprint, Generation, Final Preview | Nguyen Thien Phuc domain; Tran Gia Bao resilience |
+| M2 | Nguyen Huynh Huu Phuoc | Hữu Phước | Cloud & DevOps Engineer + Import Owner | 186 | IaC/network/deploy, Import, Infrastructure Health | Nguyen Thien Phuc schema; Tran Gia Bao jobs; Nguyen Hoang Phuc IAM |
+| M3 | Nguyen Hoang Phuc | Minh Phúc (legacy task label) | Security & Approval Platform Engineer | 180 | Identity/RBAC, Review/Approval, Audit | Le Doan Gia Hung transitions; Nguyen Thien Phuc evidence |
+| M4 | Nguyen Thien Phuc | Thiên Phúc | Question Bank & RAG Product Engineer | 196 | Question Bank, Revisions, Knowledge/RAG; optional Lex | Le Doan Gia Hung domain; Nguyen Hoang Phuc access |
+| M5 | Tran Gia Bao | Gia Bảo | Reliability & ML Evaluation Engineer | 180 | Jobs/Retry/Monitoring; optional ML | Nguyen Huynh Huu Phuoc infra; Le Doan Gia Hung worker contracts |
 
 ## Shared ownership rules
 
@@ -18,7 +18,15 @@ Import thuộc M2 và gọi domain writer của M4. Approval/audit/UI thuộc M3
 
 ## GitHub identities
 
-Gia Hưng (M1) đã xác nhận là repository owner **[@Hungle2910](https://github.com/Hungle2910)**; 10 issues M1 đã gán Assignees cho tài khoản này. Bốn thành viên còn lại chưa cung cấp usernames: Owner field vẫn dùng họ tên, Assignees chưa gán và chưa gửi invitations. Khi được xác nhận, cấp repository/project access phù hợp và thêm module owners vào CODEOWNERS. PR của Gia Hưng cần người khác có quyền review; không tự duyệt thay cho peer review.
+| Official name (ASCII) | ID / task label | GitHub account | Repository task assignment |
+|---|---|---|---|
+| Le Doan Gia Hung | M1 / Gia Hưng | [@Hungle2910](https://github.com/Hungle2910) | 10/10 |
+| Nguyen Huynh Huu Phuoc | M2 / Hữu Phước | [@HuuPhuoc-NH](https://github.com/HuuPhuoc-NH) | 10/10 |
+| Nguyen Hoang Phuc | M3 / Minh Phúc (legacy task label) | [@Lancelot-sys25](https://github.com/Lancelot-sys25) | 10/10 |
+| Nguyen Thien Phuc | M4 / Thiên Phúc | [@flwndyy](https://github.com/flwndyy) | 10/10 |
+| Tran Gia Bao | M5 / Gia Bảo | [@TranGiaBao2005](https://github.com/TranGiaBao2005) | 10/10 |
+
+Bốn thành viên M2–M5 đã được cấp quyền Write trên Project và đã chấp nhận lời mời repo. Cả 50 issue gốc có GitHub Assignee tương ứng; công việc bảo trì bổ sung được theo dõi riêng. Owner field vẫn giữ họ tên để các view hiện có hoạt động. CODEOWNERS định tuyến peer reviewer theo module, nhưng PR vào `dev` không bắt buộc human approval: owner tự merge sau khi bot/CI đạt và conversations được giải quyết. Với thay đổi rủi ro cao, nên mời peer review; PR phát hành `dev → main` vẫn cần người khác duyệt độc lập.
 
 ## Capacity and role fit
 
