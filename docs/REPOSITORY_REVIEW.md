@@ -26,7 +26,7 @@ CI hygiene is a small guardrail, not a comprehensive secret scan, Markdown synta
 
 ## Protection and access policy
 
-Public visibility enables branch protection on this repository's current GitHub plan. Policy for main: PR-only changes, one independent approval, dismiss stale approvals, required `Repository quality` check on up-to-date code, resolved conversations, linear history, no force-push/deletion. The live setting `enforce_admins` is currently false; Gia Hưng should follow the same review process and enable enforcement after CI stability is confirmed. Required code-owner approval remains disabled while owner routing is tested. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
+Public visibility enables branch protection on this repository's current GitHub plan. Policy for main: PR-only changes, one independent approval, dismiss stale approvals, required `Repository quality` check on up-to-date code, resolved conversations, linear history, no force-push/deletion. The live setting `enforce_admins` is enabled, so Gia Hưng is held to the same review and CI requirements. Required code-owner approval remains disabled while owner routing is tested. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
 
 All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng's own PRs need another authorized reviewer; CODEOWNERS does not allow self-approval. Module owner entries are now defined for expected paths, with required code-owner approval deferred until PR routing is verified.
 

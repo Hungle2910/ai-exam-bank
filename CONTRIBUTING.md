@@ -24,7 +24,7 @@ Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, fai
 
 Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Với thay đổi ứng dụng, chạy thêm `dotnet build AiExamBank.slnx --configuration Release` và `python tests/smoke/test_api_health.py`. `Repository quality` và `Application CI` chạy trên PR và main; không dùng các check này để claim product tests hoặc AWS deployment đã pass.
 
-Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. `Application CI` chạy trên PR nhưng chỉ trở thành required check sau khi đã chứng minh ổn định. CODEOWNERS định tuyến reviewer theo module và có reviewer dự phòng; required code-owner approval chưa bật. Tác giả không tự duyệt PR của mình. Admin hiện chưa bị branch protection cưỡng chế; Gia Hưng tuân thủ cùng quy trình và nhóm sẽ bật enforce-admins sau khi các checks ổn định.
+Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. `Application CI` chạy trên PR nhưng chỉ trở thành required check sau khi đã chứng minh ổn định. CODEOWNERS định tuyến reviewer theo module và có reviewer dự phòng; required code-owner approval chưa bật. Tác giả không tự duyệt PR của mình. Branch protection áp dụng cả với admin, bao gồm Gia Hưng.
 
 ## Bot review rollout
 
