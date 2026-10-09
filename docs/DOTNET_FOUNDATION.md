@@ -18,7 +18,7 @@ The API host is a **working starting point**, not a complete .NET application or
 
 | Gate | Owner / coordination | Minimum completion evidence |
 |---|---|---|
-| 1. Review foundation | M1; peer review by M2/M3 | PR #59 green, independent approval, review threads resolved, merged to `dev`; require Application CI after its first successful run on `dev` |
+| 1. Review foundation | M1; M2/M3 available for peer review | PR #59 green on all required checks, CodeRabbit findings and threads resolved, author merges to `dev`; no human approval required on `dev` |
 | 2. Record shared contracts | M1 with M2–M5 | Reviewed ADRs for database, API version/error schema, identity flow, module dependencies and local setup; one agreed migration owner per schema change |
 | 3. First business path | M4 Questions + M3 Identity/Review; M1 consumes their contracts | Executable module code, migrations, authorization, revision/audit invariants, API examples and meaningful positive/negative/concurrency tests |
 | 4. Durable background path | M5 Jobs with M2 deployment and M1 generation | Worker host added with its first real handler, persisted job/attempt state, lease/retry/idempotency behavior, restart test and failure telemetry |

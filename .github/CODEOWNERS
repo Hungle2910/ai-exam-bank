@@ -1,5 +1,5 @@
-# Ownership routes review requests; independent human approval is still required.
-# Two eligible owners per area let the author's peer review their change.
+# Ownership routes optional peer review; dev author merge is gated by bot/CI.
+# Main promotion still requires an independent human approval.
 * @Hungle2910 @Lancelot-sys25
 /.github/ @Hungle2910 @HuuPhuoc-NH
 /src/Api/ @Hungle2910 @Lancelot-sys25

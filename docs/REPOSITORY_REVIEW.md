@@ -17,7 +17,7 @@ Một repository chuyên nghiệp phải giúp người mới biết sản phẩ
 | Landing README | Concise overview, truthful status, architecture, team, working checks and documentation links |
 | Ownership | CODEOWNERS routes module paths to confirmed GitHub accounts and a peer reviewer; code-owner approval is not required yet |
 | Repository CI | Workflow runs unit tests for hygiene checker, local Markdown file links, forbidden runtime/state/backup files, private-key markers and module reviewer consistency with CODEOWNERS |
-| .NET baseline in PR #59 | Pinned SDK, centralized compiler settings, API liveness, HTTP Problem Details and build/smoke checks; pending peer review/merge |
+| .NET baseline in PR #59 | Pinned SDK, centralized compiler settings, API liveness, HTTP Problem Details and build/smoke checks; pending required checks/merge |
 | CI supply chain | Actions pinned to verified commit SHAs, read-only contents permission, credentials not persisted, job timeout |
 | Dependency maintenance | Weekly Dependabot for GitHub Actions; no application dependency checks claimed before manifests exist |
 | Consistent editing | EditorConfig and LF attributes |
@@ -27,9 +27,9 @@ CI hygiene is a small guardrail, not a comprehensive secret scan, Markdown synta
 
 ## Protection and access policy
 
-Public visibility enables branch protection on this repository's current GitHub plan. Both `dev` and `main` require PRs, one independent approval, dismissal of stale approvals, the `Repository quality` check on up-to-date code and resolved conversations. Force pushes and deletion are disabled. `enforce_admins` is enabled on both, so Gia Hưng is held to the same requirements. Merge commits preserve ancestry for repeated `dev → main` promotions. Required code-owner approval remains disabled while owner routing is tested. The source gate for `main` becomes a required check after it lands and passes on a promotion PR. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
+Public visibility enables branch protection on this repository's current GitHub plan. Both `dev` and `main` require PRs, up-to-date required checks and resolved conversations. On `dev`, no human approval is required; `Repository quality`, `Application build and smoke` and `CodeRabbit` are required. The author confirms the bot actually reviewed the latest change, resolves findings and manually merges. A green bot status that says “review skipped” is not review evidence. `main` retains one independent human approval for `dev → main` promotion. Force pushes and deletion are disabled, and `enforce_admins` is enabled on both branches, including for Gia Hưng. Merge commits preserve ancestry for repeated promotions. Required code-owner approval remains disabled while owner routing is tested. The source gate for `main` becomes a required check after it lands and passes on a promotion PR. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
 
-All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng's own PRs need another authorized reviewer; CODEOWNERS does not allow self-approval. Module owner entries are now defined for expected paths, with required code-owner approval deferred until PR routing is verified.
+All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng can merge his own PRs into `dev` after required checks; his release PRs into `main` need another authorized reviewer. Module owner entries are defined for expected paths, with required code-owner approval deferred until PR routing is verified.
 
 Private vulnerability reporting, GitHub secret scanning/push protection and dependency alerts should be enabled when supported. These controls complement, not replace, runtime RBAC, IAM and audit.
 

@@ -14,7 +14,7 @@ Tạo nhánh từ `dev` và mở PR trở lại `dev`; dùng thống nhất ti�
 
 Describe problem/resulting behavior, scope, validation và material limitations. Include backend/frontend/data/AWS changes, migration/rollback notes nếu có, security/resource authorization effects và evidence links. Không claim test/AWS deploy đã pass nếu chưa chạy.
 
-Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, failure behavior, authorization và migrations. Critical state/selection/idempotency behavior cần meaningful tests. Avoid tests chỉ mirror private implementation hoặc assert wording.
+Owner tự test relevant paths và xử lý CodeRabbit findings; chủ động mời peer reviewer cho code/domain invariants, failure behavior, authorization và migrations có rủi ro cao. Critical state/selection/idempotency behavior cần meaningful tests. Avoid tests chỉ mirror private implementation hoặc assert wording.
 
 ## Code and architecture
 
@@ -24,14 +24,13 @@ Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, fai
 
 Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Với thay đổi ứng dụng, chạy thêm `dotnet build AiExamBank.slnx --configuration Release` và `python tests/smoke/test_api_health.py`. `Repository quality` và `Application CI` chạy trên PR và mỗi lần push vào `dev`/`main`; không dùng các check này để claim product tests hoặc AWS deployment đã pass.
 
-`dev` và `main` đều yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date và resolved conversations; không cho force-push/delete. Tác giả tự bấm **Create a merge commit** khi đủ điều kiện. PR vào `main` chỉ lấy từ nhánh `dev` đã kiểm thử; ghi commit SHA, kết quả kiểm thử tích hợp và phạm vi release trong PR. `Application CI` chạy trên PR nhưng chỉ thành required check sau khi đã chứng minh ổn định. CODEOWNERS định tuyến reviewer theo module và có reviewer dự phòng; required code-owner approval chưa bật. Tác giả không tự duyệt PR của mình. Branch protection áp dụng cả với admin, bao gồm Gia Hưng.
+`dev` và `main` đều yêu cầu PR, code up-to-date, resolved conversations và không cho force-push/delete. Trên `dev`, không bắt buộc human approval; required checks là `Repository quality`, `Application build and smoke` và `CodeRabbit`. Tác giả xử lý findings, kiểm tra bot thật sự đã review (trạng thái “skipped” không phải review), rồi tự bấm **Create a merge commit** khi tất cả checks xanh. Trên `main`, PR chỉ lấy từ `dev` đã kiểm thử, ghi SHA/evidence/phạm vi release và vẫn cần một independent human approval. CODEOWNERS định tuyến peer reviewer theo module nhưng required code-owner approval chưa bật. Branch protection áp dụng cả với admin, bao gồm Gia Hưng.
 
 ## Bot review rollout
 
 See [bot review and manual author merge](docs/BOT_REVIEW.md) for installation,
-verification, independent-human exceptions and daily workflow. The author clicks
-Create a merge commit after approval and CI. Bot-only approval is not active until
-rollout gates pass.
+verification and daily workflow. The author clicks Create a merge commit after
+the required bot/CI checks on `dev`; promotion to `main` retains human approval.
 
 ## Documentation and evidence
 

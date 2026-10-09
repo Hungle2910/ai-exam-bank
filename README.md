@@ -106,7 +106,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 - Private backend/DB, least-privilege IAM, runtime roles, controlled SSM access and safe secret delivery.
 - Durable recovery, measured query performance, logs/metrics with bounded retention, alert delivery proof and tested restores.
 - Region-specific cost estimates, token/attempt limits, resource tagging and cleanup of idle ML/NAT/storage resources.
-- PRs with independent review, required repository CI, pinned Actions, Dependabot and documented ownership. API build/liveness/error checks run in Application CI; product tests and deploy checks join CI with their implementations.
+- PRs into `dev` require repository CI, application build/smoke and CodeRabbit checks; authors manually merge after resolving findings. `dev → main` promotion requires an independent human approval. Actions are pinned, dependencies are tracked with Dependabot and ownership is documented. Product tests and deploy checks join CI with their implementations.
 
 Design review follows the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html). This is an engineering baseline, not an AWS certification or claim of production readiness. [AWS strategy](docs/AWS_STRATEGY.md) · [Current controls and remaining gates](docs/REPOSITORY_REVIEW.md).
 
@@ -128,7 +128,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 
 ## Definition of Done
 
-A task is Done when acceptance criteria pass, relevant tests and live-AWS evidence are attached, authorization/failure cases are covered, the PR is peer-reviewed, migrations/config are reproducible, and docs/runbooks are current. Core MVP must work with Lex/ML/VPN disabled. Mock providers are not live deployment evidence.
+A task is Done when acceptance criteria pass, relevant tests and live-AWS evidence are attached, authorization/failure cases are covered, required PR checks pass and findings are resolved, migrations/config are reproducible, and docs/runbooks are current. High-risk changes should receive peer review; promotion to `main` requires independent human approval. Core MVP must work with Lex/ML/VPN disabled. Mock providers are not live deployment evidence.
 
 ## Licensing and attribution
 
