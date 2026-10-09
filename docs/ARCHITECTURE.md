@@ -2,6 +2,8 @@
 
 **Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. `dev` có API host và bảy module projects với hợp đồng ban đầu; chưa có workflow nghiệp vụ hoặc AWS runtime. Xem [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md) cho cây project, hợp đồng, giao dịch và quy tắc phụ thuộc.
 
+MVP đã mở rộng sang nhiều trường và kỳ thi cấp Bộ theo [ADR 0004](adr/0004-multi-school-ministry-mvp.md); [permission matrix](IDENTITY_AND_PERMISSIONS.md) định nghĩa bốn role và phạm vi tài nguyên. Đây là thiết kế cần triển khai, không phải chức năng hiện có.
+
 ## Module boundaries
 
 | Module | Responsibility | Owner |
@@ -21,7 +23,9 @@ Dependency rules: controllers gọi application use cases; domain không phụ t
 
 - Question giữ identity. QuestionRevision lưu nội dung, options/answer, metadata, provenance và status của phiên bản; approved content bất biến.
 - ReviewDecision gắn chính xác revision và reviewer; server recheck quyền/scope/state/version trước commit. Approval và business audit có atomic boundary.
+- School/Department/RoleAssignment giới hạn mọi thao tác theo tài nguyên thực; `MinistryAdmin` không mặc định đọc nội dung đề trường. `ExamEvent` xác định scope cấp trường hoặc cấp Bộ và trỏ tới đúng một revision đang được chọn.
 - BlueprintSlot định nghĩa subject/topic/difficulty/count/points. Selection không trùng question identity và chỉ dùng approved revisions.
+- Hai lựa chọn đồng thời cho cùng `ExamEvent` dùng optimistic concurrency trong cùng transaction với decision/audit; chỉ một lựa chọn thành công. Đề cấp Bộ cần tác giả và người xác nhận là hai tài khoản được giao khác nhau.
 - Exam snapshot pin revision/content; edits sau finalize không thay đề. Count/score/uniqueness được revalidate trước finalization.
 - Job/Attempt giữ durable workflow state, idempotency key và lease/heartbeat. Crash/retry không nhân đôi database effects.
 - KnowledgeSource/Citation lưu source version/hash/location và access scope. Source references từ model không được coi là quyền đọc.

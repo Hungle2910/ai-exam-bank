@@ -4,7 +4,7 @@
 
 ## 1. Phạm vi và trạng thái thật
 
-MVP là **một trường/tổ chức**, câu hỏi MCQ một đáp án, nhập CSV, duyệt nội dung bởi người có quyền, ma trận đề, chọn câu đã duyệt, AI chỉ tạo bản nháp có nguồn, đề cuối bất biến và job bền vững. Lex, SageMaker, VPN và quy trình nhiều trường/cấp Bộ là phần mở rộng có cổng quyết định riêng; [PR #58](https://github.com/Hungle2910/ai-exam-bank/pull/58) chưa thay đổi phạm vi MVP cho đến khi team chốt.
+MVP gồm **nhiều trường và kỳ thi cấp Bộ** theo [ADR 0004](adr/0004-multi-school-ministry-mvp.md), câu hỏi MCQ một đáp án, nhập CSV, duyệt nội dung bởi người có quyền, ma trận đề, chọn câu đã duyệt, AI chỉ tạo bản nháp có nguồn, đề cuối bất biến và job bền vững. Mọi truy cập dữ liệu phải kiểm tra phạm vi trường/bộ môn hoặc kỳ thi cấp Bộ; Lex, SageMaker và VPN vẫn có cổng quyết định riêng. Quyết định phạm vi chưa phải bằng chứng hệ thống đã triển khai.
 
 Trên `dev` hiện có .NET 10 API host, `GET /health/live`, HTTP Problem Details, bảy module projects với hợp đồng/giá trị đầu tiên, ba test projects và CI build/smoke/test. Chưa có use case nghiệp vụ end-to-end, database, Worker chạy job, frontend, IaC hay triển khai AWS. Các thành phần còn lại bên dưới là **hợp đồng thiết kế**, không phải code đã hoàn thành; chỉ thêm adapter/host tiếp theo cùng hành vi thật và test.
 
@@ -69,7 +69,7 @@ Module adapter ----------------------------------> AWS SDK / external service
 
 | Module / owner | Sở hữu dữ liệu và hành vi | Public contract cần cho module khác | Không được làm |
 |---|---|---|---|
-| Identity / M3 | User, role, session, resource assignment | Actor/scope lookup, permission decision | Dựa vào role trong UI hoặc IAM để thay kiểm quyền server |
+| Identity / M3 | User, four business roles, School, Department, assignment, session | Actor/scope lookup, permission decision | Dựa vào role trong UI hoặc IAM để thay kiểm quyền server |
 | Questions / M4 | Question, immutable QuestionRevision, taxonomy, approved read model | Revision ref/version, approved-only reader, revision writer | Cho module khác ghi thẳng bảng Questions |
 | Review / M3 | ReviewDecision, audit, transition | Submit/approve/reject có expected version và reason | Tự approve revision của mình hoặc duyệt qua event không atomic |
 | Exams / M1 | Blueprint, Slot, selection, ExamSnapshot | Generate/preview/finalize và immutable snapshot read | Chọn draft/unapproved revision hoặc sửa snapshot đã finalize |
@@ -86,7 +86,7 @@ Các contract đầu tiên cần chốt bằng ví dụ request/response và tes
 | Question + Revision | Question ID ổn định; Revision ID/version riêng; content/options/answer/provenance của revision đã approved bất biến | Edit approved tạo revision DRAFT mới; một MCQ có đúng một đáp án hợp lệ |
 | ReviewDecision + Audit | Decision gắn đúng revision/version, actor, reason, timestamp | Reviewer có scope và không tự duyệt; stale version trả 409; transition + audit cùng transaction |
 | Blueprint + Slot | Slot có subject/topic/difficulty/count/points; version khi sửa | Count/score hợp lệ; selection không lặp Question ID và chỉ lấy revision APPROVED đúng scope |
-| ExamSnapshot | Pin revision ID, version và nội dung đã chọn tại finalize | Finalize recheck toàn bộ slot, quyền, uniqueness; snapshot không đổi khi nguồn sửa |
+| ExamEvent + ExamSnapshot | Event thuộc trường/bộ môn hoặc kỳ thi cấp Bộ; pin selected revision và nội dung tại finalize | Một lựa chọn hợp lệ tại một thời điểm; concurrent decision nhận 409; finalize recheck slot, scope, approved-only questions; snapshot bất biến |
 | ImportBatch + Row | Unique (batch ID, row number); key commit và kết quả được lưu | Cùng key trả kết quả cũ; batch đã commit với key khác trả 409; không tạo QuestionRevision trùng |
 | Job + Attempt | Job ID, status, lease owner/expiry, attempt count, idempotency key | Hai Worker không cùng commit effect; crash/restart thu hồi lease; retry bounded |
 | KnowledgeSource + Citation | Source version/hash/location/scope; citation gắn draft/revision | Thu hồi nguồn hoặc scope không được lộ nội dung; draft thiếu nguồn không tự publish |
@@ -112,9 +112,9 @@ Các contract đầu tiên cần chốt bằng ví dụ request/response và tes
 
 HTTP error dùng Problem Details với `status`, `traceId`, `code` ổn định và validation details an toàn: 400 input, 401 thiếu/expired session, 403 không đủ quyền/scope, 404 không tồn tại hoặc không được tiết lộ, 409 version/state conflict, 429 throttling, 500 lỗi không dự kiến. Có pagination/filter bounded cho list/search. OpenAPI mô tả endpoint thật và negative examples; khi contract đổi, consumer test và tài liệu cùng PR.
 
-MVP role nền là Teacher, Reviewer và Admin **trong một trường**. Quyền thực thi phụ thuộc role **và** resource scope/ownership/state; reviewer không tự duyệt nội dung mình tạo. ASP.NET Core Identity là mặc định đề xuất, với password hashing thư viện, cookie Secure/HttpOnly/SameSite, CSRF protection cho mutation, session expiry/logout và audit user-role changes. Nếu team chọn OIDC hoặc đa trường/cấp Bộ, cần ADR và permission matrix mới trước khi đổi code; không tự mở rộng quyền Admin bằng suy đoán từ [PR #58](https://github.com/Hungle2910/ai-exam-bank/pull/58).
+MVP dùng `Teacher`, `DepartmentHead`, `SchoolAdmin`, `MinistryAdmin` theo [permission matrix](IDENTITY_AND_PERMISSIONS.md). Quyền thực thi phụ thuộc role **và** resource scope/ownership/state; người soạn không tự duyệt câu/đề mình tạo. `MinistryAdmin` không mặc định xem đề nội bộ trường. ASP.NET Core Identity là mặc định công nghệ còn đề xuất, với password hashing thư viện, cookie Secure/HttpOnly/SameSite, CSRF protection cho mutation, session expiry/logout và audit user-role changes. M3/M1 phải chốt provisioning và event assignment trước endpoint có quyền.
 
-Web cùng origin gọi API, hiển thị rõ pending/failed/partial, không giữ secret/AWS credential hoặc answer key trong client storage. Teacher upload/soạn, Reviewer duyệt có lý do, Admin quản quyền/health; UI chỉ là lớp trình bày, server kiểm lại toàn bộ mutation.
+Web cùng origin gọi API, hiển thị rõ pending/failed/partial, không giữ secret/AWS credential hoặc answer key trong client storage. Teacher soạn, người duyệt có quyền duyệt câu hỏi, DepartmentHead chọn đề trường, SchoolAdmin quản quyền trường và MinistryAdmin quản sự kiện cấp Bộ; UI chỉ là lớp trình bày, server kiểm lại toàn bộ truy cập và mutation.
 
 ## 6. Worker, AI và AWS boundary
 

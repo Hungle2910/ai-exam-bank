@@ -1,223 +1,226 @@
-# Thiết kế vai trò và phân quyền người dùng
+# Vai trò và phân quyền nhiều trường/cấp Bộ
 
-**Trạng thái:** Proposed
+**Trạng thái:** Phạm vi MVP được project owner chốt ngày 09/10/2026; đây là hợp đồng thiết kế, chưa có auth/API thực thi.
 **Người thực hiện:** Minh Phúc — Lancelot-sys25
-**Issue:** M3-01 — Identity, permission matrix và approval threat model
+**Liên quan:** M3-01 (thiết kế đã merge); M3-02 (triển khai đăng nhập và phân quyền)
 
-## 1. Mục đích
+## 1. Phạm vi MVP
 
-Tài liệu xác định vai trò, quyền hạn và quy trình tạo, kiểm duyệt đề trong
-hệ thống AI Exam Bank.
+Hệ thống có bốn role: `MinistryAdmin` (quản trị cấp Bộ), `SchoolAdmin`
+(quản trị cấp trường), `DepartmentHead` (trưởng bộ môn) và `Teacher`
+(giáo viên). `MinistryAdmin` quản lý toàn hệ thống; ba role còn lại chỉ
+thao tác trong trường và bộ môn được phân công. Một tài khoản có thể giữ
+nhiều role nếu được gán rõ ràng, nhưng mỗi thao tác vẫn phải kiểm tra
+đúng phạm vi tài nguyên.
 
-Hệ thống có ba role chính:
+Kỳ thi thường do từng trường tự tổ chức: `SchoolAdmin` quản lý người dùng
+và phân công, `Teacher` soạn đề, `DepartmentHead` xem và chọn đề. Cấp Bộ
+không tham gia quy trình chọn đề thường của trường. `MinistryAdmin` chỉ
+tham gia nội dung đề khi có kỳ thi cấp Bộ và tài khoản đó được giao vào
+kỳ thi. Nếu dùng AI, Teacher tự kiểm tra và chấp nhận, sửa hoặc bỏ từng
+gợi ý trước khi gửi đề; AI không tự duyệt nội dung.
 
-- `Teacher` — Giáo viên.
-- `DepartmentHead` — Trưởng bộ môn.
-- `Admin` — Quản trị viên.
+MVP bao gồm nhiều trường và kỳ thi cấp Bộ. Phạm vi này thay thế giả định
+một trường trong kế hoạch ban đầu. Các endpoint, migration và quyền vận
+hành vẫn phải được triển khai và kiểm thử; quyết định phạm vi không đồng
+nghĩa tính năng đã hoàn thành. Xem [ADR 0004](adr/0004-multi-school-ministry-mvp.md).
 
-Admin phân công role và phạm vi môn học. Giáo viên yêu cầu AI tạo đề;
-Trưởng bộ môn kiểm tra và quyết định đề có hợp lý để sử dụng hay không.
+## 2. Phạm vi dữ liệu và gán role
 
-## 2. Teacher — Giáo viên
+- `School` xác định trường sở hữu người dùng và đề cấp trường.
+- `Department` thuộc đúng một `School` và xác định bộ môn phụ trách.
+- `Teacher` thuộc một trường; quyền tạo đề chỉ áp dụng trong môn/phạm vi
+  được trường phân công.
+- `DepartmentHead` được gán một hoặc nhiều cặp trường–bộ môn; chỉ xem và
+  quyết định đề cấp trường thuộc các cặp đó.
+- `SchoolAdmin` chỉ quản lý tài khoản, gán role và xem audit trong trường
+  của mình. Họ không tự mở rộng phạm vi sang trường khác.
+- `MinistryAdmin` quản lý danh sách trường, tài khoản quản trị cấp trường,
+  các kỳ thi cấp Bộ và audit cấp hệ thống. Việc truy cập nội dung đề cấp
+  Bộ chỉ dành cho tài khoản được giao vào kỳ thi đó.
 
-Teacher là người tạo yêu cầu đề thi.
+Quyền quản trị cấp Bộ không tự động cấp quyền đọc, sửa hoặc chọn đề thi
+thường của từng trường. Khi trường tổ chức kỳ kiểm tra nội bộ,
+`SchoolAdmin` quản lý tài khoản và phạm vi, còn `DepartmentHead` chọn đề
+trong bộ môn.
 
-Teacher có thể:
+Chỉ `MinistryAdmin` được tạo hoặc thu hồi tài khoản `SchoolAdmin`.
+`SchoolAdmin` gán hoặc thu hồi `Teacher` và `DepartmentHead` trong trường
+của mình. Không role nào được tự nâng quyền hoặc tự đổi phạm vi của mình.
 
-- Đăng nhập và đăng xuất.
-- Tạo ma trận đề.
-- Chọn môn học, chủ đề, độ khó, số câu và số điểm.
-- Gửi yêu cầu để AI và hệ thống tạo đề bản nháp.
-- Xem trạng thái tạo đề.
-- Xem đề do mình yêu cầu tạo.
-- Kiểm tra sơ bộ và gửi đề bản nháp đi kiểm duyệt.
-- Xem kết quả được duyệt hoặc bị từ chối.
-- Chỉnh sửa ma trận hoặc yêu cầu AI tạo lại đề bị từ chối.
+## 3. Bảng quyền
 
-Teacher không thể:
+| Hành động | Teacher | DepartmentHead | SchoolAdmin | MinistryAdmin |
+|---|---|---|---|---|
+| Tự soạn hoặc dùng AI hỗ trợ tạo đề cấp trường | Có, trong phạm vi được giao | Chỉ khi có thêm role Teacher | Không mặc định | Không |
+| Kiểm tra và chấp nhận/sửa/bỏ gợi ý AI trong đề của mình | Có | Khi có role Teacher | Không | Không |
+| Xem đề mình yêu cầu tạo | Có | Khi có role Teacher | Không mặc định | Không mặc định |
+| Gửi đề cấp trường đi chọn | Có, với đề của mình | Khi có role Teacher | Không | Không |
+| Xem nội dung đề chờ duyệt cấp trường | Không | Có, theo trường–bộ môn | Không mặc định | Không mặc định |
+| Chọn hoặc trả lại đề cấp trường | Không | Có, theo trường–bộ môn | Không | Không |
+| Quản lý Teacher/DepartmentHead | Không | Không | Trong trường mình | Không |
+| Quản lý SchoolAdmin và trường | Không | Không | Không | Có |
+| Xem audit | Việc liên quan đến mình | Trong phạm vi phụ trách | Trong trường mình | Toàn hệ thống theo quyền quản trị |
+| Tự soạn đề kỳ thi cấp Bộ | Không | Không | Không | Có, khi được giao kỳ thi |
+| Xác nhận hoặc từ chối đề cấp Bộ | Không | Không | Không | Có, khi được giao kỳ thi |
 
-- Xem toàn bộ danh sách đề đang chờ duyệt.
-- Duyệt hoặc từ chối đề.
-- Quản lý tài khoản hoặc phân role.
-- Tự chuyển đề sang trạng thái `APPROVED`.
+Quyền tạo đề và quyền xác nhận đề cấp Bộ có thể cùng thuộc role
+`MinistryAdmin`, nhưng **người xác nhận phải là tài khoản khác người soạn
+cùng phiên bản đề**. Đề thi chuyển cấp hoặc tốt nghiệp không được một
+người tự soạn rồi tự xác nhận. Nếu nhóm muốn cho phép ngoại lệ này, cần
+một quyết định riêng nêu rõ lý do và cách kiểm soát.
 
-## 3. DepartmentHead — Trưởng bộ môn
+## 4. Luồng đề cấp trường
 
-DepartmentHead là người chịu trách nhiệm kiểm duyệt đề trong môn hoặc
-bộ môn được Admin phân công.
+1. `SchoolAdmin` phân công giáo viên và trưởng bộ môn trong trường. Cấp
+   Bộ không tham gia bước này hoặc xem nội dung đề thường.
+2. Teacher chọn môn, chủ đề, độ khó, số câu và số điểm rồi tự soạn đề.
+   Teacher có thể dùng AI để gợi ý câu hỏi. Với mỗi gợi ý, Teacher tự
+   kiểm tra nội dung, đáp án, độ khó và nguồn nếu có, rồi chấp nhận,
+   sửa hoặc bỏ vào bản nháp. Teacher chịu trách nhiệm về nội dung đề mình gửi.
+3. Khi hài lòng, Teacher gửi **một phiên bản cố định** của đề. Sau khi
+   gửi, Teacher không sửa trực tiếp phiên bản đó. Nếu muốn thay đổi,
+   Teacher tạo phiên bản mới và gửi lại; bản cũ được lưu lịch sử và
+   không còn nằm trong danh sách chờ chọn khi bản mới được gửi. Nếu bản
+   cũ đã được chọn, nó vẫn là đề được chọn cho đến khi DepartmentHead
+   quyết định thay bằng phiên bản khác.
+4. Một đợt kiểm tra có thể nhận nhiều đề từ các Teacher. Các đề được
+   so sánh với nhau khi cùng **trường, môn học, khối lớp và đợt kiểm
+   tra**. DepartmentHead đúng trường–bộ môn xem các đề, kiểm tra ma
+   trận, câu hỏi, đáp án, độ khó, trùng lặp và nguồn tham khảo rồi chọn
+   **một đề** phù hợp.
+5. Các đề còn lại có trạng thái `NOT_SELECTED`; trạng thái này chỉ có
+   nghĩa là không được chọn, không khẳng định đề đúng hay sai. Chúng vẫn
+   được lưu để tra cứu, không bị xóa. Đề được xác định là chưa đạt phải
+   được trả lại kèm lý do (`REJECTED`). Nếu không đề nào đạt,
+   DepartmentHead trả lại từng đề, không có đề được chọn. Teacher sửa
+   thành phiên bản mới rồi gửi lại.
+6. Chỉ phiên bản được DepartmentHead chọn mới đủ điều kiện để chốt và sử
+   dụng tại trường. `SchoolAdmin` không mặc định có quyền chọn đề.
 
-DepartmentHead có thể:
+Teacher chấp nhận một gợi ý AI nghĩa là đưa nó vào **bản nháp đề của
+mình**, không tự cấp quyền dùng câu đó trong đề cuối hay ngân hàng chung.
+Trước khi một đề có thể được chọn và chốt, **mọi QuestionRevision trong
+đề phải ở trạng thái APPROVED** theo luồng Review/Audit hiện có. Quyết
+định chọn toàn bộ đề của DepartmentHead không thay thế quyết định duyệt
+từng QuestionRevision; người soạn không được tự duyệt câu mình tạo.
 
-- Xem danh sách đề đang chờ duyệt trong phạm vi phụ trách.
-- Xem ma trận, nội dung đề, đáp án và thông tin AI của đề bản nháp.
-- Kiểm tra số câu, số điểm, chủ đề và tỉ lệ độ khó có đúng ma trận không.
-- Kiểm tra câu hỏi, đáp án, câu trùng lặp và nguồn tham khảo nếu có.
-- Đồng ý hoặc từ chối đề.
-- Ghi lý do khi từ chối để Teacher chỉnh sửa hoặc yêu cầu AI tạo lại.
-- Xem lịch sử kiểm duyệt trong phạm vi phụ trách.
+## 5. Luồng kỳ thi cấp Bộ
 
-DepartmentHead không thể:
+1. `MinistryAdmin` được giao kỳ thi (ví dụ thi chuyển cấp hoặc tốt nghiệp)
+   tạo bản nháp đề và ma trận bằng cách soạn trực tiếp. Việc dùng AI hỗ
+   trợ, nếu có, vẫn chỉ tạo nội dung nháp.
+2. Một `MinistryAdmin` **khác**, cũng được giao kỳ thi, kiểm tra và xác
+   nhận hoặc từ chối đúng phiên bản đề. Người này xem đủ nội dung, đáp
+   án, tổng điểm và nguồn để đánh giá.
+3. Quyết định được lưu cùng audit. Khi bị từ chối, người soạn tạo phiên
+   bản mới và gửi lại. Khi được xác nhận, đề được chốt thành snapshot
+   không bị thay đổi bởi việc sửa bản nháp sau đó.
+4. Đề cấp Bộ chỉ được xem hoặc xuất bởi tài khoản có quyền cho đúng kỳ
+   thi. Quản trị trường không mặc định được xem trước nội dung đề cấp Bộ.
 
-- Duyệt đề ngoài bộ môn hoặc phạm vi được phân công.
-- Duyệt một phiên bản khác với phiên bản đã kiểm tra.
-- Quản lý tài khoản hoặc tự thay đổi phạm vi phụ trách.
-- Tự duyệt đề do chính mình tạo nếu một tài khoản đồng thời có role Teacher.
-
-## 4. Admin — Quản trị viên
-
-Admin chịu trách nhiệm quản lý tài khoản, role và phạm vi bộ môn.
-
-Admin có thể:
-
-- Tạo, khóa hoặc mở khóa tài khoản.
-- Gán hoặc thu hồi role `Teacher` và `DepartmentHead`.
-- Phân công bộ môn hoặc phạm vi kiểm duyệt cho DepartmentHead.
-- Xem nhật ký kiểm toán của hệ thống.
-- Kiểm tra lịch sử thay đổi role và phạm vi.
-
-Admin không mặc định có quyền tạo hoặc duyệt đề. Nếu một người cần thực
-hiện nghiệp vụ đó, tài khoản phải được cấp role tương ứng và vẫn phải tuân
-theo quy tắc không tự duyệt đề của mình.
-
-## 5. Bảng phân quyền
-
-| Chức năng | Teacher | DepartmentHead | Admin |
-|---|---:|---:|---:|
-| Tạo ma trận đề | Có | Không | Không |
-| Yêu cầu AI tạo đề | Có | Không | Không |
-| Xem đề mình yêu cầu tạo | Có | Không | Không |
-| Gửi đề đi duyệt | Có | Không | Không |
-| Xem danh sách đề chờ duyệt | Không | Có, theo bộ môn | Có, để quản trị |
-| Xem nội dung và đáp án để kiểm duyệt | Không | Có, theo bộ môn | Không |
-| Duyệt hoặc từ chối đề | Không | Có, theo bộ môn | Không |
-| Tự duyệt đề của mình | Không | Không | Không |
-| Quản lý tài khoản và role | Không | Không | Có |
-| Phân công phạm vi bộ môn | Không | Không | Có |
-| Xem toàn bộ audit | Không | Không | Có |
-
-## 6. Quyền hệ thống
-
-Các quyền dự kiến:
-
-- `exams.create`: tạo ma trận và yêu cầu AI tạo đề.
-- `exams.read.own`: xem đề do mình yêu cầu tạo.
-- `exams.submit`: gửi đề bản nháp đi kiểm duyệt.
-- `exams.review.list`: xem danh sách đề chờ duyệt trong phạm vi.
-- `exams.review.read`: xem nội dung và đáp án phục vụ kiểm duyệt.
-- `exams.review.decide`: đồng ý hoặc từ chối đề.
-- `users.manage`: quản lý tài khoản.
-- `roles.assign`: gán hoặc thu hồi role.
-- `review-scopes.assign`: phân công phạm vi bộ môn.
-- `audit.view`: xem nhật ký kiểm toán.
-
-Role `Teacher` có:
-
-- `exams.create`
-- `exams.read.own`
-- `exams.submit`
-
-Role `DepartmentHead` có:
-
-- `exams.review.list`
-- `exams.review.read`
-- `exams.review.decide`
-
-Role `Admin` có:
-
-- `users.manage`
-- `roles.assign`
-- `review-scopes.assign`
-- `audit.view`
-
-## 7. Quy trình tạo và kiểm duyệt đề
-
-1. Teacher tạo ma trận đề gồm môn học, chủ đề, độ khó, số câu và số điểm.
-2. Teacher gửi yêu cầu để AI và hệ thống tạo đề bản nháp.
-3. AI chỉ tạo nội dung ở trạng thái `DRAFT`.
-4. Teacher kiểm tra sơ bộ và gửi đề đi duyệt.
-5. Đề chuyển sang trạng thái `PENDING_REVIEW`.
-6. DepartmentHead thuộc đúng bộ môn kiểm tra đề và ma trận.
-7. Nếu hợp lý, DepartmentHead đồng ý và đề chuyển sang `APPROVED`.
-8. Nếu chưa hợp lý, DepartmentHead từ chối, ghi lý do và đề chuyển sang
-   `REJECTED`.
-9. Teacher chỉnh sửa ma trận hoặc yêu cầu AI tạo lại; phiên bản mới trở về
-   `DRAFT` và phải được gửi duyệt lại.
-
-Luồng trạng thái:
+Luồng cấp trường và cấp Bộ đều sử dụng các trạng thái dự kiến:
 
 ```text
 DRAFT → PENDING_REVIEW → APPROVED
                        → REJECTED → DRAFT (phiên bản mới)
+                       → NOT_SELECTED (chỉ đề cấp trường)
+                       → SUPERSEDED (chỉ bản đang chờ, khi nộp bản mới)
 ```
 
-Chỉ đề ở trạng thái `APPROVED` mới được phép sử dụng hoặc phát hành.
+Với đề cấp trường, `APPROVED` nghĩa là đề đã được Trưởng bộ môn chọn.
+Một kỳ kiểm tra chỉ có một phiên bản đề đang được chọn; việc đổi lựa chọn
+cần ghi audit và không làm mất lịch sử lựa chọn cũ. Với đề cấp Bộ,
+`APPROVED` nghĩa là đề đã được người xác nhận cấp Bộ chấp thuận. Việc
+chốt snapshot phát hành vẫn phải kiểm tra lại đủ ma trận và quyền theo
+kiến trúc đề thi của nhóm.
 
-## 8. Tiêu chí Trưởng bộ môn kiểm duyệt
+`NOT_SELECTED` khác `REJECTED`: không được chọn chưa đủ để kết luận đề
+sai. `SUPERSEDED` là phiên bản **đang chờ chọn** được thay bằng phiên bản
+mới của cùng giáo viên cho cùng đợt kiểm tra; bản cũ vẫn bất biến và
+được giữ để truy vết. Bản đã `APPROVED` không tự chuyển sang
+`SUPERSEDED` khi giáo viên nộp bản mới. Bản đã `NOT_SELECTED` hoặc
+`REJECTED` cũng giữ nguyên trạng thái lịch sử khi có bản mới; chỉ bản
+`PENDING_REVIEW` chưa được quyết định mới chuyển sang `SUPERSEDED`.
+Lịch sử có thể giữ một phiên bản từng được `APPROVED`; phiên bản hiện
+được dùng cho đợt kiểm tra luôn được xác định bằng con trỏ lựa chọn của
+`ExamEvent`, không chỉ dựa vào trạng thái của các phiên bản trong lịch sử.
 
-DepartmentHead cần kiểm tra tối thiểu:
+## 6. Quy tắc bắt buộc ở backend
 
-- Đúng môn học và chủ đề.
-- Đủ số câu và tổng điểm theo ma trận.
-- Tỉ lệ độ khó phù hợp với yêu cầu.
-- Nội dung câu hỏi rõ ràng và chính xác.
-- Đáp án và đáp án đúng hợp lý.
-- Không có câu trùng lặp trong cùng đề.
-- Câu do AI tạo không chứa thông tin sai hoặc nội dung ngoài phạm vi.
-- Nguồn tham khảo hoặc trích dẫn phù hợp nếu đề có sử dụng.
+- Không tin `schoolId`, `departmentId`, `examId` hoặc role do client tự
+  gửi. Backend lấy danh tính từ phiên đăng nhập và kiểm tra quan hệ gán
+  quyền với tài nguyên thật trong database.
+- Mọi API đọc danh sách, xem nội dung/đáp án, sửa, duyệt, tải và xuất đề
+  đều kiểm tra phạm vi trường, bộ môn hoặc kỳ thi cấp Bộ tương ứng.
+- AI và worker không có quyền tự chuyển đề sang `APPROVED`.
+- Teacher có thể chấp nhận gợi ý AI vào bản nháp mình sở hữu, nhưng
+  không thể chuyển đề hoặc `QuestionRevision` trong ngân hàng chung
+  sang `APPROVED` bằng thao tác đó.
+- Mọi câu trong đề được chọn/finalize phải tham chiếu `QuestionRevision`
+  đã được người có quyền duyệt, đúng scope và đúng phiên bản.
+- Người tạo không được duyệt chính phiên bản đề của mình, kể cả khi có
+  nhiều role hoặc là `MinistryAdmin`.
+- Quyết định dựa trên phiên bản cũ bị từ chối; chỉ phiên bản người duyệt
+  đã kiểm tra mới được xác nhận.
+- Chọn đề cấp trường phải bảo đảm không có hai đề cùng được chọn cho một
+  kỳ kiểm tra tại cùng thời điểm, kể cả khi hai người thao tác đồng thời.
+- Quyết định, con trỏ đề được chọn của `ExamEvent`, trạng thái các đề
+  liên quan và `AuditEvent` phải cùng một giao dịch. Nếu ghi bất kỳ phần
+  nào thất bại, không thay đổi lựa chọn và không lưu quyết định dở dang.
+- Việc cấp/thu hồi role và phạm vi phải được audit và có hiệu lực ở lần
+  kiểm tra quyền tiếp theo, kể cả khi người dùng còn phiên đăng nhập cũ.
+- Giao diện chỉ hiển thị thao tác được phép; backend vẫn là nơi quyết định.
 
-Nếu từ chối, DepartmentHead phải ghi lý do cụ thể để Teacher biết phần cần
-sửa hoặc tạo lại.
+## 7. Dữ liệu và hợp đồng cần thống nhất
 
-## 9. Quy tắc bảo mật
+Các thực thể hoặc trường tối thiểu dự kiến: `User`, `RoleAssignment`,
+`School`, `Department`, `DepartmentAssignment`, `ExamEvent` (cấp trường
+hoặc cấp Bộ), `ExamRevision`, `ReviewDecision`, `AuditEvent`. Một
+`ExamEvent` cấp trường cần xác định trường, môn, khối lớp và đợt kiểm
+tra để gom các đề cùng cạnh tranh. Mỗi đề cần biết cấp tổ chức, chủ sở
+hữu, người soạn, phiên bản, trạng thái và người quyết định; `ExamEvent`
+chỉ trỏ tới một phiên bản đang được chọn tại một thời điểm.
 
-- Backend phải kiểm tra role và phạm vi cho mỗi API.
-- Việc ẩn nút trên giao diện không thay thế kiểm tra quyền tại backend.
-- Teacher gọi trực tiếp API duyệt đề phải bị từ chối.
-- DepartmentHead chỉ được duyệt đề thuộc bộ môn được phân công.
-- Người tạo không được tự duyệt đề của mình dù có nhiều role.
-- Quyết định kiểm duyệt phải gắn với đúng phiên bản đề.
-- Đề đã thay đổi sau khi DepartmentHead mở phải được tải lại trước khi duyệt.
-- AI không được tự chuyển đề sang trạng thái `APPROVED`.
-- Mọi lần đổi role, đổi phạm vi, duyệt và từ chối phải được ghi audit.
+API quản lý role, tạo đề, danh sách chờ duyệt và quyết định duyệt phải
+định nghĩa rõ quyền và phạm vi. Trường dữ liệu và endpoint cụ thể sẽ
+được chốt cùng M1/M4 trước khi viết migration hoặc controller.
 
-## 10. Nhật ký kiểm toán
+## 8. Các trường hợp cần kiểm thử
 
-Mỗi lần duyệt hoặc từ chối cần lưu:
+- Teacher gọi trực tiếp API duyệt đề cấp trường bị từ chối (`403`).
+- DepartmentHead duyệt đúng trường–bộ môn và phiên bản thì thành công.
+- DepartmentHead xem hoặc duyệt đề trường khác hay bộ môn khác bị từ
+  chối (`403`), kể cả khi đổi ID trong URL.
+- SchoolAdmin và MinistryAdmin không được gọi API chọn đề cấp trường.
+- Nếu nhiều Teacher nộp đề cho cùng kỳ kiểm tra, chỉ một phiên bản được
+  chọn; đề còn lại là `NOT_SELECTED` hoặc `REJECTED` theo quyết định và
+  vẫn giữ lịch sử.
+- Hai DepartmentHead chọn đồng thời hai phiên bản khác nhau cho cùng
+  `ExamEvent`: chỉ một giao dịch thành công; giao dịch còn lại nhận `409`.
+- Khi Teacher nộp phiên bản sửa, bản đã nộp trước đó không bị thay đổi và
+  không còn là ứng viên chờ chọn. Nếu bản cũ đã được chọn, lựa chọn đó
+  chỉ đổi khi DepartmentHead chọn phiên bản khác.
+- Bản cũ `NOT_SELECTED` hoặc `REJECTED` không đổi trạng thái khi nộp bản mới.
+- Nếu không đề nào đạt, DepartmentHead trả lại kèm lý do; không có đề
+  nào chuyển sang `APPROVED`.
+- SchoolAdmin tạo tài khoản ở trường khác hoặc cấp role `MinistryAdmin`
+  bị từ chối (`403`).
+- MinistryAdmin chưa được giao kỳ thi không xem được nội dung đề cấp Bộ.
+- MinistryAdmin soạn đề cấp Bộ không tự xác nhận được; một tài khoản
+  khác được giao kỳ thi có thể xác nhận.
+- AI cố ghi trạng thái `APPROVED` bị từ chối.
+- Từ chối không có lý do bị từ chối (`400`); duyệt phiên bản cũ bị từ
+  chối (`409`).
+- Khi ghi audit hoặc cập nhật con trỏ lựa chọn thất bại, quyết định,
+  chuyển trạng thái và con trỏ đều rollback.
+- Sau khi thu hồi role hoặc phạm vi, phiên đăng nhập cũ không còn quyền.
 
-- ID người kiểm duyệt.
-- Role và phạm vi kiểm duyệt tại thời điểm quyết định.
-- ID đề và ID người yêu cầu tạo đề.
-- Phiên bản đề.
-- Hành động `APPROVE` hoặc `REJECT`.
-- Lý do từ chối.
-- Thời gian thực hiện.
-- Mã request hoặc correlation ID.
+## 9. Các quyết định triển khai còn mở
 
-Mỗi lần Admin thay đổi role hoặc phạm vi cần lưu:
-
-- ID Admin thực hiện thay đổi.
-- ID tài khoản bị thay đổi.
-- Role được gán hoặc thu hồi.
-- Phạm vi bộ môn trước và sau thay đổi.
-- Thời gian thực hiện.
-
-## 11. Các trường hợp kiểm thử
-
-- Teacher gọi API duyệt đề phải nhận lỗi 403.
-- DepartmentHead duyệt đề đúng bộ môn và đúng phiên bản phải thành công.
-- DepartmentHead duyệt đề ngoài bộ môn phải nhận lỗi 403.
-- Tài khoản có nhiều role tự duyệt đề của mình phải nhận lỗi 403.
-- DepartmentHead duyệt phiên bản đề cũ phải nhận lỗi 409.
-- Từ chối đề mà không ghi lý do phải nhận lỗi 400.
-- Duyệt thành công phải tạo ReviewDecision và AuditEvent.
-- Sau khi Admin thu hồi role DepartmentHead, tài khoản không thể tiếp tục duyệt.
-- Sau khi Admin đổi phạm vi bộ môn, quyền kiểm duyệt phải áp dụng theo phạm
-  vi mới ngay tại backend.
-
-## 12. Các điểm cần nhóm xác nhận
-
-- Một tài khoản có được giữ đồng thời role `Teacher` và `DepartmentHead` không.
-- DepartmentHead kiểm duyệt toàn bộ đề hay hệ thống còn yêu cầu duyệt riêng
-  từng câu hỏi AI trước khi ghép đề.
-- Cách biểu diễn phạm vi: bộ môn, môn học, khối lớp hoặc kết hợp các trường này.
-- Phương thức đăng nhập sẽ dùng cookie/session hay token.
+1. M3/M1 phải chốt API gán hai `MinistryAdmin` độc lập vào từng kỳ thi
+   và quy trình cấp/thu hồi quyền trước khi mở endpoint soạn/xác nhận.
+2. M1/M3/M4 phải chốt hợp đồng bản nháp câu AI → `QuestionRevision` →
+   review độc lập → câu đủ điều kiện chọn, rồi kiểm thử toàn luồng.
+3. Cách đăng nhập, quản lý phiên và bảo vệ nội dung đề thi vẫn theo
+   ADR 0003 đang đề xuất; cần chốt trước khi triển khai M3-02.
