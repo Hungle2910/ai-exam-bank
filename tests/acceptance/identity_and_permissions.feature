@@ -121,6 +121,14 @@ Feature: Ministry, school, department and teacher authorization
     Then the response status is 403
     And the exam remains pending review
 
+  Scenario: A Teacher who is also DepartmentHead cannot select their own exam
+    Given Alice is also a DepartmentHead for Mathematics at School A
+    And Alice submitted her own exam revision for selection
+    When Alice attempts to select that revision
+    Then the response status is 403
+    And no ReviewDecision is recorded
+    And the event's selected revision remains unchanged
+
   Scenario: A SchoolAdmin cannot manage another school's users
     When Sam directly attempts to change a School B user's role
     Then the response status is 403
@@ -164,6 +172,15 @@ Feature: Ministry, school, department and teacher authorization
     When Mai tries to confirm revision 1
     Then the response status is 403
     And the exam remains pending review
+
+  Scenario: An unassigned MinistryAdmin cannot confirm a national exam
+    Given Mai authored revision 1 of national exam N
+    And revision 1 is pending review
+    And another MinistryAdmin is not assigned to national exam N
+    When that unassigned MinistryAdmin attempts to confirm revision 1
+    Then the response status is 403
+    And revision 1 remains pending review
+    And no ReviewDecision is recorded
 
   Scenario: A MinistryAdmin cannot read an unassigned national exam
     Given Mai is not assigned to national exam M
@@ -217,3 +234,17 @@ Feature: Ministry, school, department and teacher authorization
     When Hanh tries to select the exam using the same session
     Then the response status is 403
     And the exam remains pending review
+
+  Scenario: Revoking a department assignment takes effect in an existing session
+    Given Hanh opened a School A Mathematics exam while assigned to that department
+    And Sam revoked Hanh's School A Mathematics assignment but kept her DepartmentHead role
+    When Hanh tries to select the exam using the same session
+    Then the response status is 403
+    And no ReviewDecision is recorded
+
+  Scenario: Revoking a Ministry exam assignment takes effect in an existing session
+    Given Mai opened national exam N while assigned to that event
+    And Mai's assignment to national exam N was revoked
+    When Mai requests its content or attempts to confirm it using the same session
+    Then the response status is 403
+    And no national exam content or ReviewDecision is returned

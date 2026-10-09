@@ -161,7 +161,7 @@ Mỗi dòng có một owner chính. Reviewer là thành viên review chéo, khô
 - Sau approve, M1 chạy lại assembly theo blueprint và chụp snapshot version-pinned. Có approved candidates không có nghĩa exam tự hoàn tất trước validation cuối.
 - API errors dùng contract thống nhất với code/message/validation errors/correlation ID; 401 thiếu identity, 403 thiếu quyền, 409 conflict revision/state. Endpoint kiểm quyền server, frontend chỉ phản ánh quyền.
 - Baseline quyền của gói này phải áp dụng `Teacher`, `DepartmentHead`, `SchoolAdmin`, `MinistryAdmin` theo permission matrix; kiểm tra school/department/event scope ở server. Người soạn không tự duyệt revision mình tạo, và quyền quản trị không mặc định cấp quyền xem đề thi mật hoặc duyệt nội dung.
-- MVP một tổ chức/trường. Dữ liệu có phạm vi môn/phân công; không mở multi-tenant SaaS ở MVP. Phải kiểm resource access trên question/exam/job/source, không chỉ role tổng quát.
+- MVP nhiều trường và kỳ thi cấp Bộ theo ADR 0004. Dữ liệu có phạm vi trường, môn/bộ môn hoặc kỳ thi được giao; chưa mở self-service multi-tenant SaaS. Phải kiểm resource access trên question/exam/job/source, không chỉ role tổng quát.
 - AWS: M2 provision tài nguyên; owner module cấu hình SDK/adapter/metrics; M3 review IAM/security. Không dùng access key hard-coded.
 - IaC/state, contracts và shared migration được review trước merge. Feature branch ngắn, PR nhỏ, CI green; mỗi owner tự tích hợp, lead giải quyết hợp đồng xung đột.
 
@@ -768,7 +768,7 @@ Các lưu ý đã đối chiếu tài liệu AWS chính thức:
 
 ## 14. MVP
 
-**Phạm vi MVP chính xác đề xuất:** một tổ chức/trường, một loại câu hỏi MCQ một đáp án đúng, một bộ môn/chủ đề demo có thể mở rộng bằng metadata, một CSV format, một frontend và .NET modular monolith + durable workers trên AWS.
+**Phạm vi MVP hiện hành:** nhiều trường và kỳ thi cấp Bộ theo ADR 0004; một loại câu hỏi MCQ một đáp án đúng, một CSV format, một frontend và .NET modular monolith + durable workers trên AWS. Demo phải chứng minh cô lập ít nhất hai trường và hai tài khoản Bộ độc lập; các hạng mục cũ bên dưới cần re-estimate.
 
 1. Login/logout/session expiry; bốn role trong permission matrix; server-side authorization theo trường/bộ môn/kỳ thi và user-role management tối thiểu.
 2. Question Bank CRUD, subject/topic/difficulty metadata, search/filter/pagination, immutable revisions/history, edit approved tạo draft mới.

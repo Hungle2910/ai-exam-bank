@@ -58,7 +58,7 @@ của mình. Không role nào được tự nâng quyền hoặc tự đổi ph�
 | Gửi đề cấp trường đi chọn | Có, với đề của mình | Khi có role Teacher | Không | Không |
 | Xem nội dung đề chờ duyệt cấp trường | Không | Có, theo trường–bộ môn | Không mặc định | Không mặc định |
 | Chọn hoặc trả lại đề cấp trường | Không | Có, theo trường–bộ môn | Không | Không |
-| Quản lý Teacher/DepartmentHead | Không | Không | Trong trường mình | Chỉ khi xử lý quản trị cấp hệ thống |
+| Quản lý Teacher/DepartmentHead | Không | Không | Trong trường mình | Không |
 | Quản lý SchoolAdmin và trường | Không | Không | Không | Có |
 | Xem audit | Việc liên quan đến mình | Trong phạm vi phụ trách | Trong trường mình | Toàn hệ thống theo quyền quản trị |
 | Tự soạn đề kỳ thi cấp Bộ | Không | Không | Không | Có, khi được giao kỳ thi |
