@@ -1,6 +1,6 @@
 # Architecture baseline
 
-**Status:** Proposed; foundation ADRs và implementation issues quyết định cấu hình cuối. Không có runtime code được claim trong tài liệu này.
+**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. PR nền có API host với liveness và HTTP Problem Details, chưa có các module nghiệp vụ hoặc AWS runtime.
 
 ## Module boundaries
 
@@ -54,7 +54,7 @@ Endpoint names là proposed, không implemented:
 - `/jobs/*`, `/admin/infrastructure/health`: status, recovery và protected health.
 - Knowledge/difficulty/Lex adapters reused by authenticated .NET use cases; không tạo anonymous bypass.
 
-Error contract có `code`, `message`, validation details và correlation ID. Semantics: 401 missing/expired identity; 403 denied permission/scope; 409 state/revision conflict. OpenAPI cần examples và negative cases.
+API host hiện trả RFC Problem Details cho JSON clients khi có lỗi HTTP chưa được xử lý hoặc route không tồn tại, kèm `traceId` để đối chiếu log. Contract nghiệp vụ cần thêm `code` ổn định, thông điệp an toàn, validation details và correlation ID; semantics: 401 missing/expired identity; 403 denied permission/scope; 409 state/revision conflict. OpenAPI cần examples và negative cases khi có endpoint nghiệp vụ.
 
 ## Decisions to record
 

@@ -35,5 +35,5 @@ jobs:
         run: dotnet restore AiExamBank.slnx
       - name: Build application
         run: dotnet build AiExamBank.slnx --configuration Release --no-restore --warnaserror
-      - name: Smoke test liveness endpoint
+      - name: Smoke test API liveness and error response
         run: python tests/smoke/test_api_health.py

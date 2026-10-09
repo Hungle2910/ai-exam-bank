@@ -8,7 +8,7 @@
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
 
-**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks.
+**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe, lỗi HTTP chuẩn Problem Details và build settings dùng chung. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks. [Mức hoàn thành khung .NET](docs/DOTNET_FOUNDATION.md).
 
 [Delivery board](https://github.com/users/Hungle2910/projects/4) · [Issues](https://github.com/Hungle2910/ai-exam-bank/issues) · [Architecture](docs/ARCHITECTURE.md) · [Getting involved](CONTRIBUTING.md) · [Readiness review](docs/REPOSITORY_REVIEW.md)
 
@@ -84,7 +84,7 @@ python tests/smoke/test_api_health.py
 
 The checker inspects tracked files, local Markdown file links, forbidden environment/state/backup files and private-key markers. It does not validate external URLs, heading anchors, full Markdown syntax or application security. Stage new files before checking them locally.
 
-**Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. M1–M5 will add module behavior, Worker/Web, database migrations, dependency lockfiles and safe config examples with the relevant implementation PRs. See [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
+**Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. JSON clients receive RFC Problem Details with a trace ID for unknown routes. M1–M5 will add module behavior, Worker/Web, database migrations, dependency lockfiles and safe config examples with the relevant implementation PRs. See [khung .NET và các bước còn lại](docs/DOTNET_FOUNDATION.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
 
 ## Delivery roadmap
 
@@ -106,7 +106,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 - Private backend/DB, least-privilege IAM, runtime roles, controlled SSM access and safe secret delivery.
 - Durable recovery, measured query performance, logs/metrics with bounded retention, alert delivery proof and tested restores.
 - Region-specific cost estimates, token/attempt limits, resource tagging and cleanup of idle ML/NAT/storage resources.
-- PRs with independent review, required repository CI, pinned Actions, Dependabot and documented ownership. API build/liveness checks run in Application CI; product tests and deploy checks join CI with their implementations.
+- PRs with independent review, required repository CI, pinned Actions, Dependabot and documented ownership. API build/liveness/error checks run in Application CI; product tests and deploy checks join CI with their implementations.
 
 Design review follows the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html). This is an engineering baseline, not an AWS certification or claim of production readiness. [AWS strategy](docs/AWS_STRATEGY.md) · [Current controls and remaining gates](docs/REPOSITORY_REVIEW.md).
 
@@ -115,6 +115,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 | Document | Purpose |
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | Modules, domain invariants, states and API boundaries |
+| [.NET foundation](docs/DOTNET_FOUNDATION.md) | Verified baseline, missing gates and module implementation order |
 | [AWS strategy](docs/AWS_STRATEGY.md) | Network, IAM, delivery, observability, cost and lifecycle |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Detailed 10-week tasks, dependencies, outputs and DoD |
 | [Team](docs/TEAM.md) | Roles, vertical slices, reviewer ownership and capacity |

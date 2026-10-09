@@ -45,7 +45,25 @@ def main():
                     payload = json.load(response)
                     if response.status != 200 or payload != {"status": "alive"}:
                         raise RuntimeError(f"Unexpected liveness response: {response.status} {payload}")
-                    print("API liveness smoke test passed.")
+                    try:
+                        urllib.request.urlopen(
+                            urllib.request.Request(
+                                f"http://127.0.0.1:{port}/missing",
+                                headers={"Accept": "application/json"},
+                            ),
+                            timeout=1,
+                        )
+                        raise RuntimeError("Unknown route returned success")
+                    except urllib.error.HTTPError as error:
+                        problem = json.load(error)
+                        if (
+                            error.code != 404
+                            or problem.get("status") != 404
+                            or not problem.get("traceId")
+                            or "application/problem+json" not in error.headers.get("Content-Type", "")
+                        ):
+                            raise RuntimeError(f"Unexpected error response: {error.code} {problem}")
+                    print("API liveness and error response smoke tests passed.")
                     return 0
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(0.2)
