@@ -8,7 +8,7 @@
 
 Branch đề xuất: `feat/M4-02-question-bank`, `fix/M5-03-idempotency`, `docs/M2-05-deploy-runbook`. PR nhỏ, một outcome coherent, link issue bằng `Refs #N` hoặc `Closes #N` khi toàn DoD đạt. Commits có purpose rõ; không commit credentials/keys/DB dumps/datasets không được phép.
 
-Tạo nhánh từ `main` và mở PR trở lại `main`; dùng thống nhất tiền tố `feat/`, `fix/`, `docs/`, `chore/`. Môi trường AWS `dev` là môi trường triển khai, không yêu cầu nhánh Git `Dev`. Nhánh `Dev` cũ chỉ được ngừng sử dụng sau khi kiểm tra công việc chưa tích hợp. Xem [ADR về repo](docs/adr/0001-repository-workflow.md).
+Tạo nhánh từ `main` và mở PR trở lại `main`; dùng thống nhất tiền tố `feat/`, `fix/`, `docs/`, `chore/`. Môi trường AWS `dev` là môi trường triển khai. Nhánh Git `Dev` cũ đã được gỡ sau khi xác nhận không có commit riêng hay PR đang nhắm vào nó. Xem [ADR về repo](docs/adr/0001-repository-workflow.md).
 
 ## Pull request requirements
 
