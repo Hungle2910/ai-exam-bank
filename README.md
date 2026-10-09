@@ -82,7 +82,7 @@ dotnet build AiExamBank.slnx --configuration Release
 python tests/smoke/test_api_health.py
 ```
 
-The checker inspects tracked files, local Markdown file links, forbidden environment/state/backup files and private-key markers. It does not validate external URLs, heading anchors, full Markdown syntax or application security. Stage new files before checking them locally.
+The checker inspects tracked files, local Markdown file links, forbidden environment/state/backup files, private-key markers and module reviewer consistency with CODEOWNERS. It does not validate external URLs, heading anchors, full Markdown syntax or application security. Stage new files before checking them locally.
 
 **Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. JSON clients receive RFC Problem Details with a trace ID for unknown routes. M1–M5 will add module behavior, Worker/Web, database migrations, dependency lockfiles and safe config examples with the relevant implementation PRs. See [khung .NET và các bước còn lại](docs/DOTNET_FOUNDATION.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
 

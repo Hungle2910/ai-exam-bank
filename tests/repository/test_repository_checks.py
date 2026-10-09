@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.check_repository import inspect_file
+from tools.check_repository import inspect_file, inspect_module_ownership
 
 
 class RepositoryChecksTests(unittest.TestCase):
@@ -56,6 +56,19 @@ class RepositoryChecksTests(unittest.TestCase):
                      'appsettings.Local.json.example']:
             with self.subTest(name=name):
                 self.assertEqual(inspect_file(self.root, self.write(name, '{}')), [])
+
+    def test_module_review_routing_matches_documented_owner(self):
+        self.write('.github/CODEOWNERS', '/src/Modules/Knowledge/ @flwndyy @Hungle2910\n')
+        self.write('src/Modules/README.md',
+                   '| Module | Primary owner | Review partner |\n'
+                   '|---|---|---|\n'
+                   '| Knowledge | @flwndyy | @Lancelot-sys25 |\n')
+        self.assertEqual(len(inspect_module_ownership(self.root)), 1)
+        self.write('src/Modules/README.md',
+                   '| Module | Primary owner | Review partner |\n'
+                   '|---|---|---|\n'
+                   '| Knowledge | @flwndyy | @Hungle2910 |\n')
+        self.assertEqual(inspect_module_ownership(self.root), [])
 
 
 if __name__ == '__main__':
