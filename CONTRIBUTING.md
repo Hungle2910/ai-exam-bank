@@ -30,7 +30,7 @@ Chạy `python -m unittest discover -s tests/repository -v` và `python tools/ch
 
 See [bot review and manual author merge](docs/BOT_REVIEW.md) for installation,
 verification, independent-human exceptions and daily workflow. The author clicks
-Squash and merge after approval and CI. Bot-only approval is not active until
+Create a merge commit after approval and CI. Bot-only approval is not active until
 rollout gates pass.
 
 ## Documentation and evidence

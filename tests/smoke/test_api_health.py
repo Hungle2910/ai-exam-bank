@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROJECT = ROOT / "src" / "Api" / "AiExamBank.Api.csproj"
+ASSEMBLY = ROOT / "src" / "Api" / "bin" / "Release" / "net10.0" / "AiExamBank.Api.dll"
 
 
 def available_port():
@@ -21,19 +21,38 @@ def available_port():
         return sock.getsockname()[1]
 
 
+def stop_api(process, port):
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with socket.socket() as sock:
+            if sock.connect_ex(("127.0.0.1", port)) != 0:
+                return
+        time.sleep(0.1)
+    raise RuntimeError(f"API port {port} remained open after process exit")
+
+
 def main():
+    if not ASSEMBLY.is_file():
+        print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
+        return 1
     port = available_port()
     address = f"http://127.0.0.1:{port}/health/live"
     environment = os.environ.copy()
     environment["ASPNETCORE_URLS"] = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
-        ["dotnet", "run", "--project", str(PROJECT), "--configuration", "Release",
-         "--no-build", "--no-launch-profile"],
+        ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
         env=environment,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
+        stderr=subprocess.DEVNULL,
     )
     try:
         deadline = time.monotonic() + 20
@@ -72,12 +91,7 @@ def main():
         print(error, file=sys.stderr)
         return 1
     finally:
-        process.terminate()
-        try:
-            process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.communicate()
+        stop_api(process, port)
 
 
 if __name__ == "__main__":
