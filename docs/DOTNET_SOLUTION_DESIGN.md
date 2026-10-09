@@ -1,17 +1,17 @@
 # Thiết kế solution .NET cho AI Exam Bank
 
-**Trạng thái:** Đề xuất để M1–M5 review trong PR #59. **Owner:** M1 / Le Doan Gia Hung. **Ngày:** 09/10/2026. Đây là thiết kế triển khai theo từng lát cắt; cây bên dưới không khẳng định các project tương lai đã tồn tại. [ADR 0002](adr/0002-dotnet-module-boundaries.md) ghi quyết định và đánh đổi.
+**Trạng thái:** Thiết kế mục tiêu để M1–M5 review. **Owner:** M1 / Le Doan Gia Hung. **Ngày:** 09/10/2026. Solution hiện có API, bảy module projects chứa hợp đồng/giá trị đầu tiên và ba test projects; database, Worker, Web và các use case nghiệp vụ chưa được triển khai. [ADR 0002](adr/0002-dotnet-module-boundaries.md) ghi quyết định và đánh đổi.
 
 ## Mục tiêu và ràng buộc
 
 - MVP cho một trường/tổ chức: ngân hàng câu hỏi, duyệt, ma trận đề, AI draft qua Bedrock, đề cuối bất biến, import và job bền vững.
 - Năm thành viên phát triển song song trong 10 tuần; một database quan hệ và một đường phát hành AWS cần kiểm thử được. Không có nhu cầu scale độc lập từng module đã được chứng minh.
 - Một **modular monolith**: `Api` phục vụ HTTP, `Worker` xử lý job sau khi hợp đồng M5 được duyệt. Hai host dùng cùng domain/contracts và database, nhưng có vòng đời/triển khai riêng. Frontend gọi API, không gọi trực tiếp AWS hoặc database.
-- Ưu tiên ít project và ít lớp trừu tượng. Tạo project cùng hành vi chạy được, test và owner của nó; không tạo các class/project rỗng chỉ để đủ sơ đồ.
+- Ưu tiên ít project và ít lớp trừu tượng. Scaffold module có hợp đồng/giá trị thực và owner; mỗi use case tiếp theo phải có hành vi chạy được cùng test, không thêm class rỗng chỉ để đủ sơ đồ.
 
 ## Cây solution mục tiêu
 
-Ký hiệu `✓` là đã có trong PR nền; `+` là tạo khi lát cắt đầu tiên cần nó.
+Ký hiệu `✓` là đã có trong scaffold hiện tại; `+` là tạo khi lát cắt đầu tiên cần nó. Module project hiện có không đồng nghĩa module nghiệp vụ đã hoàn thành.
 
 ```text
 AiExamBank.slnx                         ✓ solution duy nhất
@@ -20,25 +20,27 @@ src/
   Api/                                  ✓ HTTP composition root, health, errors
     AiExamBank.Api.csproj
   Modules/
-    Identity/                            + M3: identity, policy, scoped access
-    Review/                              + M3: decision, audit, state transition
-    Questions/                           + M4: question/revision/taxonomy
-    Knowledge/                           + M4: source, citation, RAG adapter
-    Exams/                               + M1: blueprint, selection, snapshot
-    Import/                              + M2: CSV validate/preview/commit
-    Jobs/                                + M5: durable job/attempt/retry
+    Identity/                            ✓ actor contract; + auth/policy
+    Review/                              ✓ decision request; + audit/transition
+    Questions/                           ✓ revision reference; + CRUD/taxonomy
+    Knowledge/                           ✓ citation; + source/RAG adapter
+    Exams/                               ✓ blueprint slot; + selection/snapshot
+    Import/                              ✓ batch reference; + validate/commit
+    Jobs/                                ✓ job reference; + durable lifecycle
   Persistence/                           + một EF Core DbContext và migration stream
   Worker/                                + host khi M5 có handler thật
   Web/                                   + frontend sau ADR chọn framework
 tests/
   smoke/                                 ✓ HTTP baseline
   repository/                            ✓ repo/ownership checks
-  Modules/<Module>.Tests/                + domain/use-case tests theo owner
+  Modules/{Questions,Exams}.Tests/       ✓ first domain validation tests
+  Architecture.Tests/                   ✓ module dependency test
+  Modules/<OtherModule>.Tests/           + use-case tests theo owner
   Integration/                           + DB, auth, transaction, API tests
   EndToEnd/                              + hành trình người dùng sau khi có UI
 ```
 
-Mỗi module là **một project .NET** khi có hành vi đầu tiên. Bên trong project, bắt đầu bằng các thư mục `Domain/`, `Application/`, `Contracts/`, `Infrastructure/` và `Endpoints/` **chỉ khi thư mục có code thực**. `Contracts/` là API công khai của module cho module khác; `Infrastructure/` chỉ chứa adapter ngoài database của module (nếu có). EF mappings/repositories nằm trong `Persistence/<Module>/` và triển khai interface do module sở hữu. Nếu phụ thuộc provider SDK làm domain khó kiểm soát, tách adapter thành project riêng tại thời điểm đó. Không cần mặc định 3–4 project cho mỗi module.
+Mỗi module hiện là **một project .NET** với hợp đồng/giá trị nhỏ để solution và ownership ổn định; đây chưa phải hành vi nghiệp vụ hoàn chỉnh. Bên trong project, bắt đầu bằng các thư mục `Domain/`, `Application/`, `Contracts/`, `Infrastructure/` và `Endpoints/` **chỉ khi thư mục có code thực**. `Contracts/` là API công khai của module cho module khác; `Infrastructure/` chỉ chứa adapter ngoài database của module (nếu có). EF mappings/repositories nằm trong `Persistence/<Module>/` và triển khai interface do module sở hữu. Nếu phụ thuộc provider SDK làm domain khó kiểm soát, tách adapter thành project riêng tại thời điểm đó. Không cần mặc định 3–4 project cho mỗi module.
 
 `Persistence` được tạo cùng lựa chọn DB/EF đã review. Project này tham chiếu module contracts/domain; module **không tham chiếu ngược** `Persistence`. Một DbContext và một migration stream giúp approval + audit + đổi trạng thái revision nằm trong một transaction. Mỗi owner đặt entity configuration/query của mình trong `Persistence/<Module>/`; M1 điều phối migration liên module và reviewer của bảng liên quan phải duyệt. Không để hai PR cùng tự tạo migration trên cùng schema rồi merge không kiểm tra thứ tự. Đây là **đề xuất**, chưa phải quyết định DB engine/hosting cuối cùng.
 

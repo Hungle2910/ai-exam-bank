@@ -8,7 +8,7 @@
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
 
-**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe, lỗi HTTP chuẩn Problem Details và build settings dùng chung. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks. [Thiết kế solution .NET](docs/DOTNET_SOLUTION_DESIGN.md) · [Mức hoàn thành](docs/DOTNET_FOUNDATION.md).
+**Status: .NET solution scaffold.** Repository có API host, bảy module projects với hợp đồng/giá trị đầu tiên, MSTest domain/architecture và build settings dùng chung. API hiện chỉ phục vụ liveness/Problem Details; chưa có quy trình nghiệp vụ end-to-end, database, Worker xử lý job, Web hoặc AWS deployment. Badge trên phản ánh repository checks, không phải product readiness. [Mở bằng Visual Studio](docs/VISUAL_STUDIO_SETUP.md) · [Thiết kế solution](docs/DOTNET_SOLUTION_DESIGN.md) · [Mức hoàn thành](docs/DOTNET_FOUNDATION.md).
 
 [Delivery board](https://github.com/users/Hungle2910/projects/4) · [Issues](https://github.com/Hungle2910/ai-exam-bank/issues) · [Architecture](docs/ARCHITECTURE.md) · [Getting involved](CONTRIBUTING.md) · [Readiness review](docs/REPOSITORY_REVIEW.md)
 
@@ -79,12 +79,13 @@ Read the architecture and your issue's dependencies/acceptance criteria before i
 python -m unittest discover -s tests/repository -v
 python tools/check_repository.py
 dotnet build AiExamBank.slnx --configuration Release
+dotnet test AiExamBank.slnx --configuration Release
 python tests/smoke/test_api_health.py
 ```
 
 The checker inspects tracked files, local Markdown file links, forbidden environment/state/backup files, private-key markers and module reviewer consistency with CODEOWNERS. It does not validate external URLs, heading anchors, full Markdown syntax or application security. Stage new files before checking them locally.
 
-**Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. JSON clients receive RFC Problem Details with a trace ID for unknown routes. M1–M5 will add module behavior, Worker/Web, database migrations, dependency lockfiles and safe config examples with the relevant implementation PRs. See [khung .NET và các bước còn lại](docs/DOTNET_FOUNDATION.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
+**Run the API locally:** `dotnet run --project src/Api/AiExamBank.Api.csproj --urls http://127.0.0.1:5000`, then open `http://127.0.0.1:5000/health/live`. The endpoint reports process liveness only. JSON clients receive RFC Problem Details with a trace ID for unknown routes. M1–M5 will add module use cases, Worker/Web, database migrations and safe config with the relevant implementation PRs. See [Visual Studio setup](docs/VISUAL_STUDIO_SETUP.md), [khung .NET và các bước còn lại](docs/DOTNET_FOUNDATION.md), [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [repository workflow ADR](docs/adr/0001-repository-workflow.md).
 
 ## Delivery roadmap
 
@@ -117,6 +118,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 | [Architecture](docs/ARCHITECTURE.md) | Modules, domain invariants, states and API boundaries |
 | [.NET foundation](docs/DOTNET_FOUNDATION.md) | Verified baseline, missing gates and module implementation order |
 | [.NET solution design](docs/DOTNET_SOLUTION_DESIGN.md) | Target projects, dependencies, contracts, persistence, testing and owner gates |
+| [Visual Studio setup](docs/VISUAL_STUDIO_SETUP.md) | Open/build/run/test the solution and understand current project status |
 | [AWS strategy](docs/AWS_STRATEGY.md) | Network, IAM, delivery, observability, cost and lifecycle |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Detailed 10-week tasks, dependencies, outputs and DoD |
 | [Team](docs/TEAM.md) | Roles, vertical slices, reviewer ownership and capacity |
