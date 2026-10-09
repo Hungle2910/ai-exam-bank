@@ -35,6 +35,7 @@ tests/
   repository/                            ✓ repo/ownership checks
   Modules/{Questions,Exams}.Tests/       ✓ first domain validation tests
   Architecture.Tests/                   ✓ module dependency test
+  Modules/Jobs.Tests/                    ✓ scoped job contract validation
   Modules/<OtherModule>.Tests/           + use-case tests theo owner
   Integration/                           + DB, auth, transaction, API tests
   EndToEnd/                              + hành trình người dùng sau khi có UI

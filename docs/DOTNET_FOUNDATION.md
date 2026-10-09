@@ -5,10 +5,10 @@
 | Area | Implemented evidence | Remaining limit |
 |---|---|---|
 | Toolchain | `global.json` pins SDK `10.0.400`; common props enable net10.0, nullable types, deterministic build and warnings as errors; MSTest version is pinned centrally | Production runtime and deployment are not selected or tested |
-| Solution | `AiExamBank.slnx` opens/builds the API, seven owned module projects and three test projects | Only small contracts/value objects and two domain validation examples exist; no product workflow is wired through the API |
+| Solution | `AiExamBank.slnx` opens/builds the API, seven owned module projects and four test projects | Only small contracts/value objects and three module validation examples exist; no product workflow is wired through the API |
 | HTTP | `/health/live` and JSON Problem Details smoke tests | No authentication, resource endpoints or dependency readiness |
 | Boundaries | Module ownership, explicit project references and architecture test reject host/provider SDK dependencies in modules | Data ownership, cross-module writes and transaction contracts need feature review |
-| CI | Release build, seven MSTest cases and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
+| CI | Release build, Jobs contract tests, other small MSTest cases and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
 
 This is a **Visual Studio-ready technical scaffold**, not a complete exam-bank application. In particular, `Persistence/README.md` and `Worker/README.md` record missing decisions; neither contains a production project. The planned frontend is also absent.
 
