@@ -5,7 +5,8 @@ on:
     branches: [main]
     types: [opened, reopened, synchronize, edited, ready_for_review]
 
-permissions: {}
+permissions:
+  actions: read
 
 jobs:
   promotion-source:
@@ -34,5 +35,23 @@ jobs:
           )"
           if [[ "$tested_sha" != "$HEAD_SHA" ]]; then
             echo "Declare the current dev HEAD as the tested commit in the promotion PR."
+            exit 1
+          fi
+      - name: Require successful Application CI on the exact dev commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs="$(
+            curl --fail-with-body --silent --show-error \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$BASE_REPO/actions/workflows/application-ci.yml/runs?branch=dev&event=push&status=success&per_page=100"
+          )"
+          if ! jq -e --arg sha "$HEAD_SHA" \
+            'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "dev" and .event == "push" and .conclusion == "success")' \
+            <<< "$runs" > /dev/null; then
+            echo "Application CI must pass on this exact dev commit before promotion."
             exit 1
           fi
