@@ -1,6 +1,6 @@
 # Architecture baseline
 
-**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. PR nền có API host với liveness và HTTP Problem Details, chưa có các module nghiệp vụ hoặc AWS runtime.
+**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. PR nền có API host với liveness và HTTP Problem Details, chưa có các module nghiệp vụ hoặc AWS runtime. Xem [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md) cho cây project và quy tắc phụ thuộc.
 
 ## Module boundaries
 

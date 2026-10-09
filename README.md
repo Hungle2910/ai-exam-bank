@@ -8,7 +8,7 @@
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
 
-**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe, lỗi HTTP chuẩn Problem Details và build settings dùng chung. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks. [Mức hoàn thành khung .NET](docs/DOTNET_FOUNDATION.md).
+**Status: Foundation.** Repository có tài liệu, backlog, repository checks và một .NET API host với liveness probe, lỗi HTTP chuẩn Problem Details và build settings dùng chung. Chưa có chức năng nghiệp vụ, database, Worker/Web, IaC deployment hoặc product tests; badge trên chỉ phản ánh repository checks. [Thiết kế solution .NET](docs/DOTNET_SOLUTION_DESIGN.md) · [Mức hoàn thành](docs/DOTNET_FOUNDATION.md).
 
 [Delivery board](https://github.com/users/Hungle2910/projects/4) · [Issues](https://github.com/Hungle2910/ai-exam-bank/issues) · [Architecture](docs/ARCHITECTURE.md) · [Getting involved](CONTRIBUTING.md) · [Readiness review](docs/REPOSITORY_REVIEW.md)
 
@@ -116,6 +116,7 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | Modules, domain invariants, states and API boundaries |
 | [.NET foundation](docs/DOTNET_FOUNDATION.md) | Verified baseline, missing gates and module implementation order |
+| [.NET solution design](docs/DOTNET_SOLUTION_DESIGN.md) | Target projects, dependencies, contracts, persistence, testing and owner gates |
 | [AWS strategy](docs/AWS_STRATEGY.md) | Network, IAM, delivery, observability, cost and lifecycle |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Detailed 10-week tasks, dependencies, outputs and DoD |
 | [Team](docs/TEAM.md) | Roles, vertical slices, reviewer ownership and capacity |

@@ -1,6 +1,6 @@
 # .NET foundation status and next gates
 
-**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. This page describes the proposed foundation in PR #59; until that PR is reviewed and merged into `dev`, it is not part of the shared integration branch.
+**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. This page describes the proposed foundation in PR #59; until that PR is reviewed and merged into `dev`, it is not part of the shared integration branch. The detailed target structure and dependency rules are in the [solution design](DOTNET_SOLUTION_DESIGN.md).
 
 ## What works in the foundation PR
 
@@ -35,6 +35,7 @@ src/
   Api/                 HTTP composition root; no business rules
   Modules/
     <OwnedModule>/     domain, application and infrastructure code owned by one team member
+  Persistence/         add with the reviewed DB/EF decision; one migration stream
   Worker/              add with the first durable job handler (M5)
 tests/
   smoke/               HTTP host checks already present
