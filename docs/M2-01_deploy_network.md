@@ -143,6 +143,7 @@ Wireframes: see section 7.1 (upload, preview, commit result, health panel).
 
 - Committed questions remain in DRAFT status and require human review before publishing.
 - The commit request sends the idempotency key in the `Idempotency-Key` header; a missing key is rejected. Retrying the same batch with the same key returns the prior result without creating duplicate questions (M5 confirmation required).
+- A batch can transition to COMMITTED only once. Recommitting an already committed batch with a different `Idempotency-Key` returns `409 Conflict` without creating another `QuestionRevision`; the state check and first commit must be atomic (M4/M5 confirmation required).
 - Row-level errors do not fail the entire batch: valid rows commit successfully, failed rows record error_code and error_message.
 - Enforce server-side authorization (RBAC/resource permissions), never trust client-side validation.
 
@@ -303,6 +304,7 @@ Math,Algebra,easy,,1,2,3,4,A,
 | Upload non-CSV file | Failure | Rejected with clear error response | | |
 | Upload exceeding size limit | Failure | Rejected, no batch created | | |
 | Commit twice with the same `Idempotency-Key` header | API | Second attempt returns the prior result and creates no duplicate questions | | |
+| Recommit a committed batch with a new `Idempotency-Key` header | Failure | `409 Conflict`; no additional `QuestionRevision` is created | | |
 | Commit without the `Idempotency-Key` header | Failure | Request rejected; no questions committed | | |
 | Unauthorized user attempts upload | Permission | 403 Forbidden | | |
 | User accesses another user's batch | Permission | 403 Forbidden or 404 Not Found | | |
