@@ -1,0 +1,25 @@
+name: Main promotion
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  promotion-source:
+    name: Promotion source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      BASE_REPO: ${{ github.repository }}
+    steps:
+      - name: Require the protected dev branch
+        shell: bash
+        run: |
+          if [[ "$HEAD_REF" != "dev" || "$HEAD_REPO" != "$BASE_REPO" ]]; then
+            echo "Only a pull request from this repository's protected dev branch may target main."
+            exit 1
+          fi

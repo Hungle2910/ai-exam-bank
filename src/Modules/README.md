@@ -5,7 +5,8 @@ This directory holds the application modules of the .NET modular monolith. A mod
 | Module | Primary owner | Review partner | Boundary |
 |---|---|---|---|
 | Identity and Review | @Lancelot-sys25 | @Hungle2910 | Identity, permissions, human decisions and audit |
-| Questions and Knowledge | @flwndyy | @Lancelot-sys25 | Question revisions, taxonomy, source/citation lifecycle |
+| Questions | @flwndyy | @Lancelot-sys25 | Question revisions and taxonomy |
+| Knowledge | @flwndyy | @Hungle2910 | Source/citation lifecycle and RAG contracts |
 | Exams | @Hungle2910 | @flwndyy | Blueprints, approved-only selection and final snapshots |
 | Import | @HuuPhuoc-NH | @flwndyy | Validation, preview and idempotent import requests |
 | Jobs | @TranGiaBao2005 | @HuuPhuoc-NH | Durable state, attempts, leases, retry and telemetry |

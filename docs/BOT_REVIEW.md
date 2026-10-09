@@ -3,37 +3,39 @@
 ## Rollout status
 
 Repository auto-merge is disabled. CodeRabbit is installed only on
-Hungle2910/ai-exam-bank. Bot review is running on this configuration PR;
-successful re-review and approval of the latest commit are not yet verified.
-Existing main protection remains in force; do not remove required checks or bypass
-approval to bootstrap the bot. CI currently checks repository hygiene, not product correctness.
+Hungle2910/ai-exam-bank. It has requested changes on PR #57; clean re-review,
+approval of the latest commit and conflict handling still need explicit verification.
+Protection on `dev` and `main` remains in force; do not remove required checks or bypass
+approval to bootstrap the bot. CI has repository hygiene and an API liveness baseline, not product correctness.
 
-## Activate
+## Verification gates
 
 1. Confirm the [CodeRabbit GitHub App installation](https://github.com/settings/installations)
    remains limited to **Hungle2910/ai-exam-bank**.
-2. Review this configuration PR with an independent human reviewer and merge it.
-3. Open a small disposable PR. Confirm review on creation and after a new commit.
+2. Open a small disposable PR into `dev`. Confirm review on creation and after a new commit.
    CodeRabbit must request changes for an actionable finding, then review the fix
    and approve the latest commit. Verify GitHub counts its approval.
-4. Check an intentionally failing CI change and a conflicting branch separately;
+3. Check an intentionally failing CI change and a conflicting branch separately;
    both must remain unmergeable. Close the disposable PRs without merging faulty code.
-5. Record actual CodeRabbit check names and producing App from that run before
+4. Record actual CodeRabbit check names and producing App from that run before
    adding any required bot check. Review completion alone is not a clean-review verdict.
-6. Before allowing bot-only approval, enforce the independent-human policy below
+5. Before allowing bot-only approval, enforce the independent-human policy below
    with a tested required check or eligible code-owner rules. Until then, every PR
    still needs independent human review by team policy.
 
 ## Daily workflow after activation
 
-- Open a focused PR linked to its issue. Keep incomplete work in Draft.
+- Open a focused task PR into `dev` linked to its issue. Keep incomplete work in Draft.
 - Bot reviews the diff; GitHub Actions runs checks. Fix actionable defects, add
   appropriate regression tests, then push. The bot reviews new commits automatically.
 - Let the bot verify addressed threads. Clicking Resolve is not evidence of a fix.
   Discuss false positives with a reviewer and record the reason.
 - Once the latest commit is approved, CI passes, discussions are resolved and
   GitHub reports no conflicts, the author with Write access manually clicks
-  Squash and merge. Auto-merge is disabled for this repository.
+  Create a merge commit. Auto-merge is disabled for this repository.
+- After integration testing on `dev`, open a separate `dev → main` PR with the
+  tested commit SHA, release scope and evidence. An independent reviewer approves
+  it before the maintainer manually creates the merge commit.
 - New changes invalidate old approvals. Review limits or outages mean waiting or
   obtaining a human review under the repository policy, not forcing a bot approval.
 
@@ -46,8 +48,8 @@ Author overrides are disabled; non-author overrides still exist in CodeRabbit.
 IAM/infrastructure, authentication/authorization, migrations, deployment workflows,
 CODEOWNERS, merge gates and bot configuration require an independent human reviewer.
 Gia Hưng reviews or requests a qualified member. For Gia Hưng's own PR, another
-member with Write access reviews. GitHub usernames for the other members must be
-confirmed before enabling mandatory ownership rules that would block the sole owner.
+member with Write access reviews. The five confirmed accounts are mapped in
+CODEOWNERS, with a peer for each module. Test routing before requiring code-owner approval.
 
 A generic one-approval rule does not distinguish bot approval from human approval.
 This document is a team policy until a dedicated required check or code-owner rule

@@ -20,13 +20,13 @@ Một repository chuyên nghiệp phải giúp người mới biết sản phẩ
 | CI supply chain | Actions pinned to verified commit SHAs, read-only contents permission, credentials not persisted, job timeout |
 | Dependency maintenance | Weekly Dependabot for GitHub Actions; no application dependency checks claimed before manifests exist |
 | Consistent editing | EditorConfig and LF attributes |
-| Contribution flow | Short branches, PR/evidence, squash merge, follow-up issue for unresolved work |
+| Contribution flow | Short branches to `dev`, reviewed promotion PR to `main`, merge commits preserve branch ancestry |
 
 CI hygiene is a small guardrail, not a comprehensive secret scan, Markdown syntax validator, external-link checker or product test suite. Application security/testing and AWS runtime evidence remain required by implementation issues.
 
 ## Protection and access policy
 
-Public visibility enables branch protection on this repository's current GitHub plan. Policy for main: PR-only changes, one independent approval, dismiss stale approvals, required `Repository quality` check on up-to-date code, resolved conversations, linear history, no force-push/deletion. The live setting `enforce_admins` is enabled, so Gia Hưng is held to the same review and CI requirements. Required code-owner approval remains disabled while owner routing is tested. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
+Public visibility enables branch protection on this repository's current GitHub plan. Both `dev` and `main` require PRs, one independent approval, dismissal of stale approvals, the `Repository quality` check on up-to-date code and resolved conversations. Force pushes and deletion are disabled. `enforce_admins` is enabled on both, so Gia Hưng is held to the same requirements. Merge commits preserve ancestry for repeated `dev → main` promotions. Required code-owner approval remains disabled while owner routing is tested. The source gate for `main` becomes a required check after it lands and passes on a promotion PR. Read the live branch settings to confirm enforcement; this document is not a substitute for the API setting.
 
 All five GitHub identities are listed in [Team & ownership](TEAM.md). M2–M5 have Project Write access and accepted repository invitations. All 50 issues have the corresponding GitHub Assignee. Gia Hưng's own PRs need another authorized reviewer; CODEOWNERS does not allow self-approval. Module owner entries are now defined for expected paths, with required code-owner approval deferred until PR routing is verified.
 
