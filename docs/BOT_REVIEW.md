@@ -34,7 +34,8 @@ approval to bootstrap the bot. CI has repository hygiene and an API liveness bas
   GitHub reports no conflicts, the author with Write access manually clicks
   Create a merge commit. Auto-merge is disabled for this repository.
 - After integration testing on `dev`, open a separate `dev → main` PR with the
-  tested commit SHA, release scope and evidence. An independent reviewer approves
+  exact tested commit SHA, release scope and evidence. The promotion check rejects
+  a missing or stale SHA; an independent reviewer verifies the evidence and approves
   it before the maintainer manually creates the merge commit.
 - New changes invalidate old approvals. Review limits or outages mean waiting or
   obtaining a human review under the repository policy, not forcing a bot approval.

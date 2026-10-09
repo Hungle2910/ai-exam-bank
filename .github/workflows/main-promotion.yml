@@ -3,6 +3,7 @@ name: Main promotion
 on:
   pull_request:
     branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
 
 permissions: {}
 
@@ -14,6 +15,7 @@ jobs:
     env:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       BASE_REPO: ${{ github.repository }}
     steps:
       - name: Require the protected dev branch
@@ -21,5 +23,16 @@ jobs:
         run: |
           if [[ "$HEAD_REF" != "dev" || "$HEAD_REPO" != "$BASE_REPO" ]]; then
             echo "Only a pull request from this repository's protected dev branch may target main."
+            exit 1
+          fi
+      - name: Require the tested dev commit
+        shell: bash
+        run: |
+          tested_sha="$(
+            jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" |
+              sed -nE 's/^- Exact `dev` commit SHA tested:[[:space:]]*([0-9a-f]{40})[[:space:]]*$/\1/p'
+          )"
+          if [[ "$tested_sha" != "$HEAD_SHA" ]]; then
+            echo "Declare the current dev HEAD as the tested commit in the promotion PR."
             exit 1
           fi
