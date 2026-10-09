@@ -8,7 +8,7 @@
 | Solution | `AiExamBank.slnx` opens/builds the API, seven owned module projects and three test projects | Only small contracts/value objects and two domain validation examples exist; no product workflow is wired through the API |
 | HTTP | `/health/live` and JSON Problem Details smoke tests | No authentication, resource endpoints or dependency readiness |
 | Boundaries | Module ownership, explicit project references and architecture test reject host/provider SDK dependencies in modules | Data ownership, cross-module writes and transaction contracts need feature review |
-| CI | Release build, seven MSTest cases and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
+| CI | Release build, nine MSTest cases and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
 
 This is a **Visual Studio-ready technical scaffold**, not a complete exam-bank application. In particular, `Persistence/README.md` and `Worker/README.md` record missing decisions; neither contains a production project. The planned frontend is also absent.
 
