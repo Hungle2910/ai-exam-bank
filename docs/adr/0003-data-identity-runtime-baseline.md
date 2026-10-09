@@ -8,14 +8,14 @@ Proposed for M1–M5 review. No DB engine, identity provider or frontend framewo
 
 ## Context
 
-The MVP is one school, five contributors and a ten-week delivery. Approval and audit, question revision state, import commit and exam finalization need consistent relational writes. The current repository has one .NET API host and no database, identity, Web or Worker implementation. Region, demo budget, hosting and final frontend framework remain open. This ADR proposes defaults so the first vertical slices can be built without each owner choosing incompatible storage or authentication.
+The MVP includes multiple schools and Ministry-level exams, as accepted in [ADR 0004](0004-multi-school-ministry-mvp.md). Five contributors have an initial ten-week plan whose estimates require revision. Approval and audit, question revision state, import commit and exam finalization need consistent relational writes. The current repository has one .NET API host and no database, identity, Web or Worker implementation. Region, demo budget, hosting and final frontend framework remain open. This ADR proposes technology defaults so the first vertical slices can be built without incompatible storage or authentication.
 
 ## Options considered and trade-offs
 
 | Concern | Proposed default | Alternative | Accepted cost / revisit trigger |
 |---|---|---|---|
 | Relational persistence | PostgreSQL with EF Core, one DbContext and migration stream | SQL Server or separate stores per module | Shared migration coordination; revisit if actual hosting, team expertise or transaction tests favor another engine |
-| User authentication | ASP.NET Core Identity, secure same-origin server session cookie | External OIDC/Cognito or self-managed bearer tokens | Requires CSRF protection and session lifecycle; revisit if federation, separate-origin clients or multi-organization requirements become approved |
+| User authentication | ASP.NET Core Identity, secure same-origin server session cookie | External OIDC/Cognito or self-managed bearer tokens | Requires CSRF protection and session lifecycle; compare federation/provisioning needs for multiple schools before accepting |
 | Frontend | One TypeScript Web app served through the same HTTPS origin as API; React proposed | Server-rendered UI or another team-approved framework | Frontend build pipeline and contract tests; framework is not accepted until M1/M3 review |
 | Background execution | DB-backed Job/Attempt + separate .NET Worker host | Inline HTTP tasks or a managed queue | Must implement leases, retries and monitoring; move to a managed queue only if throughput/operations evidence justifies it |
 | Deployment | Private API/Worker/DB behind one HTTPS entry, runtime roles and SSM | Public API/DB or multiple independently deployed services | Entry/egress and private network cost; M2 must compare EC2/RDS, NAT/endpoints and Region before provisioning |
@@ -25,10 +25,10 @@ The MVP is one school, five contributors and a ten-week delivery. Approval and a
 The following is the proposed baseline, pending team acceptance:
 
 1. Keep one relational transaction boundary for revision approval + review decision + audit, and for import batch commit + question writes. Use optimistic version checks and database uniqueness for duplicate prevention; do not rely on UI checks or distributed events for these invariants.
-2. Start with one-school Teacher/Reviewer/Admin role model. Check resource scope, self-review and current state server-side for every mutation. Use framework-managed password/session facilities; do not invent password hashing, JWT issuance or authorization shortcuts.
+2. Use the four-role, multi-school/Ministry model in ADR 0004 and its permission matrix. Check resource scope, self-review and current state server-side for every read and mutation. Use framework-managed password/session facilities; do not invent password hashing, JWT issuance or authorization shortcuts.
 3. Version business routes under `/api/v1`; use Problem Details with stable error codes and trace IDs. Add OpenAPI and consumer tests with each implemented endpoint.
 4. Start the Worker only with the first durable handler. A persisted request and its job record must commit together; lease/attempt/retry policy is an M5 contract before production use.
-5. Keep Lex, SageMaker, multi-school and Ministry flows behind explicit scope decisions. Proposed roles in PR #58 do not silently change this MVP.
+5. Keep Lex and SageMaker behind explicit feature gates. Multi-school and Ministry exam flows are part of MVP scope per ADR 0004; implementation still needs accepted contracts and tests.
 
 ## Security, reliability and cost implications
 
@@ -42,4 +42,4 @@ Before accepting this ADR, M1/M2/M3/M4/M5 confirm the DB/hosting decision, migra
 
 ## Consequences
 
-If the team chooses a different default, update this ADR and the solution design in the same PR, with the reason and affected contracts. After approval, mark the ADR **Accepted**; until then the defaults are recommendations, not implemented facts. A new role model such as multi-school/Ministry requires a separate permission matrix and migration path before expanding the MVP.
+If the team chooses a different technology default, update this ADR and the solution design in the same PR, with the reason and affected contracts. After approval, mark this ADR **Accepted**; until then the technology defaults are recommendations, not implemented facts. The accepted multi-school/Ministry product scope in ADR 0004 already requires the separate permission matrix and migration path before implementation.

@@ -17,14 +17,14 @@ Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. 
 | Capability | MVP behavior |
 |---|---|
 | Question Bank | CRUD, metadata, search/filter, immutable revisions, CSV import with row-level validation |
-| Identity and Review | Authentication, server-side RBAC/resource permissions, human approval/rejection and audit |
+| Identity and Review | Authentication; school/department/event-scoped roles; independent human approval/rejection and audit |
 | Exam Blueprint | Subject/topic/difficulty/count/points constraints and approved-only question selection |
 | AI-assisted Generation | Detect missing slots; Bedrock RAG generates validated drafts with provenance/citations |
 | Final Exam | Reassemble after approval, validate matrix, persist version-pinned snapshot and preview |
 | Reliability | Durable jobs, timeouts, bounded retry, idempotency, status UI and actionable monitoring |
 | AWS Delivery | Private backend/DB, HTTPS entry, IAM roles, SSM, IaC, CI/CD and backup/restore evidence |
 
-MVP targets one school/organization, single-answer MCQs and one CSV schema. **Lex V2 and SageMaker are gated extensions**; VPN requires a real hybrid use case. Student test-taking, proctoring, billing and multi-tenant SaaS are outside MVP.
+MVP targets **multiple schools and Ministry-level exams**, single-answer MCQs and one CSV schema. School exam content is isolated by school and department; Ministry exam content is limited to assigned officials. Exam selection never replaces independent approval of question revisions. This is an accepted scope decision, not an implemented capability; see [ADR 0004](docs/adr/0004-multi-school-ministry-mvp.md) and [permission matrix](docs/IDENTITY_AND_PERMISSIONS.md). **Lex V2 and SageMaker are gated extensions**; VPN requires a real hybrid use case. Student test-taking, proctoring, billing and a self-service multi-tenant SaaS platform are outside MVP.
 
 **Bedrock generates. SageMaker evaluates. Lex collects intent/slots. .NET controls business rules. Human reviewers approve.**
 
@@ -32,7 +32,7 @@ MVP targets one school/organization, single-answer MCQs and one CSV schema. **Le
 
 ```mermaid
 flowchart LR
-    User[Teacher / Reviewer / Admin] -->|HTTPS| Entry[Public entry]
+    User[Teacher / DepartmentHead / SchoolAdmin / MinistryAdmin] -->|HTTPS| Entry[Public entry]
     subgraph Private[Private application network]
         API[.NET modular monolith]
         Worker[Durable worker]
@@ -97,7 +97,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 | W07–W08 | Reliability/security/performance hardening; gated Lex/ML; feature freeze |
 | W09–W10 | E2E acceptance, restore/recovery proof, release and handover |
 
-**50 work packages · 10 weekly milestones · 926 planned hours.** The schedule starts Monday, 05 Oct 2026; each week's Target Date is Sunday, from 11 Oct through 13 Dec 2026. The Project is the live status source; estimates and elapsed time do not prove completion. [Backlog index](docs/BACKLOG.md) · [Tracking process](docs/PROJECT_TRACKING.md).
+**50 original work packages · 10 weekly milestones · 926 baseline hours.** These estimates predate the multi-school/Ministry MVP decision and require re-planning; they are not a validated estimate for the expanded scope. The schedule starts Monday, 05 Oct 2026; each week's Target Date is Sunday, from 11 Oct through 13 Dec 2026. The Project is the live status source; estimates and elapsed time do not prove completion. [Backlog index](docs/BACKLOG.md) · [Tracking process](docs/PROJECT_TRACKING.md).
 
 ## Engineering and AWS standards
 

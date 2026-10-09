@@ -2,6 +2,8 @@
 
 Board: [4](https://github.com/users/Hungle2910/projects/4) · 50 packages · 926h
 
+**Scope update 09/10/2026:** Multi-school and Ministry-level exams are now MVP requirements ([ADR 0004](adr/0004-multi-school-ministry-mvp.md)). The 50 packages and 926h below are the original baseline only. Re-estimate and add dependency-linked issues for scope isolation, role/event assignment, Ministry two-person confirmation, migration and cross-school security/E2E before claiming the MVP schedule is complete.
+
 GitHub Issues/Project là nguồn trạng thái vận hành; index này là planning snapshot, không báo completion.
 
 Hard dependency graph đã kiểm không có cycle. Same-week contract reviews và optional integrations được ghi riêng trong issue để tránh biến Lex/ML thành blocker của MUST.
