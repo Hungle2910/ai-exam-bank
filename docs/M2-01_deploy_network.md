@@ -62,9 +62,11 @@ Admin access
 | VPC CIDR | 10.20.0.0/16 | | Modify if it conflicts with campus network or future VPN. |
 | Public subnet | 10.20.1.0/24 – HTTPS entry | | Route to Internet Gateway. |
 | Private app subnet | 10.20.11.0/24 – API and worker | | No public IP. Outbound via NAT or endpoints. |
-| Private DB subnet | 10.20.21.0/24 – database | | Accepts traffic only from app security group. |
+| Private DB subnet A | 10.20.21.0/24 – database in AZ A | | Accepts traffic only from app security group. |
+| Private DB subnet B (RDS) | 10.20.22.0/24 – database in AZ B | | Required for an RDS DB subnet group, including Single-AZ instances; choose a different AZ from subnet A. |
 | Public route table | 0.0.0.0/0 -> Internet Gateway | | |
-| Private route table | 0.0.0.0/0 -> NAT Gateway or service endpoints per ADR | | Depends on egress decision in 5.1. |
+| Private default route (NAT option) | 0.0.0.0/0 -> NAT Gateway | | Omit when using endpoints-only egress. |
+| Private service routes/endpoints | S3 gateway endpoint adds a service prefix-list route; interface endpoints use ENIs and private DNS. | | Select and verify each required service endpoint; endpoints do not replace the default route target. |
 
 #### Security groups (detailed traffic table in section 8.1)
 
@@ -133,14 +135,14 @@ Wireframes: see section 7.1 (upload, preview, commit result, health panel).
 | --- | --- | --- | --- | --- |
 | POST | /imports/upload | Upload CSV, create batch and validate | batchId, status, row summary | Teacher or Admin import permission |
 | GET | /imports/{batchId}/preview | View row-level validation results | valid rows, invalid rows, errors | Owner or Admin |
-| POST | /imports/{batchId}/commit | Commit valid rows to DRAFT questions | committed count, skipped count, row results | Requires idempotency key |
+| POST | /imports/{batchId}/commit | Commit valid rows to DRAFT questions | committed count, skipped count, row results | Requires `Idempotency-Key` request header |
 | GET | /imports/{batchId}/result | View post-commit results | batch status, row mapping | Owner or Admin |
 | GET | /admin/infrastructure/health | Infrastructure health and deployment records | status UNKNOWN/UP/DOWN, timestamp, deployment version | Admin only |
 
 #### General Import Rules (Proposed)
 
 - Committed questions remain in DRAFT status and require human review before publishing.
-- Repeated commits with the same idempotency key do not duplicate questions (M5 confirmation required).
+- The commit request sends the idempotency key in the `Idempotency-Key` header; a missing key is rejected. Retrying the same batch with the same key returns the prior result without creating duplicate questions (M5 confirmation required).
 - Row-level errors do not fail the entire batch: valid rows commit successfully, failed rows record error_code and error_message.
 - Enforce server-side authorization (RBAC/resource permissions), never trust client-side validation.
 
@@ -200,7 +202,7 @@ DeploymentRecord: independent, no foreign key to ImportBatch
 | Resource | Estimated Quantity | Public? | Notes |
 | --- | --- | --- | --- |
 | VPC | 1 | | 10.20.0.0/16 |
-| Subnets (Public / Private app / Private DB) | 1 / 1 / 1 | Public subnet only | Second AZ can be added if RDS is used. |
+| Subnets (Public / Private app / Private DB) | 1 / 1 / 2 when using RDS | Public subnet only | RDS DB subnet group requires two private DB subnets in distinct AZs, even for Single-AZ instances; verify AZ distribution in the IaC plan. |
 | Internet Gateway | 1 | Yes | |
 | NAT Gateway or VPC endpoints | | | Pending egress decision. |
 | EC2 (Entry, app/worker, DB if self-hosted) | | | Pending hosting decision. |
@@ -300,8 +302,8 @@ Math,Algebra,easy,,1,2,3,4,A,
 | Upload CSV with row errors | API | Preview correctly lists row, column, and error code | | |
 | Upload non-CSV file | Failure | Rejected with clear error response | | |
 | Upload exceeding size limit | Failure | Rejected, no batch created | | |
-| Commit twice with same idempotency key | API | Second attempt does not duplicate questions | | |
-| Commit missing idempotency key | Failure | Rejected | | |
+| Commit twice with the same `Idempotency-Key` header | API | Second attempt returns the prior result and creates no duplicate questions | | |
+| Commit without the `Idempotency-Key` header | Failure | Request rejected; no questions committed | | |
 | Unauthorized user attempts upload | Permission | 403 Forbidden | | |
 | User accesses another user's batch | Permission | 403 Forbidden or 404 Not Found | | |
 | Non-admin calls health endpoint | Permission | 403 Forbidden | | |
