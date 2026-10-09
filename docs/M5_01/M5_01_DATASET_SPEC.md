@@ -31,6 +31,8 @@ Dữ liệu để AI đánh giá độ khó sẽ bao gồm nội dung câu hỏi
     },
     "Choices": {
       "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
       "items": {
         "type": "string"
       },
@@ -55,11 +57,12 @@ Dữ liệu để AI đánh giá độ khó sẽ bao gồm nội dung câu hỏi
       "description": "Thời gian giải bài dự kiến (giây)."
     }
   },
-  "required": ["QuestionId", "ContentText", "BloomsTaxonomyLevel"]
+  "required": ["QuestionId", "ContentText", "Choices", "CorrectAnswer", "BloomsTaxonomyLevel"]
 }
 ```
 
 ## Giải thích sử dụng
-1. Chỉ tạo dataset khi nhánh ML được duyệt, có quyền sử dụng nội dung và đánh giá chi phí/bảo mật.
-2. Giữ nhãn do giáo viên gán là nhãn gốc; kết quả AI là advisory, không tự ghi đè câu đã duyệt.
-3. Dữ liệu kết quả học sinh nếu được xem xét sau này cần một quyết định privacy và consent riêng, không thuộc schema này.
+1. MVP chỉ có MCQ một đáp án: `Choices` và `CorrectAnswer` luôn bắt buộc. Validator ứng dụng còn phải kiểm tra đáp án đúng là một lựa chọn duy nhất trong `Choices`; JSON Schema này không tự kiểm tra quan hệ giữa hai trường.
+2. Chỉ tạo dataset khi nhánh ML được duyệt, có quyền sử dụng nội dung và đánh giá chi phí/bảo mật.
+3. Giữ nhãn do giáo viên gán là nhãn gốc; kết quả AI là advisory, không tự ghi đè câu đã duyệt.
+4. Dữ liệu kết quả học sinh nếu được xem xét sau này cần một quyết định privacy và consent riêng, không thuộc schema này.

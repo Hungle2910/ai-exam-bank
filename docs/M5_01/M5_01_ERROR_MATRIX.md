@@ -11,6 +11,6 @@ No Worker or status API implements these rules yet. See [the canonical reliabili
 | Worker crash or lost heartbeat | Expire lease after two minutes; fence stale worker; next attempt if budget remains | Retrying or terminal failure | Crash-after-effect test |
 | Database unavailable before enqueue commit | Return safe request failure; no job ID | Retry submission when service recovers | Transaction rollback test |
 | Database unavailable during attempt | Stop effects; recover from persisted lease when DB returns | Last known state, marked stale | Recovery test |
-| Unauthorized status/result/retry | Deny by persisted school or assigned Ministry event scope | No data disclosed | Direct API 403/404 tests |
+| Unauthorized status/result/retry | Deny by persisted school or assigned `MinistryExam` scope | No data disclosed | Direct API 403/404 tests |
 
 SageMaker remains a gated extension; it is not a baseline job dependency. Raw exception traces, payloads, answer keys and personal data must not appear in user status or central logs.

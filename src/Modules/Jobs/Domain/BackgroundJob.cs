@@ -16,6 +16,7 @@ public sealed class BackgroundJob
     public required string RequestFingerprint { get; set; }
     public required string CorrelationId { get; set; }
     public DateTimeOffset? AvailableAt { get; set; }
+    public DateTimeOffset? CancellationRequestedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
