@@ -4,7 +4,7 @@
 
 ## Context and requirement
 
-Five owners must build exam, question, review, import, knowledge and job features concurrently over ten weeks. A single .NET API host exists in PR #59; no business module, database or Worker exists yet. The MVP is one organization, one relational database and AWS deployment. Cross-module state changes include approval + audit and approved-only exam snapshots. The design must let each owner deliver a vertical slice without creating a distributed transaction or making M1 the sole implementer.
+Five owners must build exam, question, review, import, knowledge and job features concurrently over ten weeks. PRs #59 and #63 placed the .NET API host and seven contract/value-object module projects on `dev`; no complete business workflow, database or Worker exists yet. The MVP is one organization, one relational database and AWS deployment. Cross-module state changes include approval + audit and approved-only exam snapshots. The design must let each owner deliver a vertical slice without creating a distributed transaction or making M1 the sole implementer.
 
 ## Options considered
 
@@ -17,7 +17,7 @@ Five owners must build exam, question, review, import, knowledge and job feature
 
 ## Proposed decision
 
-1. Extend ADR 0001's modular monolith: `Api` and future `Worker` are composition roots; each owned module becomes one .NET project when its first behavior is delivered. Give it `Domain`, `Application`, `Contracts`, `Infrastructure` and `Endpoints` code only as needed. Explicit DI/route registration, no runtime assembly scanning.
+1. Extend ADR 0001's modular monolith: `Api` and future `Worker` are composition roots. Seven owned module projects now contain small initial contracts/value objects; add use-case folders and implementation only with executable behavior and tests. Give a module `Domain`, `Application`, `Contracts`, `Infrastructure` and `Endpoints` code only as needed. Explicit DI/route registration, no runtime assembly scanning.
 2. Modules expose small provider-owned public contracts. Consumers do not read another module's tables or DbContext. M1 and both owners break dependency cycles before merge. Split an infrastructure project only when SDK/EF dependencies or tests demonstrate a boundary problem.
 3. Propose one relational DbContext/migration stream in `Persistence` after the DB engine/hosting ADR is reviewed. Module owners own mapping/query files; cross-module schema/transaction changes need all affected owners. Approval, revision state and audit commit atomically; finalization pins approved revisions in a durable snapshot.
 4. Keep async work in the future Worker under M5's job lifecycle. Business owners implement handlers behind its contract. The API accepts/returns job state rather than running long Bedrock/import requests inline.
@@ -32,6 +32,6 @@ Five owners must build exam, question, review, import, knowledge and job feature
 
 ## Validation evidence and consequences
 
-The current solution builds one API host and its liveness/HTTP error smoke checks; it does **not** validate module boundaries or persistence yet. The first Questions/Review PRs must prove public contract usage, transaction behavior and permission failures. The first Jobs PR must prove restart/idempotency. Reviewers should reject direct cross-module table access or domain imports of ASP.NET/EF/AWS SDK types.
+The current solution builds one API host and seven module projects, runs small domain tests and checks current module references, plus liveness/HTTP error smoke tests. It does **not** validate real persistence, authorization or cross-module workflows yet. The first Questions/Review PRs must prove public contract usage, transaction behavior and permission failures. The first Jobs PR must prove restart/idempotency. Reviewers should reject direct cross-module table access or domain imports of ASP.NET/EF/AWS SDK types.
 
 This choice minimizes initial project and deployment complexity. Its accepted cost is that some boundaries are maintained by ownership, review and tests rather than a separate assembly for every layer. Revisit if cyclic references repeatedly appear, domain rules become coupled to provider SDKs, modules require independent scaling, or the single migration stream blocks delivery.

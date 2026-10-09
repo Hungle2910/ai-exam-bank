@@ -1,6 +1,6 @@
 # ADR 0001 — Repository layout and merge workflow
 
-**Status:** Proposed, pending peer review and merge
+**Status:** Proposed for team ratification; committed in PR #59 and in use on `dev`
 
 **Owner:** M1 / Le Doan Gia Hung
 

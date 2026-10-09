@@ -117,8 +117,9 @@ Design review follows the six pillars of the [AWS Well-Architected Framework](ht
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | Modules, domain invariants, states and API boundaries |
 | [.NET foundation](docs/DOTNET_FOUNDATION.md) | Verified baseline, missing gates and module implementation order |
-| [.NET solution design](docs/DOTNET_SOLUTION_DESIGN.md) | Target projects, dependencies, contracts, persistence, testing and owner gates |
+| [.NET solution design](docs/DOTNET_SOLUTION_DESIGN.md) | Target projects, module contracts, transactions, API/Worker/AWS boundaries, tests and owner gates |
 | [Visual Studio setup](docs/VISUAL_STUDIO_SETUP.md) | Open/build/run/test the solution and understand current project status |
+| [Data and identity ADR](docs/adr/0003-data-identity-runtime-baseline.md) | Proposed defaults and trade-offs for DB, authentication, frontend, Worker and deployment |
 | [AWS strategy](docs/AWS_STRATEGY.md) | Network, IAM, delivery, observability, cost and lifecycle |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Detailed 10-week tasks, dependencies, outputs and DoD |
 | [Team](docs/TEAM.md) | Roles, vertical slices, reviewer ownership and capacity |

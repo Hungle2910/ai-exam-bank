@@ -1,6 +1,6 @@
 # .NET foundation status and next gates
 
-**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. This page describes the scaffold in the current PR; it becomes the shared `dev` baseline only after review and merge. [Open it in Visual Studio](VISUAL_STUDIO_SETUP.md) and read the [solution design](DOTNET_SOLUTION_DESIGN.md) for the target architecture.
+**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. The API foundation (#59) and Visual Studio scaffold (#63) are merged into `dev`. [Open it in Visual Studio](VISUAL_STUDIO_SETUP.md) and read the [solution design](DOTNET_SOLUTION_DESIGN.md) and proposed [data/identity ADR](adr/0003-data-identity-runtime-baseline.md) before implementing a stored workflow.
 
 | Area | Implemented evidence | Remaining limit |
 |---|---|---|
@@ -8,7 +8,7 @@
 | Solution | `AiExamBank.slnx` opens/builds the API, seven owned module projects and four test projects | Only small contracts/value objects and three module validation examples exist; no product workflow is wired through the API |
 | HTTP | `/health/live` and JSON Problem Details smoke tests | No authentication, resource endpoints or dependency readiness |
 | Boundaries | Module ownership, explicit project references and architecture test reject host/provider SDK dependencies in modules | Data ownership, cross-module writes and transaction contracts need feature review |
-| CI | Release build, Jobs contract tests, other small MSTest cases and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
+| CI | Release build, module/architecture MSTest suites including Jobs contracts, and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
 
 This is a **Visual Studio-ready technical scaffold**, not a complete exam-bank application. In particular, `Persistence/README.md` and `Worker/README.md` record missing decisions; neither contains a production project. The planned frontend is also absent.
 
@@ -17,7 +17,7 @@ This is a **Visual Studio-ready technical scaffold**, not a complete exam-bank a
 | Gate | Owner | Completion evidence |
 |---|---|---|
 | Review contracts | M1 with M2–M5 | Confirm identifiers, revision rules, role/scope, API errors and module references before other PRs depend on them |
-| Choose persistence/auth | M1/M2/M3/M4 | Accepted ADRs for DB provider, schema/migration owner and auth flow; secrets/config strategy |
+| Choose persistence/auth | M1/M2/M3/M4 | Review ADR 0003, then accept decisions for DB provider, schema/migration owner and auth flow; secrets/config strategy |
 | First stored workflow | M4 Questions + M3 Review; M1 integrates | API endpoint and persistence roundtrip; permission failures; revision and audit commit atomically; meaningful positive/negative/concurrency tests |
 | Exam/import/AI flow | M1/M2/M4 | Approved-only selection, validated import, cited draft and immutable final snapshot with API/integration tests |
 | Durable background path | M5 with M2/M1 | Worker project with real handler, persisted job/attempt state, lease/retry/idempotency, restart test and failure telemetry |
