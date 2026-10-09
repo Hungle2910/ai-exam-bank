@@ -3,4 +3,37 @@
   <Folder Name="/src/Api/">
     <Project Path="src/Api/AiExamBank.Api.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Exams/">
+    <Project Path="src/Modules/Exams/AiExamBank.Modules.Exams.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/AiExamBank.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Import/">
+    <Project Path="src/Modules/Import/AiExamBank.Modules.Import.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Jobs/">
+    <Project Path="src/Modules/Jobs/AiExamBank.Modules.Jobs.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Knowledge/">
+    <Project Path="src/Modules/Knowledge/AiExamBank.Modules.Knowledge.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Questions/">
+    <Project Path="src/Modules/Questions/AiExamBank.Modules.Questions.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Review/">
+    <Project Path="src/Modules/Review/AiExamBank.Modules.Review.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Architecture.Tests/">
+    <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/" />
+  <Folder Name="/tests/Modules/Exams.Tests/">
+    <Project Path="tests/Modules/Exams.Tests/AiExamBank.Modules.Exams.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/Questions.Tests/">
+    <Project Path="tests/Modules/Questions.Tests/AiExamBank.Modules.Questions.Tests.csproj" />
+  </Folder>
 </Solution>

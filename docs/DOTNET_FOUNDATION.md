@@ -1,54 +1,37 @@
 # .NET foundation status and next gates
 
-**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. PR #59 has merged into `dev`; this page describes the implemented foundation and the remaining product gates. The detailed target structure and dependency rules are in the [solution design](DOTNET_SOLUTION_DESIGN.md).
+**Assessment date:** 09 Oct 2026. **Owner:** M1 / Le Doan Gia Hung. The API foundation (#59) and Visual Studio scaffold (#63) are merged into `dev`. [Open it in Visual Studio](VISUAL_STUDIO_SETUP.md) and read the [solution design](DOTNET_SOLUTION_DESIGN.md) and proposed [data/identity ADR](adr/0003-data-identity-runtime-baseline.md) before implementing a stored workflow.
 
-## What works on `dev`
-
-| Area | Evidence | Limit |
+| Area | Implemented evidence | Remaining limit |
 |---|---|---|
-| Toolchain | `global.json` pins .NET SDK 10.0.400; `Directory.Build.props` applies net10.0, nullable reference types, implicit usings, deterministic builds and warnings as errors | Deployment runtime is not selected or tested |
-| Solution | `AiExamBank.slnx` builds the HTTP API host | No business module or Worker project exists |
-| HTTP baseline | `GET /health/live` returns HTTP 200; JSON clients receive RFC Problem Details with a trace ID for unknown routes and unhandled errors | Liveness does not check DB, AWS, jobs or product readiness; business error codes are still pending |
-| CI | Application CI restores/builds Release and runs HTTP smoke checks for liveness and 404 Problem Details; it is required on `dev` alongside Repository quality and CodeRabbit | No product, auth, database or AWS integration tests |
-| Team boundaries | `src/Modules/README.md` and CODEOWNERS name module owners and reviewers | Boundaries are documented, not yet enforced through implemented interfaces |
+| Toolchain | `global.json` pins SDK `10.0.400`; common props enable net10.0, nullable types, deterministic build and warnings as errors; MSTest version is pinned centrally | Production runtime and deployment are not selected or tested |
+| Solution | `AiExamBank.slnx` opens/builds the API, seven owned module projects and three test projects | Only small contracts/value objects and two domain validation examples exist; no product workflow is wired through the API |
+| HTTP | `/health/live` and JSON Problem Details smoke tests | No authentication, resource endpoints or dependency readiness |
+| Boundaries | Module ownership, explicit project references and architecture test reject host/provider SDK dependencies in modules | Data ownership, cross-module writes and transaction contracts need feature review |
+| CI | Release build, module/architecture MSTest suites and HTTP smoke checks | No DB/auth/worker/AWS integration or end-to-end tests |
 
-The API host is a **working starting point**, not a complete .NET application or production-ready AWS deployment. Do not add empty projects, fake readiness probes or placeholder endpoints merely to make the directory tree look complete.
+This is a **Visual Studio-ready technical scaffold**, not a complete exam-bank application. In particular, `Persistence/README.md` and `Worker/README.md` record missing decisions; neither contains a production project. The planned frontend is also absent.
 
-## Build the next vertical slices in dependency order
+## Next delivery gates
 
-| Gate | Owner / coordination | Minimum completion evidence |
+| Gate | Owner | Completion evidence |
 |---|---|---|
-| 1. Foundation merged | M1 | Done: PR #59 merged to `dev`; SDK/API host, repository and Application CI baseline are present |
-| 2. Record shared contracts | M1 with M2–M5 | Review ADRs 0002/0003; decide DB, API/error, identity, frontend and scope; publish module contracts and one migration owner |
-| 3. First business path | M4 Questions + M3 Identity/Review; M1 consumes their contracts | Executable module code, migrations, authorization, revision/audit invariants, API examples and meaningful positive/negative/concurrency tests |
-| 4. Durable background path | M5 Jobs with M2 deployment and M1 generation | Worker host added with its first real handler, persisted job/attempt state, lease/retry/idempotency behavior, restart test and failure telemetry |
-| 5. Integration and release | M1/M2 with all module owners | Frontend end-to-end flow, exact-commit CI and AWS deployment evidence, private config/IAM, migration and restore procedure, health that reflects real dependencies, rollback proof |
+| Review contracts | M1 with M2–M5 | Confirm identifiers, revision rules, role/scope, API errors and module references before other PRs depend on them |
+| Choose persistence/auth | M1/M2/M3/M4 | Review ADR 0003, then accept decisions for DB provider, schema/migration owner and auth flow; secrets/config strategy |
+| First stored workflow | M4 Questions + M3 Review; M1 integrates | API endpoint and persistence roundtrip; permission failures; revision and audit commit atomically; meaningful positive/negative/concurrency tests |
+| Exam/import/AI flow | M1/M2/M4 | Approved-only selection, validated import, cited draft and immutable final snapshot with API/integration tests |
+| Durable background path | M5 with M2/M1 | Worker project with real handler, persisted job/attempt state, lease/retry/idempotency, restart test and failure telemetry |
+| Release | M2 with all owners | Frontend E2E, private AWS deployment, migration/restore/rollback and exact-commit staging evidence |
 
-Each gate is tracked through the relevant issues in the [implementation plan](IMPLEMENTATION_PLAN.md) and [Project board](https://github.com/users/Hungle2910/projects/4). An owner should add a project or NuGet package only when its first behavior needs it; then pin the dependency, add reproducible restore/lockfile handling where applicable, and extend CI to test that behavior.
+Add an `Application`, `Infrastructure` or `Endpoints` folder only with working code and tests. Add one database adapter and migration stream after the DB decision; modules never reference that adapter. API and future Worker are composition roots. Do not add fake readiness probes, placeholder endpoints or AWS resources just to make the tree appear complete.
 
-## Recommended .NET layout as modules arrive
-
-```text
-AiExamBank.slnx
-Directory.Build.props
-src/
-  Api/                 HTTP composition root; no business rules
-  Modules/
-    <OwnedModule>/     domain, application and infrastructure code owned by one team member
-  Persistence/         add with the reviewed DB/EF decision; one migration stream
-  Worker/              add with the first durable job handler (M5)
-tests/
-  smoke/               HTTP host checks already present
-  <OwnedModule>.Tests/ add with meaningful module behavior
-```
-
-Keep module domain rules independent of ASP.NET and AWS SDK DTOs. API/Worker compose modules and adapters; cross-module writes go through an agreed application contract. The module owner provides tests for its own invariants and failures. M1 reviews integration contracts, while M2/M3 review deployment and security boundaries. This keeps one deployable monolith without forcing every feature into `Program.cs`.
-
-Run the current baseline from the repository root:
+## Verify the current scaffold
 
 ```bash
-dotnet build AiExamBank.slnx --configuration Release
+dotnet restore AiExamBank.slnx
+dotnet build AiExamBank.slnx --configuration Release --no-restore --warnaserror
+dotnet test AiExamBank.slnx --configuration Release --no-build --no-restore
 python tests/smoke/test_api_health.py
 ```
 
-These commands verify the API baseline only. The remaining gates require their own runnable tests and deployment evidence before anyone labels the system complete.
+These commands prove the current build, small domain rules and HTTP baseline. The remaining gates need their own runnable tests and deployment evidence before the team labels the product complete.

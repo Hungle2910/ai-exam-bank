@@ -1,12 +1,12 @@
 # Thiết kế solution .NET cho AI Exam Bank
 
-**Trạng thái:** Bản thiết kế mục tiêu để M1–M5 review; chưa phải tuyên bố đã triển khai. **Owner:** M1 / Le Doan Gia Hung. **Cập nhật:** 09/10/2026. [ADR 0002](adr/0002-dotnet-module-boundaries.md) giải thích lựa chọn modular monolith; [ADR 0003](adr/0003-data-identity-runtime-baseline.md) ghi các mặc định kỹ thuật cần team phê duyệt.
+**Trạng thái:** Bản thiết kế mục tiêu để M1–M5 review; các use case và hạ tầng bên dưới chưa được triển khai. **Owner:** M1 / Le Doan Gia Hung. **Cập nhật:** 09/10/2026. [ADR 0002](adr/0002-dotnet-module-boundaries.md) giải thích lựa chọn modular monolith; [ADR 0003](adr/0003-data-identity-runtime-baseline.md) ghi các mặc định kỹ thuật cần team phê duyệt.
 
 ## 1. Phạm vi và trạng thái thật
 
 MVP là **một trường/tổ chức**, câu hỏi MCQ một đáp án, nhập CSV, duyệt nội dung bởi người có quyền, ma trận đề, chọn câu đã duyệt, AI chỉ tạo bản nháp có nguồn, đề cuối bất biến và job bền vững. Lex, SageMaker, VPN và quy trình nhiều trường/cấp Bộ là phần mở rộng có cổng quyết định riêng; [PR #58](https://github.com/Hungle2910/ai-exam-bank/pull/58) chưa thay đổi phạm vi MVP cho đến khi team chốt.
 
-Trên `dev` hiện có .NET 10 API host, `GET /health/live`, HTTP Problem Details, build và smoke CI. Chưa có module nghiệp vụ, database, Worker, frontend, IaC hay triển khai AWS. Mọi đường dẫn, entity và interface bên dưới là **hợp đồng thiết kế**; project được tạo cùng hành vi đầu tiên và test của nó, không tạo skeleton rỗng.
+Trên `dev` hiện có .NET 10 API host, `GET /health/live`, HTTP Problem Details, bảy module projects với hợp đồng/giá trị đầu tiên, ba test projects và CI build/smoke/test. Chưa có use case nghiệp vụ end-to-end, database, Worker chạy job, frontend, IaC hay triển khai AWS. Các thành phần còn lại bên dưới là **hợp đồng thiết kế**, không phải code đã hoàn thành; chỉ thêm adapter/host tiếp theo cùng hành vi thật và test.
 
 | Quyết định thiết kế | Mặc định đề xuất | Lý do và điểm cần chốt |
 |---|---|---|
@@ -24,29 +24,32 @@ Trên `dev` hiện có .NET 10 API host, `GET /health/live`, HTTP Problem Detail
 AiExamBank.slnx
 global.json                       SDK feature band đã pin
 Directory.Build.props             net10.0, nullable, warnings-as-errors
+Directory.Packages.props          ✓ pinned MSTest version
 src/
   Api/                             ✓ HTTP host, DI; + auth middleware, route groups
   Modules/
-    Identity/                      + M3: users, roles, sessions, scope
-    Questions/                     + M4: question identity, revision, taxonomy
-    Review/                        + M3: decision, audit, state transitions
-    Exams/                         + M1: blueprint, selection, gap report, snapshot
-    Import/                        + M2: upload, validation, preview, commit
-    Knowledge/                     + M4: source lifecycle, citations, RAG draft
-    Jobs/                          + M5: durable job, attempt, lease, retry
+    Identity/                      ✓ actor contract; + users, roles, sessions, scope
+    Questions/                     ✓ revision ref; + CRUD, taxonomy, approved read
+    Review/                        ✓ decision request; + audit, state transitions
+    Exams/                         ✓ blueprint slot; + selection, snapshot
+    Import/                        ✓ batch ref; + validation, preview, commit
+    Knowledge/                     ✓ source citation; + source/RAG adapter
+    Jobs/                          ✓ job ref; + durable attempt, lease, retry
   Persistence/                     + one EF DbContext, mapping by module, migrations
   Worker/                          + process host when first durable handler exists
   Web/                             + frontend after framework/auth decision
 tests/
   repository/                      ✓ repository checks
   smoke/                           ✓ API liveness and 404 Problem Details
-  Modules/<Module>.Tests/          + domain/use-case behavior
+  Modules/{Questions,Exams}.Tests/ ✓ first domain validation tests
+  Architecture.Tests/             ✓ module dependency tests
+  Modules/<OtherModule>.Tests/     + use-case behavior
   Integration/                     + DB/API/auth/transaction tests
   EndToEnd/                        + browser and AWS staging journeys
 infrastructure/                   + IaC when M2 network/hosting ADR is accepted
 ```
 
-`✓` đã có; `+` là target, chưa có code. Mỗi module bắt đầu bằng **một .NET project** khi có use case chạy được. Bên trong chỉ thêm `Domain/`, `Application/`, `Contracts/`, `Infrastructure/`, `Endpoints/` khi có code thật. EF mappings/repositories nằm trong `Persistence/<Module>/`; S3/Bedrock adapters nằm sau interface do module sử dụng sở hữu. Tách adapter thành project riêng chỉ khi một dependency/provider bắt đầu làm bẩn domain hoặc gây khó test.
+`✓` đã có; `+` là target, chưa có code. Bảy module projects hiện chứa hợp đồng/giá trị nhỏ, chưa có use case nghiệp vụ hoàn chỉnh. Bên trong chỉ thêm `Domain/`, `Application/`, `Contracts/`, `Infrastructure/`, `Endpoints/` khi có code thật. EF mappings/repositories nằm trong `Persistence/<Module>/`; S3/Bedrock adapters nằm sau interface do module sử dụng sở hữu. Tách adapter thành project riêng chỉ khi một dependency/provider bắt đầu làm bẩn domain hoặc gây khó test.
 
 ```text
 Web --HTTPS--> Api ---> Module application contracts ---> Module domain
@@ -126,7 +129,7 @@ Môi trường AWS development/staging/production là các deployment có config
 
 | Cấp kiểm thử | Bằng chứng tối thiểu | Owner |
 |---|---|---|
-| Foundation hiện có | Release build, liveness HTTP và 404 Problem Details | M1 |
+| Foundation hiện có | Release build, module/architecture MSTest, liveness HTTP và 404 Problem Details | M1 |
 | Module behavior | Domain constraints, permission denial, wrong state/version, idempotency; assert output observable | Owner module |
 | DB/API integration | Migration DB sạch + upgrade, CRUD, 401/403/409, approval/audit atomic, concurrent review/finalize, import commit race | M1/M3/M4/M2 |
 | Worker recovery | Hai Worker claim cùng job, crash sau DB write, lease expiry, provider timeout, retry ceiling | M5 + handler owner |

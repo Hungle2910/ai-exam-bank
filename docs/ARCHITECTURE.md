@@ -1,6 +1,6 @@
 # Architecture baseline
 
-**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. `dev` có API host với liveness và HTTP Problem Details, chưa có module nghiệp vụ hoặc AWS runtime. Xem [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md) cho cây project, hợp đồng, giao dịch và quy tắc phụ thuộc.
+**Status:** Proposed domain design; foundation ADRs và implementation issues quyết định cấu hình cuối. `dev` có API host và bảy module projects với hợp đồng ban đầu; chưa có workflow nghiệp vụ hoặc AWS runtime. Xem [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md) cho cây project, hợp đồng, giao dịch và quy tắc phụ thuộc.
 
 ## Module boundaries
 
