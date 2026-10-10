@@ -1,69 +1,59 @@
 # Bot review and manual author merge
 
-## Rollout status
+## Current merge gates
 
-Repository auto-merge is disabled. CodeRabbit is installed only on
-Hungle2910/ai-exam-bank. Bot review is running on this configuration PR;
-successful re-review and approval of the latest commit are not yet verified.
-Existing main protection remains in force; do not remove required checks or bypass
-approval to bootstrap the bot. CI currently checks repository hygiene, not product correctness.
+Auto-merge is disabled. For a PR into `dev`, GitHub requires the up-to-date
+`Repository quality`, `Application build and smoke`, and `CodeRabbit` checks,
+plus resolved conversations. No human approval is required on `dev`; the PR
+author manually creates the merge commit after verifying the bot actually
+reviewed the latest change. A green CodeRabbit status marked **review skipped**
+does not establish that a review happened. An in-progress bot check blocks the PR.
 
-## Activate
+`main` remains a separate release gate: promote the tested `dev` head with a
+`dev → main` PR, include the exact tested SHA and evidence, and obtain one
+independent human approval before manual merge. CODEOWNERS routes optional
+peer review on `dev`; required code-owner review is not enabled.
 
-1. Confirm the [CodeRabbit GitHub App installation](https://github.com/settings/installations)
-   remains limited to **Hungle2910/ai-exam-bank**.
-2. Review this configuration PR with an independent human reviewer and merge it.
-3. Open a small disposable PR. Confirm review on creation and after a new commit.
-   CodeRabbit must request changes for an actionable finding, then review the fix
-   and approve the latest commit. Verify GitHub counts its approval.
-4. Check an intentionally failing CI change and a conflicting branch separately;
-   both must remain unmergeable. Close the disposable PRs without merging faulty code.
-5. Record actual CodeRabbit check names and producing App from that run before
-   adding any required bot check. Review completion alone is not a clean-review verdict.
-6. Before allowing bot-only approval, enforce the independent-human policy below
-   with a tested required check or eligible code-owner rules. Until then, every PR
-   still needs independent human review by team policy.
+## Author workflow on `dev`
 
-## Daily workflow after activation
+1. Open a focused PR linked to its issue; use Draft while the work is incomplete.
+2. Read CodeRabbit's review and CI results on the latest commit. Fix actionable
+    findings, add regression tests where needed, and push. Request re-review with
+    `@coderabbitai review` if the bot did not review the latest change.
+3. Verify a proposed fix before resolving a conversation. Record the reason for
+    dismissing a false positive. Invite a qualified peer for risky changes to
+    IAM, auth, migrations, deployment or merge controls.
+4. Confirm all three required checks pass, conversations are resolved and GitHub
+    reports no conflict. Then the author clicks **Create a merge commit**.
 
-- Open a focused PR linked to its issue. Keep incomplete work in Draft.
-- Bot reviews the diff; GitHub Actions runs checks. Fix actionable defects, add
-  appropriate regression tests, then push. The bot reviews new commits automatically.
-- Let the bot verify addressed threads. Clicking Resolve is not evidence of a fix.
-  Discuss false positives with a reviewer and record the reason.
-- Once the latest commit is approved, CI passes, discussions are resolved and
-  GitHub reports no conflicts, the author with Write access manually clicks
-  Squash and merge. Auto-merge is disabled for this repository.
-- New changes invalidate old approvals. Review limits or outages mean waiting or
-  obtaining a human review under the repository policy, not forcing a bot approval.
+Bot review is advisory on code quality and does not replace product testing or
+domain review. Do not use `@coderabbitai approve` or `@coderabbitai resolve` as
+substitutes for verification. An outage or pending required check means waiting
+for the check or repairing its integration, not bypassing branch protection.
 
-`@coderabbitai review` requests another review. Do not use `@coderabbitai approve`
-or `@coderabbitai resolve` as substitutes for verification: those are overrides.
-Author overrides are disabled; non-author overrides still exist in CodeRabbit.
+## Release workflow on `main`
 
-## Independent human review
+After integration testing on `dev`, open a separate `dev → main` PR. Include
+the tested commit SHA, release scope and test/deployment evidence. The promotion
+check rejects a missing or stale SHA and requires a successful Application CI
+`push` run for that exact `dev` commit. A different team member with Write access
+reviews the evidence and approves. The maintainer manually creates the merge
+commit when GitHub reports all requirements satisfied.
 
-IAM/infrastructure, authentication/authorization, migrations, deployment workflows,
-CODEOWNERS, merge gates and bot configuration require an independent human reviewer.
-Gia Hưng reviews or requests a qualified member. For Gia Hưng's own PR, another
-member with Write access reviews. GitHub usernames for the other members must be
-confirmed before enabling mandatory ownership rules that would block the sole owner.
+## Bot verification and limits
 
-A generic one-approval rule does not distinguish bot approval from human approval.
-This document is a team policy until a dedicated required check or code-owner rule
-has been implemented and tested; it is not represented as automatic enforcement.
-Never let a PR lower its own approval requirements. Do not add sensitive workflows
-that execute untrusted PR code with secrets or a write token.
+CodeRabbit is installed for this repository. Validate on a small PR that it
+reviews both the initial diff and a new commit, identifies an actionable finding,
+and clears it after a fix. Also verify that failing CI and merge conflicts remain
+unmergeable. A successful status can mean a skipped review, especially on older
+PRs whose base branch predates the bot configuration; inspect the review text.
 
-## Conflicts and limits
-
-GitHub detects conflicts and blocks merging. Resolve conflicts locally or use
-CodeRabbit's conflict assistance if available in the installed plan; inspect the
-result and rerun CI. No bot guarantees that all bugs are found. Add application
-build, unit/integration/E2E tests and IaC checks when those components exist.
+GitHub detects merge conflicts. Resolve them, inspect the result and rerun CI.
+No bot guarantees that all bugs are found. Add application tests and deployment
+checks alongside the implemented components.
 
 ## References
 
-- [CodeRabbit approval workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow)
-- [Automatic review controls](https://docs.coderabbit.ai/configuration/auto-review)
+- [CodeRabbit request-changes workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow)
+- [CodeRabbit automatic review controls](https://docs.coderabbit.ai/configuration/auto-review)
 - [GitHub branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)

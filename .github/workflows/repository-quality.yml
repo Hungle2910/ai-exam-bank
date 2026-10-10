@@ -2,7 +2,7 @@ name: Repository quality
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -27,6 +27,8 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Install repository check dependencies
+        run: python -m pip install -r tools/requirements.txt
       - name: Test repository checks
         run: python -m unittest discover -s tests/repository -v
       - name: Check tracked files and local documentation links
