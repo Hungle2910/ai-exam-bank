@@ -1,9 +1,15 @@
 """Regression cases for real repository hygiene failures."""
 import tempfile
+import subprocess
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from tools.check_repository import inspect_file, inspect_module_ownership
+from defusedxml.common import DTDForbidden
+
+from tools.check_repository import inspect_compiled_source, inspect_file, inspect_module_ownership, main, solution_project_dirs
 
 
 class RepositoryChecksTests(unittest.TestCase):
@@ -69,6 +75,29 @@ class RepositoryChecksTests(unittest.TestCase):
                    '|---|---|---|\n'
                    '| Knowledge | @flwndyy | @Hungle2910 |\n')
         self.assertEqual(inspect_module_ownership(self.root), [])
+
+    def test_csharp_source_must_belong_to_a_solution_project(self):
+        self.write('AiExamBank.slnx',
+                   '<Solution><Project Path="src/Modules/Jobs/AiExamBank.Modules.Jobs.csproj" /></Solution>')
+        project_dirs = solution_project_dirs(self.root)
+        self.assertEqual(inspect_compiled_source(Path('src/Modules/Jobs/Contracts/IJobHandler.cs'), project_dirs), [])
+        self.assertTrue(inspect_compiled_source(Path('src/Contracts/BackgroundJobs/IJobHandler.cs'), project_dirs))
+        self.assertEqual(inspect_compiled_source(Path('docs/example.cs'), project_dirs), [])
+
+    def test_solution_rejects_doctype_and_entities(self):
+        self.write('AiExamBank.slnx', '<!DOCTYPE Solution [<!ENTITY x "boom">]><Solution>&x;</Solution>')
+        with self.assertRaises(DTDForbidden):
+            solution_project_dirs(self.root)
+
+    def test_main_reports_tracked_csharp_source_outside_solution_project(self):
+        output = StringIO()
+        with patch('tools.check_repository.subprocess.run', return_value=subprocess.CompletedProcess(
+            [], 0, stdout=b'src/Contracts/BackgroundJobs/IJobHandler.cs\0'
+        )), patch('tools.check_repository.inspect_file', return_value=[]), patch(
+            'tools.check_repository.solution_project_dirs', return_value={Path('src/Modules/Jobs')}
+        ), patch('tools.check_repository.inspect_module_ownership', return_value=[]), redirect_stdout(output):
+            self.assertEqual(main(), 1)
+        self.assertIn(str(Path('src/Contracts/BackgroundJobs/IJobHandler.cs')), output.getvalue())
 
 
 if __name__ == '__main__':
