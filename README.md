@@ -8,7 +8,7 @@
 
 Ngân hàng câu hỏi tập trung và nền tảng tạo đề theo ma trận. Amazon Bedrock RAG bổ sung bản nháp cho các ô thiếu; người duyệt kiểm tra nội dung và nguồn trước khi câu hỏi được sử dụng trong đề cuối.
 
-**Status: .NET solution scaffold.** Repository có API host, bảy module projects với hợp đồng/giá trị đầu tiên, MSTest domain/architecture và build settings dùng chung. API hiện chỉ phục vụ liveness/Problem Details; chưa có quy trình nghiệp vụ end-to-end, database, Worker xử lý job, Web hoặc AWS deployment. Badge trên phản ánh repository checks, không phải product readiness. [Mở bằng Visual Studio](docs/VISUAL_STUDIO_SETUP.md) · [Thiết kế solution](docs/DOTNET_SOLUTION_DESIGN.md) · [Mức hoàn thành](docs/DOTNET_FOUNDATION.md).
+**Status: .NET solution scaffold.** Repository có API host, bảy module projects với hợp đồng/giá trị đầu tiên, gồm Jobs contracts được biên dịch, MSTest domain/architecture và build settings dùng chung. API hiện chỉ phục vụ liveness/Problem Details; chưa có quy trình nghiệp vụ end-to-end, database, Worker xử lý job, Web hoặc AWS deployment. Badge trên phản ánh repository checks, không phải product readiness. [Mở bằng Visual Studio](docs/VISUAL_STUDIO_SETUP.md) · [Thiết kế solution](docs/DOTNET_SOLUTION_DESIGN.md) · [Mức hoàn thành](docs/DOTNET_FOUNDATION.md).
 
 [Delivery board](https://github.com/users/Hungle2910/projects/4) · [Issues](https://github.com/Hungle2910/ai-exam-bank/issues) · [Architecture](docs/ARCHITECTURE.md) · [Getting involved](CONTRIBUTING.md) · [Readiness review](docs/REPOSITORY_REVIEW.md)
 

@@ -33,6 +33,9 @@
   <Folder Name="/tests/Modules/Exams.Tests/">
     <Project Path="tests/Modules/Exams.Tests/AiExamBank.Modules.Exams.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Modules/Jobs.Tests/">
+    <Project Path="tests/Modules/Jobs.Tests/AiExamBank.Modules.Jobs.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Modules/Questions.Tests/">
     <Project Path="tests/Modules/Questions.Tests/AiExamBank.Modules.Questions.Tests.csproj" />
   </Folder>

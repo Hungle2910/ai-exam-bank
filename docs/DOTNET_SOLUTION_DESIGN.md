@@ -42,6 +42,7 @@ tests/
   repository/                      ✓ repository checks
   smoke/                           ✓ API liveness and 404 Problem Details
   Modules/{Questions,Exams}.Tests/ ✓ first domain validation tests
+  Modules/Jobs.Tests/              ✓ scoped job contract validation
   Architecture.Tests/             ✓ module dependency tests
   Modules/<OtherModule>.Tests/     + use-case behavior
   Integration/                     + DB/API/auth/transaction tests
