@@ -405,7 +405,7 @@ Risk does not mean a feature is broken. Log an Actual blocker only after confirm
 
 | Item | Value |
 | --- | --- |
-| PR | PR #57 (docs/M2-01_deploy_network.md) |
+| PR | PR #67 (docs/M2-01_deploy_network.md) |
 | Tests/API/UI/AWS evidence | | |
 | Actual hours | | |
 | Reviewer (per docs/TEAM.md) | | |
