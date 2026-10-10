@@ -2,6 +2,8 @@
 
 Ngày lập: 04/10/2026. Member mapping: M1 Gia Hưng; M2 Hữu Phước; M3 Minh Phúc; M4 Thiên Phúc; M5 Gia Bảo.
 
+**Cập nhật phạm vi 09/10/2026:** Project owner đã mở rộng MVP sang nhiều trường và kỳ thi cấp Bộ ([ADR 0004](adr/0004-multi-school-ministry-mvp.md)). Các gói việc, effort 926 giờ và demo flow bên dưới là **baseline lịch sử trước khi mở rộng**, không phải estimate/DoD đã đủ cho phạm vi mới. M1–M5 phải bổ sung và ước lượng việc về phân tách dữ liệu trường, gán quyền theo bộ môn/kỳ thi, hai người xác nhận đề cấp Bộ, migration, kiểm thử xuyên trường và chi phí AWS trước khi chốt lại milestone. [Permission matrix](IDENTITY_AND_PERMISSIONS.md) là nguồn sự thật cho role mới.
+
 ## 1. Executive Repository Assessment
 
 **Đây là kế hoạch triển khai đề xuất, chưa phải audit mã nguồn.** Scope bắt nguồn từ master prompt AI Exam Bank do project owner cung cấp. Repository mới được bootstrap với tài liệu và backlog; chưa có runtime implementation để xác minh completion. Bản Markdown nguồn tham chiếu trong master prompt chưa được cung cấp. Tên/path/API trong tài liệu là proposed design, không phải evidence đã triển khai.
@@ -158,8 +160,8 @@ Mỗi dòng có một owner chính. Reviewer là thành viên review chéo, khô
 - `Job`: QUEUED/RUNNING/SUCCEEDED/PARTIAL/FAILED/CANCELLED; lease/heartbeat và attempts để recover. Worker DB-backed cho MVP; không bắt buộc SQS.
 - Sau approve, M1 chạy lại assembly theo blueprint và chụp snapshot version-pinned. Có approved candidates không có nghĩa exam tự hoàn tất trước validation cuối.
 - API errors dùng contract thống nhất với code/message/validation errors/correlation ID; 401 thiếu identity, 403 thiếu quyền, 409 conflict revision/state. Endpoint kiểm quyền server, frontend chỉ phản ánh quyền.
-- Baseline quyền: Teacher quản lý nội dung/blueprint trong phạm vi được cấp; Reviewer review nội dung được phân công; Admin quản user/config. Vai trò vận hành không mặc định có quyền approve; quy tắc reviewer không tự duyệt revision mình tạo là đề xuất baseline cần chốt tuần 1.
-- MVP một tổ chức/trường. Dữ liệu có phạm vi môn/phân công; không mở multi-tenant SaaS ở MVP. Phải kiểm resource access trên question/exam/job/source, không chỉ role tổng quát.
+- Baseline quyền của gói này phải áp dụng `Teacher`, `DepartmentHead`, `SchoolAdmin`, `MinistryAdmin` theo permission matrix; kiểm tra school/department/event scope ở server. Người soạn không tự duyệt revision mình tạo, và quyền quản trị không mặc định cấp quyền xem đề thi mật hoặc duyệt nội dung.
+- MVP nhiều trường và kỳ thi cấp Bộ theo ADR 0004. Dữ liệu có phạm vi trường, môn/bộ môn hoặc kỳ thi được giao; chưa mở self-service multi-tenant SaaS. Phải kiểm resource access trên question/exam/job/source, không chỉ role tổng quát.
 - AWS: M2 provision tài nguyên; owner module cấu hình SDK/adapter/metrics; M3 review IAM/security. Không dùng access key hard-coded.
 - IaC/state, contracts và shared migration được review trước merge. Feature branch ngắn, PR nhỏ, CI green; mỗi owner tự tích hợp, lead giải quyết hợp đồng xung đột.
 
@@ -196,7 +198,7 @@ Các API dưới đây là đề xuất: prefix `/api`; đổi tên theo convent
 #### M3-01 — Identity, permission matrix và approval threat model
 
 - **Owner/role:** M3, Security & Approval Owner. **Mức:** MUST. **Độ khó/effort:** 4/5, 16 giờ. **Phụ thuộc:** M1-01.
-- **Các bước:** (1) Chọn auth theo repo; nếu greenfield cân nhắc ASP.NET Core Identity/session hoặc token flow có quản lý expiry, không tự viết crypto. (2) Chốt Teacher/Reviewer/Admin và resource scope/self-review rule. (3) Thiết kế review/audit contracts và login/admin/review wireframe.
+- **Các bước:** (1) Chọn auth theo repo; nếu greenfield cân nhắc ASP.NET Core Identity/session hoặc token flow có quản lý expiry, không tự viết crypto. (2) Chốt bốn role, school/department/event scope và self-review rule trong permission matrix. (3) Thiết kế review/audit contracts và login/admin/review wireframe.
 - **Đầu ra BE/FE/DB:** policies và auth/review contracts; wireframe identity/review; User/Role/ReviewDecision/Audit schema. **AWS:** đề xuất runtime/CI roles và secret delivery.
 - **Security:** threat model IDOR, privilege escalation, CSRF/XSS theo auth mode, revision conflict. **Tests:** permission matrix với allow/deny cases.
 - **Docs/evidence:** role matrix, threat model, token/session ADR. **Nghiệm thu:** mỗi endpoint dự kiến có policy/resource scope; quyền approve không thuộc AI/ops runtime.
@@ -766,9 +768,9 @@ Các lưu ý đã đối chiếu tài liệu AWS chính thức:
 
 ## 14. MVP
 
-**Phạm vi MVP chính xác đề xuất:** một tổ chức/trường, một loại câu hỏi MCQ một đáp án đúng, một bộ môn/chủ đề demo có thể mở rộng bằng metadata, một CSV format, một frontend và .NET modular monolith + durable workers trên AWS.
+**Phạm vi MVP hiện hành:** nhiều trường và kỳ thi cấp Bộ theo ADR 0004; một loại câu hỏi MCQ một đáp án đúng, một CSV format, một frontend và .NET modular monolith + durable workers trên AWS. Demo phải chứng minh cô lập ít nhất hai trường và hai tài khoản Bộ độc lập; các hạng mục cũ bên dưới cần re-estimate.
 
-1. Login/logout/session expiry; Teacher/Reviewer/Admin; server-side role/resource authorization và user-role management tối thiểu.
+1. Login/logout/session expiry; bốn role trong permission matrix; server-side authorization theo trường/bộ môn/kỳ thi và user-role management tối thiểu.
 2. Question Bank CRUD, subject/topic/difficulty metadata, search/filter/pagination, immutable revisions/history, edit approved tạo draft mới.
 3. CSV upload → validation preview → commit → row results; imported questions là DRAFT; retry không tạo trùng.
 4. Blueprint CRUD/UI ma trận; count/score/taxonomy validation.
@@ -814,9 +816,9 @@ Không tự triển khai STRETCH trong 10 tuần baseline. Không đưa RBAC, Qu
 
 ## 17. Final E2E Demo Path
 
-**Demo core 15–20 phút đề xuất**, dùng ít nhất Teacher A, Reviewer B và Admin C; corpus/seed version cố định, một blueprint đủ và một blueprint thiếu. Tài nguyên AWS đang hoạt động và mọi bước có job/revision/correlation ID để truy vết.
+**Demo core 15–20 phút đề xuất từ baseline cũ**; bản MVP mới cần thêm hai trường độc lập và một kỳ thi cấp Bộ có hai `MinistryAdmin` khác nhau soạn/xác nhận. Corpus/seed version cố định, một blueprint đủ và một blueprint thiếu. Tài nguyên AWS đang hoạt động và mọi bước có job/revision/correlation ID để truy vết.
 
-1. **M3:** Teacher login; thử gọi approve API khi không quyền và nhận 403. Reviewer/Admin accounts được giới thiệu theo quyền.
+1. **M3:** Teacher login; thử gọi approve API khi không quyền và nhận 403. Giới thiệu DepartmentHead/SchoolAdmin/MinistryAdmin theo scope; chứng minh không đọc được dữ liệu trường khác hoặc đề Bộ chưa được giao.
 2. **M4:** Teacher tạo/sửa/tìm câu hỏi; xem metadata và revision history. Tạo revision mới của câu đã approved, chứng minh draft mới không tự được duyệt.
 3. **M2:** Upload CSV có dòng hợp lệ/lỗi; preview chỉ ra lỗi; commit tạo draft; commit/retry lặp không tăng số câu.
 4. **M3:** Reviewer mở pending manual/imported draft, approve/reject có reason; audit ghi actor và revision.

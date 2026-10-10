@@ -20,6 +20,12 @@ Refs #
 - Config / IAM / cost effects:
 - Rollback / restore procedure:
 
+## Promotion to main (complete only for `dev → main`)
+
+- Exact `dev` commit SHA tested:
+- Integration / staging evidence and release scope:
+- Migration, rollback and known limitations:
+
 ## Review checklist
 
 - [ ] Acceptance criteria and relevant tests pass.
