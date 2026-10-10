@@ -22,7 +22,7 @@ Owner tự test relevant paths và xử lý CodeRabbit findings; chủ động m
 
 ## Repository checks and merge policy
 
-Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Với thay đổi ứng dụng, chạy thêm `dotnet build AiExamBank.slnx --configuration Release` và `python tests/smoke/test_api_health.py`. `Repository quality` và `Application CI` chạy trên PR và mỗi lần push vào `dev`/`main`; không dùng các check này để claim product tests hoặc AWS deployment đã pass.
+Chạy `python -m pip install -r tools/requirements.txt`, `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Với thay đổi ứng dụng, chạy thêm `dotnet build AiExamBank.slnx --configuration Release` và `python tests/smoke/test_api_health.py`. `Repository quality` và `Application CI` chạy trên PR và mỗi lần push vào `dev`/`main`; không dùng các check này để claim product tests hoặc AWS deployment đã pass.
 
 `dev` và `main` đều yêu cầu PR, code up-to-date, resolved conversations và không cho force-push/delete. Trên `dev`, không bắt buộc human approval; required checks là `Repository quality`, `Application build and smoke` và `CodeRabbit`. Tác giả xử lý findings, kiểm tra bot thật sự đã review (trạng thái “skipped” không phải review), rồi tự bấm **Create a merge commit** khi tất cả checks xanh. Trên `main`, PR chỉ lấy từ `dev` đã kiểm thử, ghi SHA/evidence/phạm vi release và vẫn cần một independent human approval. CODEOWNERS định tuyến peer reviewer theo module nhưng required code-owner approval chưa bật. Branch protection áp dụng cả với admin, bao gồm Gia Hưng.
 

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import re
 import subprocess
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+from defusedxml import ElementTree as ET
 
 PRIVATE_KEY = re.compile(rb"(?m)^-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")
 LINK = re.compile(r"\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)")
@@ -86,7 +87,7 @@ def inspect_module_ownership(root: Path) -> list[str]:
 
 def solution_project_dirs(root: Path) -> set[Path]:
     """Find SDK project roots that the Visual Studio solution actually builds."""
-    solution = ET.parse(root / 'AiExamBank.slnx')
+    solution = ET.parse(root / 'AiExamBank.slnx', forbid_dtd=True)
     return {
         Path(project.attrib['Path']).parent
         for project in solution.iter('Project')

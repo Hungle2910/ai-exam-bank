@@ -73,9 +73,10 @@ cd ai-exam-bank
 
 Read the architecture and your issue's dependencies/acceptance criteria before implementation. Branch from `dev`, use a short name such as `feat/M4-02-question-bank`, and submit a PR to `dev` with tests, evidence and a linked issue. After integration testing, promote `dev` to `main` through a separate reviewed PR. See [repository workflow ADR](docs/adr/0001-repository-workflow.md).
 
-**Checks available today** — Python 3.12, Git và .NET 10 SDK (xem `global.json`); không cần Python packages:
+**Checks available today** — Python 3.12, Git và .NET 10 SDK (xem `global.json`):
 
 ```bash
+python -m pip install -r tools/requirements.txt
 python -m unittest discover -s tests/repository -v
 python tools/check_repository.py
 dotnet build AiExamBank.slnx --configuration Release
