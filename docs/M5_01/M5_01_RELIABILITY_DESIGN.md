@@ -30,11 +30,12 @@ Before calling this runtime-ready, tests must prove duplicate enqueue, changed-p
 | :--- | :--- | :--- | :--- |
 | **Vừa nhận lệnh, đang chờ tới lượt** | Normal | `Pending` | Chờ xử lý (Waiting in queue...) |
 | **Đang xử lý bình thường** | Normal | `Running` | Đang xử lý (Processing...) |
-| **Mất kết nối mạng / DB tạm thời** | Transient | Vẫn giữ `Running` -> Thử lại sau 1 phút. | Đang xử lý (Warning: Connection delay) |
+| **Provider timeout/429/5xx** | Transient | Chuyển `Pending`; retry theo lịch 1 phút rồi 5 phút, tối đa 3 lần thử tổng cộng. | Đang chờ lần thử tiếp theo. |
+| **DB lỗi khi job đang chạy** | Transient | Worker dừng commit effect; recovery theo `LeaseExpiresAt` sau khi lease hết hạn. | Đang xử lý cho đến khi recovery. |
 | **Worker (Máy chủ) bị sập/crash** | Transient | Vẫn giữ `Running` -> Chờ máy khác cướp Job làm lại. | Đang xử lý (Retrying...) |
 | **Xử lý thành công trọn vẹn** | Normal | `Completed` | Thành công 100% (Done) |
 | **File CSV up lên sai định dạng** | Fatal | Chuyển sang `Failed`. Không Retry. | **Thất bại:** File sai định dạng. |
-| **Hết 3 lần Retry (Thử lại) vẫn lỗi** | Fatal | Chuyển sang `Failed`. Báo Admin. | **Thất bại:** Hệ thống quá tải. |
+| **Hết 3 lần thử tổng cộng (1 lần chạy đầu + tối đa 2 lần retry)** | Fatal | Chuyển sang `Failed`. Báo Admin. | **Thất bại:** Hệ thống quá tải. |
 | **Người dùng tự ý bấm nút Hủy** | Normal | Chuyển sang `Cancelled`. Dừng chạy ngầm. | Đã hủy (Cancelled by user) |
 
 ### 3.2. Reliability UI Wireframe (Phác thảo Giao diện)
@@ -71,10 +72,10 @@ Giao diện người dùng (ví dụ: màn hình Quản lý tiến trình Import
   "Options": ["x=2", "x=1", "x=-2", "Vô nghiệm"],
   "CorrectAnswer": "x=2",
   "MlAssessment": {
-    "DifficultyScore": null,  // AI sẽ điền vào (0.0 đến 1.0)
-    "CognitiveLevel": null,   // AI sẽ điền vào (Remember, Understand, Apply, Analyze)
-    "Tags": []                // AI tự động trích xuất từ khóa
+    "DifficultyScore": null,
+    "CognitiveLevel": null,
+    "Tags": []
   }
 }
 ```
-*Ghi chú: Cấu trúc này đảm bảo tách biệt phần dữ liệu thô và phần AI phân tích, giúp Job xử lý dễ dàng.*
+*Ghi chú: Cấu trúc này đảm bảo tách biệt phần dữ liệu thô và phần AI phân tích, giúp Job xử lý dễ dàng. Các thông số như `DifficultyScore` (0.0 đến 1.0), `CognitiveLevel` (Remember, Understand, Apply, Analyze), và `Tags` (trích xuất từ khóa) sẽ do AI tự động điền vào.*
