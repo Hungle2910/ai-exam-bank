@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -83,11 +84,32 @@ def inspect_module_ownership(root: Path) -> list[str]:
     ]
 
 
+def solution_project_dirs(root: Path) -> set[Path]:
+    """Find SDK project roots that the Visual Studio solution actually builds."""
+    solution = ET.parse(root / 'AiExamBank.slnx')
+    return {
+        Path(project.attrib['Path']).parent
+        for project in solution.iter('Project')
+        if project.attrib.get('Path', '').endswith('.csproj')
+    }
+
+
+def inspect_compiled_source(relative: Path, project_dirs: set[Path]) -> list[str]:
+    """Flag C# files in src that no solution project can compile by default."""
+    if relative.suffix.lower() != '.cs' or not relative.parts or relative.parts[0] != 'src':
+        return []
+    if any(parent in project_dirs for parent in relative.parents):
+        return []
+    return [f'{relative}: C# source is outside every project in AiExamBank.slnx']
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(['git', 'ls-files', '-z'], cwd=root, check=True, capture_output=True)
     files = [Path(name.decode('utf-8')) for name in result.stdout.split(b'\0') if name]
     issues = [issue for file in files for issue in inspect_file(root, file)]
+    project_dirs = solution_project_dirs(root)
+    issues.extend(issue for file in files for issue in inspect_compiled_source(file, project_dirs))
     issues.extend(inspect_module_ownership(root))
     for issue in issues:
         print(issue)

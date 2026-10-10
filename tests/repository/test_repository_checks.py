@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.check_repository import inspect_file, inspect_module_ownership
+from tools.check_repository import inspect_compiled_source, inspect_file, inspect_module_ownership, solution_project_dirs
 
 
 class RepositoryChecksTests(unittest.TestCase):
@@ -69,6 +69,14 @@ class RepositoryChecksTests(unittest.TestCase):
                    '|---|---|---|\n'
                    '| Knowledge | @flwndyy | @Hungle2910 |\n')
         self.assertEqual(inspect_module_ownership(self.root), [])
+
+    def test_csharp_source_must_belong_to_a_solution_project(self):
+        self.write('AiExamBank.slnx',
+                   '<Solution><Project Path="src/Modules/Jobs/AiExamBank.Modules.Jobs.csproj" /></Solution>')
+        project_dirs = solution_project_dirs(self.root)
+        self.assertEqual(inspect_compiled_source(Path('src/Modules/Jobs/Contracts/IJobHandler.cs'), project_dirs), [])
+        self.assertTrue(inspect_compiled_source(Path('src/Contracts/BackgroundJobs/IJobHandler.cs'), project_dirs))
+        self.assertEqual(inspect_compiled_source(Path('docs/example.cs'), project_dirs), [])
 
 
 if __name__ == '__main__':
