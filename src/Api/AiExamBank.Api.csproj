@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <UserSecretsId>64d9977f-932f-4cbc-867c-71b822835105</UserSecretsId>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Modules\Identity\AiExamBank.Modules.Identity.csproj" />
     <ProjectReference Include="..\Modules\Questions\AiExamBank.Modules.Questions.csproj" />
@@ -7,5 +10,7 @@
     <ProjectReference Include="..\Modules\Import\AiExamBank.Modules.Import.csproj" />
     <ProjectReference Include="..\Modules\Knowledge\AiExamBank.Modules.Knowledge.csproj" />
     <ProjectReference Include="..\Modules\Jobs\AiExamBank.Modules.Jobs.csproj" />
+    <ProjectReference Include="..\Persistence\AiExamBank.Persistence\AiExamBank.Persistence.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 </Project>
