@@ -99,17 +99,23 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Cấu hình Worker độc lập (`AiExamBank.Worker`) dùng chung `FileJobStore`, loại bỏ đăng ký DI đệ quy của `IJobRegistry`.
   2. **Bảo mật phân quyền bắt buộc (Mandatory Scoped Authorization — CWE-639 IDOR):**
      - `JobService` và các HTTP Endpoints yêu cầu bắt buộc header `X-Scope-Id` đối với cả 3 thao tác: `GetJobStatusAsync`, `CancelJobAsync`, và `ListJobsAsync`.
-     - Nếu thiếu `requesterScopeId` hoặc truy cập chéo trường khác, hệ thống lập tức từ chối với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
+     - Ràng buộc phạm vi với danh tính đã xác thực (`ResolveAuthenticatedScopeId`): Nếu client cố tình gửi `X-Scope-Id` của trường khác trong khi danh tính thuộc trường hiện tại, API lập tức từ chối với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
   3. **Hàng rào Fencing chặn đứng Lease quá hạn:**
      - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
-  4. **Bổ sung kiểm thử tích hợp End-to-End:**
-     - Smoke test `tests/smoke/test_api_health.py` tự động đẩy job qua HTTP API, Worker trong API nhận xử lý và kiểm chứng đạt trạng thái `Completed`.
+  4. **Đồng bộ đa tiến trình an toàn & Ghi đĩa nguyên tử:**
+     - `FileJobStore.ExecuteWithLock` ném `TimeoutException` nếu không lấy được mutex sau 5s, ngăn ngừa chạy trùng và mất mát dữ liệu snapshot.
+     - Dưới khóa Mutex, luôn gọi `LoadFromDisk()` để tránh bỏ sót các lần ghi cùng tick.
+     - Phương thức `SaveToDisk` ghi JSON vào file tạm `*.tmp` rồi dùng `File.Move(..., overwrite: true)` để đảm bảo tính nguyên tử (atomic) trên file system, không nuốt lỗi ghi đĩa.
+  5. **Xác thực dữ liệu đầu vào chuẩn RESTful:**
+     - Kiểm tra `Enum.IsDefined` cho `JobScopeKind`, xử lý `ArgumentException` từ `JobScope.Create` để trả về HTTP **400 Bad Request** khi tham số rỗng hoặc enum không xác định (ví dụ `scopeKind=999` hoặc `scopeResourceId` chỉ có khoảng trắng).
+  6. **Bổ sung kiểm thử tích hợp End-to-End:**
+     - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 400/403, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
 
 ---
 
 ## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
 
-- **Kiểm thử tự động:** 18/18 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
+- **Kiểm thử tự động:** 20/20 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
   - `Enqueue_returns_same_job_on_identical_fingerprint`: PASS
   - `Enqueue_throws_conflict_on_mismatched_fingerprint`: PASS
   - `Competing_workers_only_one_claims_job`: PASS
@@ -128,10 +134,12 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
   - `FileJobStore_preserves_queued_jobs_across_restart_and_instances`: PASS
   - `Exam_generation_and_csv_import_handlers_are_registered_and_executable`: PASS
   - `JobRegistry_registers_and_retrieves_handlers`: PASS
-- **Chất lượng toàn Solution:** 27/27 tests toàn hệ thống PASSED.
+  - `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum`: PASS
+  - `Job_service_list_cross_school_throws_unauthorized_access_exception`: PASS
+- **Chất lượng toàn Solution:** 29/29 tests toàn hệ thống PASSED.
 - **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
-- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 300 files.
-- **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404 và API Job Enqueue -> Worker Complete).
+- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 302 files.
+- **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404, kiểm tra phạm vi 400/403 và API Job Enqueue -> Worker Complete).
 
 ---
 
