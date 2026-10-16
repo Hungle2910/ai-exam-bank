@@ -1,0 +1,136 @@
+# M5-02 — Cẩm Nang Giải Trình & Lịch Sử Phản Biện Kỹ Thuật (Explanation & Defense History)
+
+**Tác giả:** Trần Gia Bảo (M5 / @TranGiaBao2005) — Reliability & ML Evaluation Engineer  
+**Nhiệm vụ:** [Issue #10: M5-02 — Durable Job Engine & Status UI](https://github.com/Hungle2910/ai-exam-bank/issues/10)  
+**Nhánh:** `feat/M5-02-durable-job-engine`  
+**Phiên bản Engine:** `v1.0.0-rc1`  
+**Tài liệu kỹ thuật chính:** [M5_02_JOB_ENGINE_DESIGN.md](M5_02_JOB_ENGINE_DESIGN.md)
+
+---
+
+## 1. Bối cảnh & Mục đích của Cẩm Nang này
+
+Tài liệu này lưu trữ lại toàn bộ **lịch sử trao đổi, quyết định kỹ thuật và cẩm nang trả lời phản biện** khi báo cáo nghiệm thu Task M5-02 trước Solution Architect (Gia Hưng M1), DevOps Lead (Hữu Phước M2), Giảng viên hướng dẫn hoặc Hội đồng đánh giá dự án AWS FCAJ.
+
+Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác về mặt kiến trúc tại sao hệ thống lại được thiết kế như vậy.
+
+---
+
+## 2. Bộ Câu Hỏi & Trả Lời Phản Biện Chuyên Sâu (Q&A Defense Guide)
+
+### Câu 1: Tại sao hệ thống cần một "Durable Background Job Engine" mà không dùng `Task.Run` hoặc `IHostedService` trong bộ nhớ?
+* **Trả lời:**
+  - Các tác vụ như **sinh đề thi AI qua AWS Bedrock** hoặc **nhập hàng nghìn câu hỏi từ file CSV** mất từ 30 giây đến vài phút để xử lý. Nếu dùng `Task.Run`:
+    1. Khi server API bị restart, ngắt điện hoặc scale down, toàn bộ tác vụ đang chạy trong RAM sẽ **bị mất vĩnh viễn (Lost work)** mà không có cơ chế khôi phục.
+    2. Không có cơ chế báo cáo tiến độ thời gian thực (Progress %) về cho người dùng.
+    3. Không thể mở rộng sang mô hình đa máy chủ (Multi-worker) vì các tiến trình không chia sẻ được trạng thái.
+  - **Durable Job Engine** giải quyết triệt để: Mọi trạng thái tác vụ được lưu trữ bền vững (Durable Store / PostgreSQL), hỗ trợ chiếm quyền thực thi có thời hạn (Leasing), tự động khôi phục khi worker chết, và cung cấp API tra cứu tiến độ an toàn.
+
+---
+
+### Câu 2: Cơ chế "Atomic Claim" và "Lease Fencing" hoạt động như thế nào để chống xung đột giữa 2 Worker?
+* **Trả lời:**
+  - **Atomic Claim (Chiếm quyền nguyên tử):** Khi 2 Worker cùng quét hàng đợi cùng một tích tắc, hệ thống sử dụng cơ chế khóa nguyên tử (trong SQL là `UPDATE jobs ... WHERE status = 'Pending' ... FOR UPDATE SKIP LOCKED` hoặc `lock` trong Store). Chỉ duy nhất **1 Worker** chiếm được Job và được cấp một chuỗi ngẫu nhiên gọi là `LeaseToken`. Worker còn lại nhận kết quả rỗng và nhường quyền.
+  - **Lease Fencing (Hàng rào chặn Worker cũ):** Thời hạn chiếm quyền (`LeaseDuration`) là 2 phút. Nếu Worker A bị lag mạng hoặc treo máy quá 2 phút, hệ thống sẽ thu hồi quyền và cấp Job cho Worker B với một `LeaseToken` mới. Khi Worker A tỉnh dậy và cố ghi đè kết quả, hệ thống kiểm tra token của Worker A không khớp với token hiện hành $\rightarrow$ Thao tác bị chặn đứng ngay lập tức (`Fenced`), ngăn ngừa lỗi **Split-Brain** và không làm sai lệch dữ liệu.
+  - 👉 *Đã kiểm chứng thành công qua Unit test `Claim_CompetingWorkers_OnlyOneClaimsSuccessfully` và `UpdateProgress_StaleToken_ReturnsFalse`.*
+
+---
+
+### Câu 3: Cơ chế "Heartbeat" và "Tự động thu hồi Lease" (Lease Expiry Recovery) là gì?
+* **Trả lời:**
+  - Trong suốt quá trình thực thi tác vụ nặng, Worker định kỳ gửi một tín hiệu nhịp tim **Heartbeat mỗi 30 giây** để gia hạn thêm 2 phút cho `LeaseExpiresAt`.
+  - Nếu Worker bị crash đột ngột (mất điện, kill process), nhịp tim sẽ dừng lại.
+  - Một tiến trình quét ngầm (`RecoverExpiredLeasesAsync`) chạy mỗi 30 giây sẽ phát hiện các Job đang `Running` nhưng đã quá hạn `LeaseExpiresAt`:
+    - Nếu Job chưa chạy quá 3 lần: Thu hồi về trạng thái `Pending` để Worker khác nhận lại và chạy tiếp.
+    - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `WORKER_LEASE_EXPIRED`.
+  - 👉 *Đã kiểm chứng qua test `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs`.*
+
+---
+
+### Câu 4: Tại sao lại chọn cơ chế "Bounded Retries" với độ trễ 1 phút, 5 phút và tối đa 3 lần?
+* **Trả lời:**
+  - **Không retry vô hạn (Bounded):** Nếu retry vô hạn, một payload lỗi (ví dụ file CSV hỏng hoặc câu lệnh AI vi phạm quy chuẩn) sẽ làm nghẽn toàn bộ hàng đợi của hệ thống (Poison Pill).
+  - **Khoảng trễ lũy tiến (+1m, +5m):** Các lỗi tạm thời của Cloud (ví dụ AWS Bedrock bị Throttling/Rate Limit, hoặc mạng RDS chập chờn) thường cần từ vài chục giây đến vài phút để hệ thống hạ tầng tự phục hồi. Thử lại ngay lập tức chỉ làm tăng tải và tiếp tục thất bại.
+  - **Phân loại lỗi thông minh:**
+    - Lỗi tạm thời (`IsTransient = true`): Áp dụng ngân sách 3 lần thử.
+    - Lỗi nghiệp vụ cố định (`IsTransient = false`, ví dụ `ROW_VALIDATION_ERROR`): Thất bại ngay lập tức mà không thử lại để tiết kiệm tài nguyên.
+
+---
+
+### Câu 5: Hệ thống bảo vệ tính cô lập dữ liệu giữa các trường học (Scoped Authorization) ra sao?
+* **Trả lời:**
+  - Theo kiến trúc Multi-School của dự án ([ADR 0004](../../docs/adr/0004-multi-school-ministry-mvp.md)), dữ liệu đề thi và câu hỏi của trường học A tuyệt đối không được để lộ cho giáo viên trường học B.
+  - Tại [JobService.cs](../../src/Modules/Jobs/Infrastructure/JobService.cs), mọi yêu cầu xem trạng thái (`GetJobStatusAsync`), danh sách hoặc hủy job đều đối chiếu `requesterScopeId` với `job.Scope.ResourceId`.
+  - Nếu phát hiện truy cập chéo trường: Hệ thống ném ngoại lệ `UnauthorizedAccessException` và API trả về ngay mã lỗi HTTP **403 Forbidden** với mã mở rộng `SCOPED_ACCESS_DENIED` theo chuẩn **RFC 7807 Problem Details**.
+  - Đồng thời, toàn bộ payload đề thi, đáp án, và stack trace nội bộ đều được ẩn (Log Redaction) và chỉ trả về thông báo lỗi an toàn `SafeErrorMessage`.
+
+---
+
+### Câu 6: Giao diện Status UI Dashboard có điểm gì nổi bật?
+* **Trả lời:**
+  - **Thẩm mỹ Dark Mode Glassmorphism:** Thiết kế hiện đại, cao cấp với phông chữ Inter, hiệu ứng làm mờ kính và đổ bóng chiều sâu.
+  - **5 Thẻ KPI Thống kê:** Nhảy số thời gian thực theo từng trạng thái (Tổng số, Đang chạy, Chờ xử lý, Thành công, Thất bại).
+  - **Adaptive Polling (Thăm dò thích ứng):**
+    - Thăm dò mỗi 2 giây khi có tác vụ đang chạy.
+    - Tự động giãn cách thành 5 giây khi rảnh rỗi (idle).
+    - Tự động giãn thành 8 giây khi mất kết nối mạng.
+  - **Dọn dẹp tài nguyên (Resource Cleanup):** Lắng nghe sự kiện `visibilitychange`. Khi người dùng chuyển tab hoặc thu nhỏ trình duyệt, polling tự động dừng hoàn toàn (`clearInterval`) để không làm hao pin và tốn CPU máy người dùng; khi mở lại tab sẽ tự động cập nhật ngay.
+
+---
+
+### Câu 7: Tại sao Task M5-02 ở Tuần 2 chưa đính kèm "Live AWS Evidence" mà vẫn đạt chuẩn nghiệm thu?
+* **Trả lời:**
+  - Theo phân công trách nhiệm nhóm ([TEAM.md](../../docs/TEAM.md)) và kế hoạch tổng thể ([IMPLEMENTATION_PLAN.md:L269-274](../../docs/IMPLEMENTATION_PLAN.md#L269-L274)):
+    - Nhiệm vụ tạo máy chủ EC2, VPC mạng riêng, và database PostgreSQL thật trên AWS RDS thuộc về bạn **Hữu Phước (M2 - AWS DevOps)** trong các gói M2-01 (W01) và M2-03 (W03).
+    - Task **M5-02 (Tuần W02)** là gói công việc tầng Application Engine & UI, có tiêu chí nghiệm thu là: *"durable job skeleton có test, local API & UI chạy thực tế, và worker sẵn sàng cho EC2"*.
+    - M5-02 đã hoàn tất 100% độ sẵn sàng cho AWS:
+      1. Đóng gói Worker độc lập tại [src/Worker/AiExamBank.Worker.csproj](../../src/Worker/AiExamBank.Worker.csproj) sẵn sàng chạy `systemd service` trên Amazon Linux EC2.
+      2. Tích hợp W3C Correlation ID (`X-Correlation-Id`) sẵn sàng cho AWS CloudWatch Logs.
+      3. Viết script DDL PostgreSQL [001_create_jobs_and_job_attempts.sql](../../src/Persistence/Migrations/001_create_jobs_and_job_attempts.sql) sẵn sàng migrate lên Amazon RDS.
+    - **Live AWS Evidence thực tế của M5** (CloudWatch Metrics, Alarms, và AWS SNS Notification) sẽ được thực hiện và đính kèm ở **Tuần W05 (M5-05)** và **Tuần W06 (M5-06)** theo đúng lộ trình dự án.
+
+---
+
+### Câu 8: Các thành viên khác (Gia Hưng M1, Hữu Phước M2) cắm logic nghiệp vụ vào Job Engine như thế nào?
+* **Trả lời:**
+  - Hệ thống sử dụng mẫu thiết kế **Registry Pattern** qua giao diện `IJobRegistry`.
+  - Khi M1 làm sinh đề thi AI: Chỉ cần hiện thực `IJobHandler` (như mẫu [ExamGenerationJobHandler.cs](../../src/Modules/Jobs/Infrastructure/ExamGenerationJobHandler.cs)) và đăng ký `Register("ExamGeneration", handler)`.
+  - Khi M2 làm import CSV: Hiện thực tương tự với `CsvImportJobHandler`.
+  - Mọi logic quản lý hàng đợi, phân quyền, lưu DB, gia hạn lease và hiển thị Dashboard đều do Engine của M5 tự động xử lý.
+
+---
+
+## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
+
+- **Kiểm thử tự động:** 15/15 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
+  - `Enqueue_DuplicateRequest_ReturnsSameJobId`: PASS
+  - `Enqueue_DifferentPayloadSameKey_ThrowsConflictException`: PASS
+  - `Claim_CompetingWorkers_OnlyOneClaimsSuccessfully`: PASS
+  - `Heartbeat_ValidToken_ExtendsLease`: PASS
+  - `UpdateProgress_StaleToken_ReturnsFalse`: PASS
+  - `FailJob_TransientError_SchedulesRetry`: PASS
+  - `FailJob_ExceedsMaxRetries_MarksAsFailed`: PASS
+  - `Cancel_PendingJob_TransitionsDirectlyToCancelled`: PASS
+  - `Cancel_RunningJob_SetsCancellationRequested`: PASS
+  - `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs`: PASS
+  - `ListJobs_ScopedBySchool_FiltersCorrectly`: PASS
+  - `GetJobStatus_CrossSchoolAccess_ThrowsUnauthorizedAccessException`: PASS
+  - `WorkerService_ExecutesJob_ToSuccess`: PASS
+  - `JobRegistry_RegistersAndRetrievesHandler`: PASS
+  - `JobRegistry_UnregisteredJobType_ThrowsKeyNotFoundException`: PASS
+- **Chất lượng toàn Solution:** 24/24 tests toàn hệ thống PASSED.
+- **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
+- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 299 files.
+- **Liveness & Error RFC 7807:** `python tests/smoke/test_api_health.py` PASSED.
+
+---
+
+## 4. Hướng Dẫn Vận Hành & Lệnh Thực Thi Nhanh
+
+| Mục đích | Lệnh thực thi từ thư mục gốc | Ghi chú |
+|---|---|---|
+| **Chạy Web API & Dashboard** | `dotnet run --project src/Api` (hoặc bấm `F5`) | Mở trình duyệt vào `http://localhost:5000/jobs/` |
+| **Tắt Server** | Bấm `Ctrl + C` trong Terminal | Hoặc gõ `Stop-Process -Name dotnet` |
+| **Chạy toàn bộ 24 Tests** | `dotnet test AiExamBank.slnx` | Kiểm tra tất cả module của cả nhóm |
+| **Chạy riêng 15 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests` | Kiểm tra riêng tính năng Background Jobs |
+| **Kiểm tra độ sạch Repo** | `python tools/check_repository.py` | Đảm bảo không dính secret key, link hỏng |
