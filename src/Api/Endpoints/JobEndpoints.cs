@@ -69,12 +69,27 @@ public static class JobEndpoints
                 ? "system-user"
                 : headerUserId;
 
-            if (!Enum.TryParse<JobScopeKind>(request.ScopeKind, ignoreCase: true, out var scopeKind))
+            if (!Enum.TryParse<JobScopeKind>(request.ScopeKind, ignoreCase: true, out var scopeKind) || !Enum.IsDefined(scopeKind))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
                     title: "Invalid Scope Kind",
                     detail: $"Scope kind '{request.ScopeKind}' is invalid. Supported values: School, MinistryExam.");
+            }
+
+            var authenticatedScope = ResolveAuthenticatedScopeId(httpContext, headerUserId, null);
+            if (!string.IsNullOrWhiteSpace(authenticatedScope) &&
+                !string.Equals(authenticatedScope, request.ScopeResourceId, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: $"Caller identity from scope '{authenticatedScope}' is not authorized to create jobs in scope '{request.ScopeResourceId}'.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
             }
 
             try
@@ -130,11 +145,26 @@ public static class JobEndpoints
             CancellationToken cancellationToken) =>
         {
             var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+
+            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: "Header 'X-Scope-Id' is required to access scoped jobs.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
             var jobRef = JobRef.Create(id);
 
             try
             {
-                var status = await tracker.GetJobStatusAsync(jobRef, requesterId, headerScopeId, cancellationToken);
+                var status = await tracker.GetJobStatusAsync(jobRef, requesterId, authenticatedScopeId, cancellationToken);
 
                 return Results.Ok(new JobApiResponse(
                     status.Job.Value,
@@ -182,7 +212,10 @@ public static class JobEndpoints
         {
             var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
 
-            if (string.IsNullOrWhiteSpace(headerScopeId))
+            // Xác định phạm vi được phép từ danh tính đã xác thực (ClaimsPrincipal hoặc Header danh tính)
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+
+            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
@@ -195,7 +228,21 @@ public static class JobEndpoints
                     });
             }
 
-            if (!Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind))
+            // Kiểm tra phân quyền: Không cho phép người dùng truy cập danh sách job của trường khác
+            if (!string.Equals(authenticatedScopeId, scopeResourceId, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: $"Caller identity from scope '{authenticatedScopeId}' is not authorized to list jobs in scope '{scopeResourceId}'.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
+            if (!Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status400BadRequest,
@@ -204,7 +251,7 @@ public static class JobEndpoints
             }
 
             JobStatus? statusFilter = null;
-            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<JobStatus>(status, ignoreCase: true, out var parsedStatus))
+            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<JobStatus>(status, ignoreCase: true, out var parsedStatus) && Enum.IsDefined(parsedStatus))
             {
                 statusFilter = parsedStatus;
             }
@@ -212,7 +259,7 @@ public static class JobEndpoints
             try
             {
                 var scope = JobScope.Create(parsedKind, scopeResourceId);
-                var jobs = await tracker.ListJobsAsync(scope, requesterId, headerScopeId, statusFilter, cancellationToken);
+                var jobs = await tracker.ListJobsAsync(scope, requesterId, authenticatedScopeId, statusFilter, cancellationToken);
 
                 var response = jobs.Select(j => new JobApiResponse(
                     j.Job.Value,
@@ -223,6 +270,18 @@ public static class JobEndpoints
                     j.SafeMessage)).ToList();
 
                 return Results.Ok(response);
+            }
+            catch (ArgumentException argEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid Scope Request",
+                    detail: argEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_SCOPE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
             }
             catch (UnauthorizedAccessException authEx)
             {
@@ -248,11 +307,26 @@ public static class JobEndpoints
             CancellationToken cancellationToken) =>
         {
             var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+
+            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: "Header 'X-Scope-Id' is required to cancel scoped jobs.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
             var jobRef = JobRef.Create(id);
 
             try
             {
-                var cancelled = await tracker.CancelJobAsync(jobRef, requesterId, headerScopeId, cancellationToken);
+                var cancelled = await tracker.CancelJobAsync(jobRef, requesterId, authenticatedScopeId, cancellationToken);
 
                 if (!cancelled)
                 {
@@ -288,5 +362,55 @@ public static class JobEndpoints
         });
 
         return group;
+    }
+
+    /// <summary>
+    /// Trích xuất và xác thực phạm vi phân quyền của người gọi từ danh tính đã xác thực (ClaimsPrincipal hoặc Header danh tính).
+    /// </summary>
+    /// <param name="httpContext">HTTP Context hiện tại.</param>
+    /// <param name="headerUserId">Header ID người dùng.</param>
+    /// <param name="headerScopeId">Header mã trường được gửi kèm.</param>
+    /// <returns>Mã phạm vi được phép, hoặc null nếu không thể xác định danh tính hợp lệ.</returns>
+    private static string? ResolveAuthenticatedScopeId(HttpContext httpContext, string? headerUserId, string? headerScopeId)
+    {
+        // 1. Kiểm tra claims từ danh tính đã xác thực trên HttpContext.User
+        if (httpContext.User?.Identity?.IsAuthenticated == true)
+        {
+            var claimScope = httpContext.User.FindFirst("scope_id")?.Value
+                ?? httpContext.User.FindFirst("school_id")?.Value
+                ?? httpContext.User.FindFirst("scope")?.Value
+                ?? httpContext.User.FindFirst("tenant_id")?.Value;
+
+            if (!string.IsNullOrWhiteSpace(claimScope))
+            {
+                return claimScope.Trim();
+            }
+        }
+
+        // 2. Kiểm tra header danh tính phạm vi được xác thực riêng (X-User-Scope-Id / X-Authenticated-Scope-Id)
+        if (httpContext.Request.Headers.TryGetValue("X-User-Scope-Id", out var userScopeHeader) &&
+            !string.IsNullOrWhiteSpace(userScopeHeader))
+        {
+            return userScopeHeader.ToString().Trim();
+        }
+
+        if (httpContext.Request.Headers.TryGetValue("X-Authenticated-Scope-Id", out var authScopeHeader) &&
+            !string.IsNullOrWhiteSpace(authScopeHeader))
+        {
+            return authScopeHeader.ToString().Trim();
+        }
+
+        // 3. Nếu danh tính user có định dạng scoped (ví dụ: user@school-hn-01 hoặc school-hn-01:user)
+        if (!string.IsNullOrWhiteSpace(headerUserId) && headerUserId.Contains('@'))
+        {
+            var parts = headerUserId.Split('@');
+            if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+            {
+                return parts[1].Trim();
+            }
+        }
+
+        // 4. Fallback về header X-Scope-Id cho tương thích ngược nếu không có claim danh tính xung đột
+        return string.IsNullOrWhiteSpace(headerScopeId) ? null : headerScopeId.Trim();
     }
 }

@@ -6,6 +6,8 @@ using AiExamBank.Modules.Jobs.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 
 // Cấu hình Job Engine Services cho API host:
 // Sử dụng FileJobStore để lưu trữ bền vững qua các lần khởi động lại và chia sẻ cùng tiến trình Worker
@@ -39,6 +41,9 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

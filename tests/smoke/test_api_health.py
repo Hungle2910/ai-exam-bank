@@ -92,6 +92,60 @@ def test_job_enqueue_and_completion(port):
     raise RuntimeError(f"Job {job_id} did not reach Completed state within 15 seconds.")
 
 
+def test_invalid_scope_returns_400(port):
+    """Verify that whitespace resource ID and invalid scope kind enum return HTTP 400 Bad Request."""
+    # 1. Whitespace scopeResourceId
+    url_whitespace = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=%20%20%20"
+    req_ws = urllib.request.Request(
+        url_whitespace,
+        headers={"Accept": "application/json", "X-Scope-Id": "   "}
+    )
+    try:
+        urllib.request.urlopen(req_ws, timeout=5)
+        raise RuntimeError("Whitespace scopeResourceId should have returned HTTP 400 or 403")
+    except urllib.error.HTTPError as err:
+        if err.code not in (400, 403):
+            raise RuntimeError(f"Expected HTTP 400/403 for whitespace scope, got {err.code}")
+
+    # 2. Invalid scopeKind=999
+    url_invalid_kind = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=999&scopeResourceId=school-hn-01"
+    req_kind = urllib.request.Request(
+        url_invalid_kind,
+        headers={"Accept": "application/json", "X-Scope-Id": "school-hn-01"}
+    )
+    try:
+        urllib.request.urlopen(req_kind, timeout=5)
+        raise RuntimeError("Invalid scopeKind=999 should have returned HTTP 400")
+    except urllib.error.HTTPError as err:
+        if err.code != 400:
+            raise RuntimeError(f"Expected HTTP 400 for invalid scope kind 999, got {err.code}")
+
+    print("Scope validation tests passed: whitespace resource ID and invalid enum return HTTP 400.")
+
+
+def test_cross_school_listing_returns_403(port):
+    """Verify that listing jobs across different schools is rejected with HTTP 403 SCOPED_ACCESS_DENIED."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-sg-02"
+    # User belongs to school-hn-01, but attempts to query school-sg-02
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "X-User-Id": "teacher-hn",
+            "X-User-Scope-Id": "school-hn-01",
+            "X-Scope-Id": "school-sg-02"
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Cross-school query should have returned HTTP 403 Forbidden")
+    except urllib.error.HTTPError as err:
+        if err.code != 403:
+            raise RuntimeError(f"Expected HTTP 403 for cross-school listing, got {err.code}")
+
+    print("Cross-school authorization test passed: Querying jobs of another school returns HTTP 403.")
+
+
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
@@ -136,6 +190,8 @@ def main():
                         ):
                             raise RuntimeError(f"Unexpected error response: {error.code} {problem}")
                     print("API liveness and error response smoke tests passed.")
+                    test_invalid_scope_returns_400(port)
+                    test_cross_school_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)
                     return 0
             except (urllib.error.URLError, TimeoutError, ConnectionError):

@@ -563,6 +563,11 @@ public sealed class FileJobStore : IJobStore, IDisposable
                     hasMutex = true;
                 }
 
+                if (!hasMutex)
+                {
+                    throw new TimeoutException("Could not acquire cross-process job store lock.");
+                }
+
                 // Luôn đồng bộ dữ liệu mới nhất nếu tệp trên đĩa vừa bị process khác ghi đè
                 CheckAndReloadFromDisk();
 
@@ -583,18 +588,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
     {
         if (!File.Exists(_filePath)) return;
 
-        try
-        {
-            var lastWrite = File.GetLastWriteTimeUtc(_filePath);
-            if (lastWrite > _lastFileWriteTime)
-            {
-                LoadFromDisk();
-            }
-        }
-        catch
-        {
-            // Bỏ qua lỗi I/O tạm thời khi kiểm tra timestamp
-        }
+        LoadFromDisk();
     }
 
     private void LoadFromDisk()
@@ -661,66 +655,61 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
     private void SaveToDisk()
     {
-        try
+        var snapshot = new StoreSnapshot
         {
-            var snapshot = new StoreSnapshot
+            Jobs = _jobs.Values.Select(job => new JobDataDto
             {
-                Jobs = _jobs.Values.Select(job => new JobDataDto
+                Id = job.Id,
+                Type = job.Type,
+                Status = job.Status,
+                PayloadReference = job.PayloadReference,
+                ResultId = job.ResultId,
+                CreatedBy = job.CreatedBy,
+                ScopeKind = job.Scope.Kind,
+                ScopeResourceId = job.Scope.ResourceId,
+                IdempotencyKey = job.IdempotencyKey,
+                RequestFingerprint = job.RequestFingerprint,
+                CorrelationId = job.CorrelationId,
+                AvailableAt = job.AvailableAt,
+                CancellationRequestedAt = job.CancellationRequestedAt,
+                AttemptCount = job.AttemptCount,
+                ProgressPercentage = job.ProgressPercentage,
+                ErrorCode = job.ErrorCode,
+                SafeErrorMessage = job.SafeErrorMessage,
+                CreatedAt = job.CreatedAt,
+                UpdatedAt = job.UpdatedAt
+            }).ToList(),
+            IdempotencyIndex = _idempotencyIndex,
+            Attempts = _attempts.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.Select(a => new AttemptDataDto
                 {
-                    Id = job.Id,
-                    Type = job.Type,
-                    Status = job.Status,
-                    PayloadReference = job.PayloadReference,
-                    ResultId = job.ResultId,
-                    CreatedBy = job.CreatedBy,
-                    ScopeKind = job.Scope.Kind,
-                    ScopeResourceId = job.Scope.ResourceId,
-                    IdempotencyKey = job.IdempotencyKey,
-                    RequestFingerprint = job.RequestFingerprint,
-                    CorrelationId = job.CorrelationId,
-                    AvailableAt = job.AvailableAt,
-                    CancellationRequestedAt = job.CancellationRequestedAt,
-                    AttemptCount = job.AttemptCount,
-                    ProgressPercentage = job.ProgressPercentage,
-                    ErrorCode = job.ErrorCode,
-                    SafeErrorMessage = job.SafeErrorMessage,
-                    CreatedAt = job.CreatedAt,
-                    UpdatedAt = job.UpdatedAt
-                }).ToList(),
-                IdempotencyIndex = _idempotencyIndex,
-                Attempts = _attempts.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value.Select(a => new AttemptDataDto
-                    {
-                        Id = a.Id,
-                        JobId = a.JobId,
-                        AttemptNumber = a.AttemptNumber,
-                        Status = a.Status,
-                        WorkerId = a.WorkerId,
-                        LeaseToken = a.LeaseToken,
-                        StartedAt = a.StartedAt,
-                        HeartbeatAt = a.HeartbeatAt,
-                        LeaseExpiresAt = a.LeaseExpiresAt,
-                        FinishedAt = a.FinishedAt,
-                        ErrorCode = a.ErrorCode,
-                        SafeErrorMessage = a.SafeErrorMessage
-                    }).ToList())
-            };
+                    Id = a.Id,
+                    JobId = a.JobId,
+                    AttemptNumber = a.AttemptNumber,
+                    Status = a.Status,
+                    WorkerId = a.WorkerId,
+                    LeaseToken = a.LeaseToken,
+                    StartedAt = a.StartedAt,
+                    HeartbeatAt = a.HeartbeatAt,
+                    LeaseExpiresAt = a.LeaseExpiresAt,
+                    FinishedAt = a.FinishedAt,
+                    ErrorCode = a.ErrorCode,
+                    SafeErrorMessage = a.SafeErrorMessage
+                }).ToList())
+        };
 
-            var json = JsonSerializer.Serialize(snapshot, JsonOptions);
-            var dir = Path.GetDirectoryName(_filePath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            File.WriteAllText(_filePath, json);
-            _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
-        }
-        catch
+        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+        var dir = Path.GetDirectoryName(_filePath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
         {
-            // Bỏ qua ngoại lệ ghi đĩa để không làm gián đoạn vòng đời runtime
+            Directory.CreateDirectory(dir);
         }
+
+        var tempPath = _filePath + $".{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, _filePath, overwrite: true);
+        _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
     }
 
     private static string BuildIdempotencyKey(JobRequest request) =>

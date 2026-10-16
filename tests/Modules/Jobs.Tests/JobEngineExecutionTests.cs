@@ -436,4 +436,39 @@ public sealed class JobEngineExecutionTests
         Assert.IsFalse(resImport.Succeeded);
         Assert.AreEqual("ROW_VALIDATION_ERROR", resImport.ErrorCode);
     }
+
+    [TestMethod]
+    public void Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum()
+    {
+        // 1. Whitespace resourceId throws ArgumentException
+        Assert.ThrowsExactly<ArgumentException>(() =>
+        {
+            JobScope.Create(JobScopeKind.School, "   ");
+        });
+
+        // 2. Undefined enum kind throws ArgumentOutOfRangeException (derived from ArgumentException)
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+        {
+            JobScope.Create((JobScopeKind)999, "school-hn-01");
+        });
+    }
+
+    [TestMethod]
+    public async Task Job_service_list_cross_school_throws_unauthorized_access_exception()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var schoolHn = JobScope.Create(JobScopeKind.School, "school-hn-01");
+        var schoolSg = JobScope.Create(JobScopeKind.School, "school-sg-02");
+
+        var req = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", schoolHn, "k-cross", "c-cross");
+        await service.EnqueueAsync(req);
+
+        // Requester từ school-hn-01 cố tình liệt kê job của school-sg-02 -> Bị từ chối
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.ListJobsAsync(schoolSg, "teacher-hn", requesterScopeId: "school-hn-01");
+        });
+    }
 }
