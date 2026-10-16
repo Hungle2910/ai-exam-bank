@@ -19,6 +19,13 @@ public sealed class JobWorkerService : BackgroundService
     private readonly JobWorkerOptions _options;
     private readonly ILogger<JobWorkerService> _logger;
 
+    /// <summary>
+    /// Khởi tạo JobWorkerService với kho lưu trữ tác vụ, danh mục handler, cấu hình và logger.
+    /// </summary>
+    /// <param name="jobStore">Kho lưu trữ tác vụ nền (IJobStore).</param>
+    /// <param name="jobRegistry">Bộ đăng ký handler (IJobRegistry).</param>
+    /// <param name="options">Tùy chọn cấu hình Worker.</param>
+    /// <param name="logger">Logger giám sát.</param>
     public JobWorkerService(
         IJobStore jobStore,
         IJobRegistry jobRegistry,

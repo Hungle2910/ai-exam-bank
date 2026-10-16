@@ -23,6 +23,12 @@ public sealed record CreateJobApiRequest(
 /// <summary>
 /// DTO phản hồi trạng thái an toàn của tác vụ ngầm cho Client và Status UI.
 /// </summary>
+/// <param name="JobId">Mã định danh duy nhất của tác vụ.</param>
+/// <param name="Status">Trạng thái vòng đời hiện tại của tác vụ.</param>
+/// <param name="ProgressPercentage">Tiến độ thực tế (0 - 100%) hoặc null nếu không đo lường được.</param>
+/// <param name="ResultId">Mã kết quả sinh ra nếu tác vụ thành công.</param>
+/// <param name="ErrorCode">Mã lỗi an toàn nếu thất bại.</param>
+/// <param name="SafeMessage">Thông báo an toàn hiển thị cho người dùng.</param>
 public sealed record JobApiResponse(
     Guid JobId,
     string Status,
@@ -36,6 +42,11 @@ public sealed record JobApiResponse(
 /// </summary>
 public static class JobEndpoints
 {
+    /// <summary>
+    /// Đăng ký toàn bộ các endpoint quản trị và tra cứu tác vụ nền theo chuẩn RESTful /api/v1/jobs.
+    /// </summary>
+    /// <param name="routes">Endpoint route builder của ASP.NET Core.</param>
+    /// <returns>RouteGroupBuilder đã cấu hình các route.</returns>
     public static RouteGroupBuilder MapJobEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/v1/jobs")
@@ -164,10 +175,25 @@ public static class JobEndpoints
             [FromQuery] string scopeResourceId,
             [FromQuery] string? status,
             [FromHeader(Name = "X-User-Id")] string? headerUserId,
+            [FromHeader(Name = "X-Scope-Id")] string? headerScopeId,
             [FromServices] IJobTracker tracker,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
+
+            if (string.IsNullOrWhiteSpace(headerScopeId))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: "Header 'X-Scope-Id' is required to list scoped jobs.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
 
             if (!Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind))
             {
@@ -183,18 +209,33 @@ public static class JobEndpoints
                 statusFilter = parsedStatus;
             }
 
-            var scope = JobScope.Create(parsedKind, scopeResourceId);
-            var jobs = await tracker.ListJobsAsync(scope, requesterId, statusFilter, cancellationToken);
+            try
+            {
+                var scope = JobScope.Create(parsedKind, scopeResourceId);
+                var jobs = await tracker.ListJobsAsync(scope, requesterId, headerScopeId, statusFilter, cancellationToken);
 
-            var response = jobs.Select(j => new JobApiResponse(
-                j.Job.Value,
-                j.Status.ToString(),
-                j.ProgressPercentage,
-                j.ResultId,
-                j.ErrorCode,
-                j.SafeMessage)).ToList();
+                var response = jobs.Select(j => new JobApiResponse(
+                    j.Job.Value,
+                    j.Status.ToString(),
+                    j.ProgressPercentage,
+                    j.ResultId,
+                    j.ErrorCode,
+                    j.SafeMessage)).ToList();
 
-            return Results.Ok(response);
+                return Results.Ok(response);
+            }
+            catch (UnauthorizedAccessException authEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: authEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
         });
 
         // 4. POST /api/v1/jobs/{id}/cancel - Yêu cầu hủy tác vụ an toàn

@@ -8,10 +8,19 @@ namespace AiExamBank.Modules.Jobs.Contracts;
 /// </summary>
 public sealed class JobConflictException : Exception
 {
+    /// <summary>
+    /// Khởi tạo ngoại lệ xung đột Idempotency kèm thông báo lỗi.
+    /// </summary>
+    /// <param name="message">Thông điệp chi tiết về sự xung đột khóa.</param>
     public JobConflictException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Khởi tạo ngoại lệ xung đột Idempotency kèm thông báo lỗi và ngoại lệ gốc.
+    /// </summary>
+    /// <param name="message">Thông điệp chi tiết về sự xung đột.</param>
+    /// <param name="innerException">Ngoại lệ nguyên nhân bên trong.</param>
     public JobConflictException(string message, Exception innerException) : base(message, innerException)
     {
     }

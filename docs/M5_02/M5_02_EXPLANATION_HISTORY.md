@@ -91,37 +91,47 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ---
 
-### Câu 8: Các thành viên khác (Gia Hưng M1, Hữu Phước M2) cắm logic nghiệp vụ vào Job Engine như thế nào?
+### Câu 9: Giải quyết phản hồi CodeRabbit Review về chia sẻ kho lưu trữ giữa API & Worker, kiểm soát phân quyền Scope Authorization và hàng rào Fencing như thế nào?
 * **Trả lời:**
-  - Hệ thống sử dụng mẫu thiết kế **Registry Pattern** qua giao diện `IJobRegistry`.
-  - Khi M1 làm sinh đề thi AI: Chỉ cần hiện thực `IJobHandler` (như mẫu [ExamGenerationJobHandler.cs](../../src/Modules/Jobs/Infrastructure/ExamGenerationJobHandler.cs)) và đăng ký `Register("ExamGeneration", handler)`.
-  - Khi M2 làm import CSV: Hiện thực tương tự với `CsvImportJobHandler`.
-  - Mọi logic quản lý hàng đợi, phân quyền, lưu DB, gia hạn lease và hiển thị Dashboard đều do Engine của M5 tự động xử lý.
+  1. **Chia sẻ lưu trữ & Thực thi chéo Process (Store Sharing & Durability Across Restart):**
+     - Đã bổ sung `FileJobStore` bền vững với khóa đồng bộ liên tiến trình (`Mutex`) và lược đồ JSON đối chiếu 1-1 với bảng PostgreSQL (`jobs`, `job_attempts`). Dữ liệu hàng đợi không bị mất khi tiến trình khởi động lại hoặc crash.
+     - Đăng ký `JobWorkerHostedService` ngay trong tiến trình `AiExamBank.Api` giúp các tác vụ đẩy qua API/Dashboard được xử lý tức thời đến hoàn tất mà không cần khởi động Worker riêng lẻ trong môi trường Dev.
+     - Cấu hình Worker độc lập (`AiExamBank.Worker`) dùng chung `FileJobStore`, loại bỏ đăng ký DI đệ quy của `IJobRegistry`.
+  2. **Bảo mật phân quyền bắt buộc (Mandatory Scoped Authorization — CWE-639 IDOR):**
+     - `JobService` và các HTTP Endpoints yêu cầu bắt buộc header `X-Scope-Id` đối với cả 3 thao tác: `GetJobStatusAsync`, `CancelJobAsync`, và `ListJobsAsync`.
+     - Nếu thiếu `requesterScopeId` hoặc truy cập chéo trường khác, hệ thống lập tức từ chối với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
+  3. **Hàng rào Fencing chặn đứng Lease quá hạn:**
+     - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
+  4. **Bổ sung kiểm thử tích hợp End-to-End:**
+     - Smoke test `tests/smoke/test_api_health.py` tự động đẩy job qua HTTP API, Worker trong API nhận xử lý và kiểm chứng đạt trạng thái `Completed`.
 
 ---
 
 ## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
 
-- **Kiểm thử tự động:** 15/15 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
-  - `Enqueue_DuplicateRequest_ReturnsSameJobId`: PASS
-  - `Enqueue_DifferentPayloadSameKey_ThrowsConflictException`: PASS
-  - `Claim_CompetingWorkers_OnlyOneClaimsSuccessfully`: PASS
-  - `Heartbeat_ValidToken_ExtendsLease`: PASS
-  - `UpdateProgress_StaleToken_ReturnsFalse`: PASS
-  - `FailJob_TransientError_SchedulesRetry`: PASS
-  - `FailJob_ExceedsMaxRetries_MarksAsFailed`: PASS
-  - `Cancel_PendingJob_TransitionsDirectlyToCancelled`: PASS
-  - `Cancel_RunningJob_SetsCancellationRequested`: PASS
-  - `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs`: PASS
-  - `ListJobs_ScopedBySchool_FiltersCorrectly`: PASS
-  - `GetJobStatus_CrossSchoolAccess_ThrowsUnauthorizedAccessException`: PASS
-  - `WorkerService_ExecutesJob_ToSuccess`: PASS
-  - `JobRegistry_RegistersAndRetrievesHandler`: PASS
-  - `JobRegistry_UnregisteredJobType_ThrowsKeyNotFoundException`: PASS
-- **Chất lượng toàn Solution:** 24/24 tests toàn hệ thống PASSED.
+- **Kiểm thử tự động:** 18/18 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
+  - `Enqueue_returns_same_job_on_identical_fingerprint`: PASS
+  - `Enqueue_throws_conflict_on_mismatched_fingerprint`: PASS
+  - `Competing_workers_only_one_claims_job`: PASS
+  - `Heartbeat_valid_token_extends_lease`: PASS
+  - `UpdateProgress_stale_token_fails`: PASS
+  - `FailJob_transient_error_schedules_retry`: PASS
+  - `FailJob_permanent_error_or_exhausted_retries_fails`: PASS
+  - `Cancel_pending_job_cancels_immediately`: PASS
+  - `Cancel_running_job_signals_cancellation`: PASS
+  - `RecoverExpiredLeases_reclaims_timed_out_jobs`: PASS
+  - `Job_service_enqueue_and_tracker_list_respects_scope`: PASS
+  - `Worker_service_executes_sample_handler_to_completion`: PASS
+  - `Cross_school_read_is_denied_with_unauthorized_access_exception`: PASS
+  - `Missing_scope_id_on_read_or_cancel_or_list_throws_unauthorized_access_exception`: PASS
+  - `UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token`: PASS
+  - `FileJobStore_preserves_queued_jobs_across_restart_and_instances`: PASS
+  - `Exam_generation_and_csv_import_handlers_are_registered_and_executable`: PASS
+  - `JobRegistry_registers_and_retrieves_handlers`: PASS
+- **Chất lượng toàn Solution:** 27/27 tests toàn hệ thống PASSED.
 - **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
-- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 299 files.
-- **Liveness & Error RFC 7807:** `python tests/smoke/test_api_health.py` PASSED.
+- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 300 files.
+- **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404 và API Job Enqueue -> Worker Complete).
 
 ---
 
@@ -131,6 +141,6 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 |---|---|---|
 | **Chạy Web API & Dashboard** | `dotnet run --project src/Api` (hoặc bấm `F5`) | Mở trình duyệt vào `http://localhost:5000/jobs/` |
 | **Tắt Server** | Bấm `Ctrl + C` trong Terminal | Hoặc gõ `Stop-Process -Name dotnet` |
-| **Chạy toàn bộ 24 Tests** | `dotnet test AiExamBank.slnx` | Kiểm tra tất cả module của cả nhóm |
-| **Chạy riêng 15 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests` | Kiểm tra riêng tính năng Background Jobs |
+| **Chạy toàn bộ 27 Tests** | `dotnet test AiExamBank.slnx` | Kiểm tra tất cả module của cả nhóm |
+| **Chạy riêng 18 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests` | Kiểm tra riêng tính năng Background Jobs |
 | **Kiểm tra độ sạch Repo** | `python tools/check_repository.py` | Đảm bảo không dính secret key, link hỏng |

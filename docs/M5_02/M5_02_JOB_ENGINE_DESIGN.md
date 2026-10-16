@@ -129,7 +129,7 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/jobs` | `X-User-Id`, `X-Correlation-Id`<br>Body: `jobType`, `payloadReference`, `scopeKind`, `scopeResourceId`, `idempotencyKey` | **202 Accepted**<br>`{ jobId, status: "Pending", correlationId }` | 400 (Validation)<br>409 (`IDEMPOTENCY_CONFLICT`) | Đưa tác vụ vào hàng đợi an toàn |
 | `GET` | `/api/v1/jobs/{id}` | Path: `id`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`{ jobId, status, progressPercentage, resultId, errorCode, safeMessage }` | 403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`) | Lấy trạng thái an toàn của tác vụ |
-| `GET` | `/api/v1/jobs` | Query: `scopeKind`, `scopeResourceId`, `status`<br>Header: `X-User-Id` | **200 OK**<br>`[ { jobId, status, ... } ]` | 400 (`Invalid Scope Kind`) | Lọc danh sách tác vụ trong phạm vi |
+| `GET` | `/api/v1/jobs` | Query: `scopeKind`, `scopeResourceId`, `status`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`[ { jobId, status, ... } ]` | 400 (`Invalid Scope Kind`)<br>403 (`SCOPED_ACCESS_DENIED`) | Lọc danh sách tác vụ trong phạm vi (bắt buộc khớp `X-Scope-Id`) |
 | `POST` | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`{ jobId, status, safeMessage }` | 403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn |
 
 ### 5.2. Cấu trúc Lỗi Chuẩn RFC 7807 Problem Details

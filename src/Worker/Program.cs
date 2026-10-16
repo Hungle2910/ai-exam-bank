@@ -7,19 +7,19 @@ using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Cấu hình kho lưu trữ Job và danh mục Handler
-builder.Services.AddSingleton<IJobStore, InMemoryJobStore>();
-builder.Services.AddSingleton<IJobRegistry, JobRegistry>();
+// Cấu hình kho lưu trữ Job bền vững và danh mục Handler
+builder.Services.AddSingleton<IJobStore, FileJobStore>();
+builder.Services.AddSingleton<JobRegistry>();
 
 // Đăng ký các Handler thực thi tác vụ
 builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
 builder.Services.AddSingleton<IJobHandler, ExamGenerationJobHandler>();
 builder.Services.AddSingleton<IJobHandler, CsvImportJobHandler>();
 
-// Tự động đăng ký các IJobHandler vào IJobRegistry
-builder.Services.AddSingleton(sp =>
+// Đăng ký IJobRegistry phân giải từ JobRegistry cụ thể, tránh đệ quy
+builder.Services.AddSingleton<IJobRegistry>(sp =>
 {
-    var registry = sp.GetRequiredService<IJobRegistry>();
+    var registry = sp.GetRequiredService<JobRegistry>();
     foreach (var handler in sp.GetServices<IJobHandler>())
     {
         registry.Register(handler);

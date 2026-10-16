@@ -1,0 +1,229 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using AiExamBank.Modules.Jobs.Contracts;
+using AiExamBank.Modules.Jobs.Domain;
+
+namespace AiExamBank.Api.HostedServices;
+
+/// <summary>
+/// Dịch vụ nền (IHostedService) chạy bên trong tiến trình API Host.
+/// Đảm bảo các tác vụ đưa vào hàng đợi qua API/Status UI được tự động thăm dò, nhận quyền (Lease),
+/// và xử lý hoàn tất ngay trong cùng tiến trình khi triển khai đơn lẻ hoặc trong môi trường phát triển (Dev).
+/// </summary>
+public sealed class JobWorkerHostedService : BackgroundService
+{
+    private readonly IJobStore _jobStore;
+    private readonly IJobRegistry _jobRegistry;
+    private readonly ILogger<JobWorkerHostedService> _logger;
+    private readonly string _workerId;
+
+    /// <summary>
+    /// Khởi tạo dịch vụ nền với kho lưu trữ tác vụ, danh mục handler và logger.
+    /// </summary>
+    /// <param name="jobStore">Kho lưu trữ tác vụ nền.</param>
+    /// <param name="jobRegistry">Bộ đăng ký handler.</param>
+    /// <param name="logger">Logger giám sát.</param>
+    public JobWorkerHostedService(
+        IJobStore jobStore,
+        IJobRegistry jobRegistry,
+        ILogger<JobWorkerHostedService> logger)
+    {
+        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
+        _jobRegistry = jobRegistry ?? throw new ArgumentNullException(nameof(jobRegistry));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _workerId = $"api-worker-{Environment.MachineName}-{Guid.NewGuid():N}"[..32];
+    }
+
+    /// <summary>
+    /// Vòng lặp thực thi chính của Worker tích hợp trong API.
+    /// </summary>
+    /// <param name="stoppingToken">Token dừng host.</param>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("In-process JobWorkerHostedService started. WorkerId: {WorkerId}", _workerId);
+
+        var pollingInterval = TimeSpan.FromSeconds(1);
+        var maxPollingInterval = TimeSpan.FromSeconds(5);
+        var leaseDuration = TimeSpan.FromMinutes(2);
+        var recoveryInterval = TimeSpan.FromSeconds(30);
+
+        var currentDelay = pollingInterval;
+        var lastRecoveryCheck = DateTimeOffset.UtcNow;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                // 1. Quét thu hồi Lease quá hạn định kỳ
+                if (DateTimeOffset.UtcNow - lastRecoveryCheck >= recoveryInterval)
+                {
+                    var recovered = await _jobStore.RecoverExpiredLeasesAsync(stoppingToken);
+                    if (recovered > 0)
+                    {
+                        _logger.LogWarning("API Worker recovered {RecoveredCount} abandoned jobs.", recovered);
+                    }
+                    lastRecoveryCheck = DateTimeOffset.UtcNow;
+                }
+
+                // 2. Thăm dò và chiếm quyền xử lý tác vụ tiếp theo
+                var claim = await _jobStore.ClaimNextJobAsync(_workerId, leaseDuration, stoppingToken);
+
+                if (claim is null)
+                {
+                    await Task.Delay(currentDelay, stoppingToken);
+                    currentDelay = TimeSpan.FromTicks(Math.Min(currentDelay.Ticks * 2, maxPollingInterval.Ticks));
+                    continue;
+                }
+
+                currentDelay = pollingInterval;
+                _logger.LogInformation("API Worker claimed job {JobId} (Attempt {Attempt}) of type '{JobType}'",
+                    claim.Job.Id, claim.Attempt.AttemptNumber, claim.Job.Type);
+
+                await ProcessJobAsync(claim, leaseDuration, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in API JobWorkerHostedService loop.");
+                await Task.Delay(currentDelay, stoppingToken);
+            }
+        }
+
+        _logger.LogInformation("In-process JobWorkerHostedService stopped.");
+    }
+
+    private async Task ProcessJobAsync(JobClaimResult claim, TimeSpan leaseDuration, CancellationToken hostStoppingToken)
+    {
+        var job = claim.Job;
+        var leaseToken = claim.LeaseToken;
+
+        var handler = _jobRegistry.GetHandler(job.Type);
+        if (handler is null)
+        {
+            _logger.LogError("No registered handler found for JobType '{JobType}'. Failing job permanently.", job.Type);
+            await _jobStore.FailJobAsync(
+                job.Id,
+                leaseToken,
+                "UNKNOWN_JOB_TYPE",
+                $"No handler registered in system for job type '{job.Type}'.",
+                isTransient: false,
+                hostStoppingToken);
+            return;
+        }
+
+        using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
+        using var heartbeatCts = new CancellationTokenSource();
+        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, leaseToken, leaseDuration, jobCts, heartbeatCts.Token);
+
+        var jobRequest = JobRequest.Create(
+            job.Type,
+            job.PayloadReference,
+            job.CreatedBy,
+            job.Scope,
+            job.IdempotencyKey,
+            job.CorrelationId);
+
+        var context = new JobExecutionContext
+        {
+            JobId = JobRef.Create(job.Id),
+            Request = jobRequest,
+            AttemptNumber = claim.Attempt.AttemptNumber,
+            ReportProgressAsync = async percentage =>
+            {
+                var currentJob = await _jobStore.GetByIdAsync(job.Id, hostStoppingToken);
+                if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                {
+                    jobCts.Cancel();
+                    throw new OperationCanceledException(jobCts.Token);
+                }
+
+                await _jobStore.UpdateProgressAsync(job.Id, leaseToken, percentage, hostStoppingToken);
+            }
+        };
+
+        try
+        {
+            var result = await handler.ExecuteAsync(context, jobCts.Token);
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+
+            if (result.Succeeded)
+            {
+                await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, hostStoppingToken);
+                _logger.LogInformation("Job {JobId} completed successfully. ResultId: {ResultId}", job.Id, result.ResultId);
+            }
+            else
+            {
+                await _jobStore.FailJobAsync(
+                    job.Id,
+                    leaseToken,
+                    result.ErrorCode ?? "JOB_FAILED",
+                    result.SafeErrorMessage ?? "The background job encountered an unhandled error.",
+                    result.IsTransient,
+                    hostStoppingToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            _logger.LogInformation("Job {JobId} was cancelled.", job.Id);
+        }
+        catch (Exception ex)
+        {
+            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            _logger.LogError(ex, "Unhandled exception processing job {JobId}.", job.Id);
+
+            await _jobStore.FailJobAsync(
+                job.Id,
+                leaseToken,
+                "UNHANDLED_EXCEPTION",
+                "An unexpected system exception occurred during job processing.",
+                isTransient: true,
+                hostStoppingToken);
+        }
+    }
+
+    private async Task RunHeartbeatLoopAsync(
+        Guid jobId,
+        Guid leaseToken,
+        TimeSpan leaseDuration,
+        CancellationTokenSource jobCts,
+        CancellationToken heartbeatStopToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            while (!heartbeatStopToken.IsCancellationRequested && await timer.WaitForNextTickAsync(heartbeatStopToken))
+            {
+                var renewed = await _jobStore.HeartbeatAsync(jobId, leaseToken, leaseDuration, heartbeatStopToken);
+                if (!renewed)
+                {
+                    jobCts.Cancel();
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            jobCts.Cancel();
+        }
+    }
+
+    private static async Task StopHeartbeatAsync(CancellationTokenSource heartbeatCts, Task heartbeatTask)
+    {
+        try
+        {
+            heartbeatCts.Cancel();
+            await heartbeatTask;
+        }
+        catch
+        {
+        }
+    }
+}

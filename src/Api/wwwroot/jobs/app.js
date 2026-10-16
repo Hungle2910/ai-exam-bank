@@ -101,7 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(url, {
                 headers: {
                     'Accept': 'application/json',
-                    'X-User-Id': userId
+                    'X-User-Id': userId,
+                    'X-Scope-Id': scopeId
                 }
             });
 
@@ -285,13 +286,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.cancelJob = async (jobId) => {
         if (!confirm('Bạn có chắc chắn muốn hủy tác vụ này không?')) return;
         const userId = userIdInput.value.trim() || 'system-user';
+        const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
 
         try {
             const response = await fetch(`/api/v1/jobs/${jobId}/cancel`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'X-User-Id': userId
+                    'X-User-Id': userId,
+                    'X-Scope-Id': scopeId
                 }
             });
 
@@ -421,7 +424,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'X-User-Id': userId
+                    'X-User-Id': userId,
+                    'X-Scope-Id': payload.scopeResourceId
                 },
                 body: JSON.stringify(payload)
             });

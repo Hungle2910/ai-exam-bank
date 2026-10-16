@@ -218,10 +218,10 @@ public sealed class JobEngineExecutionTests
         var jobRef2 = await service.EnqueueAsync(req2);
         await service.EnqueueAsync(reqOtherSchool);
 
-        var schoolList = await service.ListJobsAsync(SchoolScope, "teacher-1");
+        var schoolList = await service.ListJobsAsync(SchoolScope, "teacher-1", requesterScopeId: "school-hn-01");
         Assert.HasCount(2, schoolList);
 
-        var status1 = await service.GetJobStatusAsync(jobRef1, "teacher-1");
+        var status1 = await service.GetJobStatusAsync(jobRef1, "teacher-1", requesterScopeId: "school-hn-01");
         Assert.AreEqual(JobStatus.Pending, status1.Status);
     }
 
@@ -290,6 +290,115 @@ public sealed class JobEngineExecutionTests
         {
             await service.GetJobStatusAsync(jobRef, "teacher-sg", requesterScopeId: "school-sg-02");
         });
+    }
+
+    [TestMethod]
+    public async Task Missing_scope_id_on_read_or_cancel_or_list_throws_unauthorized_access_exception()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var request = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", SchoolScope, "idem-miss-1", "corr-miss");
+        var jobRef = await service.EnqueueAsync(request);
+
+        // 1. Thiếu scope trên status check: Bị từ chối ngay lập tức
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScopeId: null);
+        });
+
+        // 2. Thiếu scope trên cancel: Bị từ chối ngay lập tức
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.CancelJobAsync(jobRef, "teacher-hn", requesterScopeId: null);
+        });
+
+        // 3. Thiếu scope trên list: Bị từ chối ngay lập tức
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScopeId: null);
+        });
+
+        // 4. Mismatched scope trên list: Bị từ chối ngay lập tức
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScopeId: "school-diff-99");
+        });
+    }
+
+    [TestMethod]
+    public async Task UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token()
+    {
+        var currentTime = DateTimeOffset.UtcNow;
+        var store = new InMemoryJobStore(() => currentTime);
+
+        var request = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", SchoolScope, "idem-lease-1", "corr-lease");
+        var job = await store.EnqueueAsync(request, "fp-lease");
+
+        var claim = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim);
+
+        // Giả lập thời gian trôi qua 3 phút (> 2 phút lease)
+        currentTime = currentTime.AddMinutes(3);
+
+        // Worker cũ cố cập nhật tiến độ hoặc hoàn thành -> Bị Fencing chặn đứng
+        var progressUpdated = await store.UpdateProgressAsync(job.Id, claim.LeaseToken, 50);
+        Assert.IsFalse(progressUpdated, "UpdateProgress with expired lease should fail.");
+
+        var heartbeatSucceeded = await store.HeartbeatAsync(job.Id, claim.LeaseToken, TimeSpan.FromMinutes(2));
+        Assert.IsFalse(heartbeatSucceeded, "Heartbeat with expired lease should fail.");
+
+        var completed = await store.CompleteJobAsync(job.Id, claim.LeaseToken, "res-1");
+        Assert.IsFalse(completed, "Complete with expired lease should fail.");
+    }
+
+    [TestMethod]
+    public async Task FileJobStore_preserves_queued_jobs_across_restart_and_instances()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobs_test_{Guid.NewGuid():N}.json");
+
+        try
+        {
+            // Instance 1: Đẩy job vào hàng đợi
+            using (var store1 = new FileJobStore(tempFile))
+            {
+                var request = JobRequest.Create("SampleJob", "s3://temp-ref", "user-1", SchoolScope, "key-persist-1", "corr-1");
+                var enqueued = await store1.EnqueueAsync(request, "fp-1");
+                Assert.AreEqual(JobStatus.Pending, enqueued.Status);
+            }
+
+            // Instance 2: Giả lập restart tiến trình - đọc lại từ tệp
+            using (var store2 = new FileJobStore(tempFile))
+            {
+                var list = await store2.ListByScopeAsync(SchoolScope);
+                Assert.HasCount(1, list, "Queued job must be preserved across restart.");
+                Assert.AreEqual(JobStatus.Pending, list[0].Status);
+
+                // Claim và thực thi hoàn tất
+                var claim = await store2.ClaimNextJobAsync("worker-restart", TimeSpan.FromMinutes(2));
+                Assert.IsNotNull(claim);
+                Assert.AreEqual(JobStatus.Running, claim.Job.Status);
+
+                var completed = await store2.CompleteJobAsync(claim.Job.Id, claim.LeaseToken, "res-restart-100");
+                Assert.IsTrue(completed);
+            }
+
+            // Instance 3: Xác minh trạng thái đã hoàn tất được lưu bền vững trên đĩa
+            using (var store3 = new FileJobStore(tempFile))
+            {
+                var list = await store3.ListByScopeAsync(SchoolScope);
+                Assert.HasCount(1, list);
+                Assert.AreEqual(JobStatus.Completed, list[0].Status);
+                Assert.AreEqual("res-restart-100", list[0].ResultId);
+            }
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                try { File.Delete(tempFile); } catch { }
+            }
+        }
     }
 
     [TestMethod]

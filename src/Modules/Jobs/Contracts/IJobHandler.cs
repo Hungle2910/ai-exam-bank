@@ -31,6 +31,9 @@ public interface IJobHandler
     /// <summary>
     /// Phương thức tương thích ngược dành cho các handler đơn giản chỉ cần JobRequest.
     /// </summary>
+    /// <param name="request">Thông tin yêu cầu tác vụ.</param>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Task đại diện cho tiến trình thực thi.</returns>
     Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
         => Task.CompletedTask;
 }

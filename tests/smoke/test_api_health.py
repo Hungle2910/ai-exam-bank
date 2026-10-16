@@ -39,6 +39,59 @@ def stop_api(process, port):
     raise RuntimeError(f"API port {port} remained open after process exit")
 
 
+def test_job_enqueue_and_completion(port):
+    """Verify that jobs enqueued through the API are claimed by the worker and reach Completed."""
+    enqueue_url = f"http://127.0.0.1:{port}/api/v1/jobs"
+    payload = json.dumps({
+        "jobType": "SampleJob",
+        "payloadReference": "s3://smoke-test",
+        "scopeKind": "School",
+        "scopeResourceId": "school-hn-01",
+        "idempotencyKey": f"smoke-key-{int(time.time())}"
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        enqueue_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-User-Id": "smoke-tester",
+            "X-Scope-Id": "school-hn-01"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=5) as response:
+        if response.status != 202:
+            raise RuntimeError(f"Job enqueue failed with HTTP {response.status}")
+        data = json.load(response)
+        job_id = data.get("jobId")
+        if not job_id:
+            raise RuntimeError(f"JobId missing from enqueue response: {data}")
+
+    # Thăm dò cho đến khi job hoàn tất (tối đa 15 giây)
+    status_url = f"http://127.0.0.1:{port}/api/v1/jobs/{job_id}"
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        status_req = urllib.request.Request(
+            status_url,
+            headers={
+                "Accept": "application/json",
+                "X-User-Id": "smoke-tester",
+                "X-Scope-Id": "school-hn-01"
+            }
+        )
+        with urllib.request.urlopen(status_req, timeout=5) as status_resp:
+            job_data = json.load(status_resp)
+            if job_data.get("status") == "Completed":
+                print(f"Integration test passed: Job {job_id} reached Completed state.")
+                return
+        time.sleep(0.5)
+
+    raise RuntimeError(f"Job {job_id} did not reach Completed state within 15 seconds.")
+
+
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
@@ -83,6 +136,7 @@ def main():
                         ):
                             raise RuntimeError(f"Unexpected error response: {error.code} {problem}")
                     print("API liveness and error response smoke tests passed.")
+                    test_job_enqueue_and_completion(port)
                     return 0
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(0.2)

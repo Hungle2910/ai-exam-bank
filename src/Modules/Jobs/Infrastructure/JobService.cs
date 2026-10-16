@@ -7,12 +7,17 @@ namespace AiExamBank.Modules.Jobs.Infrastructure;
 
 /// <summary>
 /// Hiện thực dịch vụ quản lý tác vụ ngầm (Job Service) tích hợp cả IJobPublisher và IJobTracker.
-/// Chịu trách nhiệm băm Fingerprint, điều phối Enqueue qua IJobStore và bảo vệ phân quyền khi đọc/hủy Job.
+/// Chịu trách nhiệm băm Fingerprint, điều phối Enqueue qua IJobStore và bảo vệ phân quyền nghiêm ngặt khi đọc/hủy Job.
 /// </summary>
 public sealed class JobService : IJobPublisher, IJobTracker
 {
     private readonly IJobStore _store;
 
+    /// <summary>
+    /// Khởi tạo JobService với một kho lưu trữ tác vụ hợp lệ (IJobStore).
+    /// </summary>
+    /// <param name="store">Kho lưu trữ tác vụ (InMemoryJobStore hoặc FileJobStore).</param>
+    /// <exception cref="ArgumentNullException">Ném ra khi store là null.</exception>
     public JobService(IJobStore store)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -39,13 +44,17 @@ public sealed class JobService : IJobPublisher, IJobTracker
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
 
+        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        {
+            throw new UnauthorizedAccessException("Requester scope ID is required for scoped job access.");
+        }
+
         var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
         if (job is null)
             throw new KeyNotFoundException($"Job with ID '{jobRef.Value}' was not found.");
 
-        // Kiểm tra phân quyền phạm vi: Không cho phép truy cập tác vụ chéo trường
-        if (!string.IsNullOrWhiteSpace(requesterScopeId) &&
-            !string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép truy cập tác vụ chéo trường
+        if (!string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
                 $"Requester from scope '{requesterScopeId}' is not authorized to access job in scope '{job.Scope.ResourceId}'.");
@@ -61,13 +70,17 @@ public sealed class JobService : IJobPublisher, IJobTracker
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
 
+        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        {
+            throw new UnauthorizedAccessException("Requester scope ID is required for scoped job cancellation.");
+        }
+
         var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
         if (job is null)
             return false;
 
-        // Kiểm tra phân quyền phạm vi: Không cho phép hủy tác vụ chéo trường
-        if (!string.IsNullOrWhiteSpace(requesterScopeId) &&
-            !string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép hủy tác vụ chéo trường
+        if (!string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
                 $"Requester from scope '{requesterScopeId}' is not authorized to cancel job in scope '{job.Scope.ResourceId}'.");
@@ -77,11 +90,23 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, string? requesterScopeId = null, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(scope);
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
+
+        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        {
+            throw new UnauthorizedAccessException("Requester scope ID is required to list scoped jobs.");
+        }
+
+        // Kiểm tra phân quyền phạm vi: Chỉ được liệt kê các tác vụ trong phạm vi của chính người yêu cầu
+        if (!string.Equals(requesterScopeId, scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException(
+                $"Requester from scope '{requesterScopeId}' is not authorized to list jobs in scope '{scope.ResourceId}'.");
+        }
 
         var jobs = await _store.ListByScopeAsync(scope, statusFilter, cancellationToken);
         return jobs.Select(MapToDto).ToList();
