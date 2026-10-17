@@ -75,6 +75,19 @@ public static class JobEndpoints
                     detail: $"Scope kind '{request.ScopeKind}' is invalid. Supported values: School, MinistryExam.");
             }
 
+            if (string.IsNullOrWhiteSpace(request.ScopeResourceId))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid Scope Resource Id",
+                    detail: "Scope resource ID cannot be empty or whitespace.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_SCOPE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
             var authenticatedScope = ResolveAuthenticatedScopeId(httpContext);
             if (string.IsNullOrWhiteSpace(authenticatedScope) ||
                 !string.Equals(authenticatedScope, request.ScopeResourceId, StringComparison.OrdinalIgnoreCase))
@@ -222,6 +235,32 @@ public static class JobEndpoints
                     });
             }
 
+            if (!Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid Scope Kind",
+                    detail: $"Scope kind '{scopeKind}' is invalid. Supported values: School, MinistryExam.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_SCOPE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
+            if (string.IsNullOrWhiteSpace(scopeResourceId))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid Scope Resource Id",
+                    detail: "Scope resource ID cannot be empty or whitespace.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_SCOPE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
             // Kiểm tra phân quyền: Không cho phép người dùng truy cập danh sách job của trường khác
             if (!string.Equals(authenticatedScopeId, scopeResourceId, StringComparison.OrdinalIgnoreCase))
             {
@@ -234,14 +273,6 @@ public static class JobEndpoints
                         ["code"] = "SCOPED_ACCESS_DENIED",
                         ["traceId"] = httpContext.TraceIdentifier
                     });
-            }
-
-            if (!Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind) || !Enum.IsDefined(parsedKind))
-            {
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Invalid Scope Kind",
-                    detail: $"Scope kind '{scopeKind}' is invalid. Supported values: School, MinistryExam.");
             }
 
             JobStatus? statusFilter = null;

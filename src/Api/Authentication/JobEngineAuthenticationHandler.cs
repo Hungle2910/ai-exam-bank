@@ -6,9 +6,17 @@ using Microsoft.Extensions.Options;
 namespace AiExamBank.Api.Authentication;
 
 /// <summary>
+/// Bản ghi danh tính người dùng được cấu hình an toàn cho môi trường chạy ứng dụng.
+/// </summary>
+/// <param name="UserId">Mã định danh người dùng.</param>
+/// <param name="ScopeId">Mã phạm vi (trường / tổ chức) được ủy quyền.</param>
+public sealed record TrustedDevIdentity(string UserId, string ScopeId);
+
+/// <summary>
 /// Trình xử lý xác thực danh tính cho dịch vụ Job Engine (JobEngine Authentication Handler).
-/// Xác thực token dạng Bearer và ánh xạ người dùng cùng phạm vi (scope claims: scope_id, school_id) vào HttpContext.User.
-/// Chặn đứng tấn công vượt quyền và bảo đảm nguyên tắc Zero-Trust, không tin cậy các Header do Client tự định nghĩa.
+/// Xác thực token dạng Bearer dựa trên danh sách token được cấp phép của máy chủ,
+/// ánh xạ người dùng cùng phạm vi (scope claims: scope_id, school_id) vào HttpContext.User.
+/// Chặn đứng tấn công vượt quyền và bảo đảm nguyên tắc Zero-Trust, từ chối mọi token do Client tự tạo (CWE-287, CWE-862).
 /// </summary>
 public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
@@ -16,6 +24,20 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
     /// Tên lược đồ xác thực chuẩn cho Job Engine.
     /// </summary>
     public const string SchemeName = "JobEngineAuth";
+
+    /// <summary>
+    /// Danh sách token danh tính được cấp phép và xác thực trước bởi hệ thống.
+    /// Chỉ các token trong danh sách này mới được cấp quyền truy cập; từ chối mọi token do client tự tạo.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, TrustedDevIdentity> TrustedTokens =
+        new Dictionary<string, TrustedDevIdentity>(StringComparer.Ordinal)
+        {
+            ["dev-system-token-hn"] = new("system-user", "school-hn-01"),
+            ["dev-teacher-hn-token"] = new("teacher-hn", "school-hn-01"),
+            ["dev-teacher-sg-token"] = new("teacher-sg", "school-sg-02"),
+            ["smoke-test-token-hn"] = new("smoke-tester", "school-hn-01"),
+            ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02")
+        };
 
     public JobEngineAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -47,48 +69,21 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             return Task.FromResult(AuthenticateResult.Fail("Bearer token is empty."));
         }
 
-        // 2. Phân giải token danh tính:
-        // Cú pháp chuẩn hóa: "<userId>:<scopeId>" (ví dụ: "smoke-tester:school-hn-01", "teacher-hn:school-hn-01")
-        // Hỗ trợ token định danh nhanh cho môi trường nội bộ: "teacher-hn", "teacher-sg", "smoke-tester", "system-user"
-        string userId;
-        string scopeId;
-
-        if (token.Contains(':'))
+        // 2. Xác minh token dựa trên danh mục token được cấp phép của máy chủ:
+        // Tuyệt đối không chấp nhận token do client tự chế (ví dụ: user:scope) để triệt tiêu lỗ hổng CWE-287 và CWE-862.
+        if (!TrustedTokens.TryGetValue(token, out var identityConfig))
         {
-            var parts = token.Split(':', 2);
-            userId = parts[0].Trim();
-            scopeId = parts[1].Trim();
-        }
-        else
-        {
-            userId = token;
-            scopeId = token switch
-            {
-                "teacher-hn" => "school-hn-01",
-                "teacher-sg" => "school-sg-02",
-                "smoke-tester" => "school-hn-01",
-                "system-user" => "school-hn-01",
-                _ => string.Empty
-            };
-        }
-
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return Task.FromResult(AuthenticateResult.Fail("User ID in token is invalid."));
+            return Task.FromResult(AuthenticateResult.Fail($"Untrusted or invalid Bearer token '{token}'."));
         }
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, userId),
-            new(ClaimTypes.Name, userId)
+            new(ClaimTypes.NameIdentifier, identityConfig.UserId),
+            new(ClaimTypes.Name, identityConfig.UserId),
+            new("scope_id", identityConfig.ScopeId),
+            new("school_id", identityConfig.ScopeId),
+            new("scope", identityConfig.ScopeId)
         };
-
-        if (!string.IsNullOrWhiteSpace(scopeId))
-        {
-            claims.Add(new Claim("scope_id", scopeId));
-            claims.Add(new Claim("school_id", scopeId));
-            claims.Add(new Claim("scope", scopeId));
-        }
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);

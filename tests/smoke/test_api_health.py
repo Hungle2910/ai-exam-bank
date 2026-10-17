@@ -56,7 +56,7 @@ def test_job_enqueue_and_completion(port):
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": "Bearer smoke-tester:school-hn-01",
+            "Authorization": "Bearer smoke-test-token-hn",
             "X-User-Id": "smoke-tester",
             "X-Scope-Id": "school-hn-01"
         },
@@ -79,7 +79,7 @@ def test_job_enqueue_and_completion(port):
             status_url,
             headers={
                 "Accept": "application/json",
-                "Authorization": "Bearer smoke-tester:school-hn-01",
+                "Authorization": "Bearer smoke-test-token-hn",
                 "X-User-Id": "smoke-tester",
                 "X-Scope-Id": "school-hn-01"
             }
@@ -96,29 +96,29 @@ def test_job_enqueue_and_completion(port):
 
 def test_invalid_scope_returns_400(port):
     """Verify that whitespace resource ID and invalid scope kind enum return HTTP 400 Bad Request."""
-    # 1. Whitespace scopeResourceId
+    # 1. Whitespace scopeResourceId using valid credentials
     url_whitespace = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=%20%20%20"
     req_ws = urllib.request.Request(
         url_whitespace,
         headers={
             "Accept": "application/json",
-            "Authorization": "Bearer smoke-tester:   "
+            "Authorization": "Bearer smoke-test-token-hn"
         }
     )
     try:
         urllib.request.urlopen(req_ws, timeout=5)
-        raise RuntimeError("Whitespace scopeResourceId should have returned HTTP 400 or 403")
+        raise RuntimeError("Whitespace scopeResourceId should have returned HTTP 400 Bad Request")
     except urllib.error.HTTPError as err:
-        if err.code not in (400, 403):
-            raise RuntimeError(f"Expected HTTP 400/403 for whitespace scope, got {err.code}")
+        if err.code != 400:
+            raise RuntimeError(f"Expected HTTP 400 for whitespace scope, got {err.code}")
 
-    # 2. Invalid scopeKind=999
+    # 2. Invalid scopeKind=999 using valid credentials
     url_invalid_kind = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=999&scopeResourceId=school-hn-01"
     req_kind = urllib.request.Request(
         url_invalid_kind,
         headers={
             "Accept": "application/json",
-            "Authorization": "Bearer smoke-tester:school-hn-01"
+            "Authorization": "Bearer smoke-test-token-hn"
         }
     )
     try:
@@ -139,7 +139,7 @@ def test_cross_school_listing_returns_403(port):
         url,
         headers={
             "Accept": "application/json",
-            "Authorization": "Bearer teacher-hn:school-hn-01",
+            "Authorization": "Bearer dev-teacher-hn-token",
             "X-User-Scope-Id": "school-sg-02",
             "X-Scope-Id": "school-sg-02"
         }
@@ -193,6 +193,26 @@ def test_forged_headers_without_auth_returns_401(port):
     print("Header forgery test passed: Request with only fake client headers rejected with HTTP 401.")
 
 
+def test_untrusted_bearer_token_returns_401(port):
+    """Verify that arbitrary client-forged Bearer tokens (e.g. attacker:school-sg-02) return HTTP 401."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-sg-02"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer attacker:school-sg-02"
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Untrusted Bearer token should have returned HTTP 401 Unauthorized")
+    except urllib.error.HTTPError as err:
+        if err.code != 401:
+            raise RuntimeError(f"Expected HTTP 401 for untrusted Bearer token, got {err.code}")
+
+    print("Untrusted token test passed: Arbitrary client-crafted Bearer token rejected with HTTP 401.")
+
+
 def test_job_create_cross_school_returns_403(port):
     """Verify that creating a job in a different school than authenticated identity is rejected with HTTP 403."""
     url = f"http://127.0.0.1:{port}/api/v1/jobs"
@@ -211,7 +231,7 @@ def test_job_create_cross_school_returns_403(port):
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": "Bearer teacher-hn:school-hn-01"
+            "Authorization": "Bearer dev-teacher-hn-token"
         },
         method="POST"
     )
@@ -271,6 +291,7 @@ def main():
                     print("API liveness and error response smoke tests passed.")
                     test_unauthenticated_request_returns_401(port)
                     test_forged_headers_without_auth_returns_401(port)
+                    test_untrusted_bearer_token_returns_401(port)
                     test_job_create_cross_school_returns_403(port)
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)

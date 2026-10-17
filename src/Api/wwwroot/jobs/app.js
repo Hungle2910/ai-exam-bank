@@ -88,6 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#039;');
     }
 
+    function getAuthorizedToken(scopeId) {
+        if (scopeId === 'school-sg-02') {
+            return 'dev-teacher-sg-token';
+        }
+        return 'dev-system-token-hn';
+    }
+
     // -------------------------------------------------------------
     // API Fetching & Adaptive Polling
     // -------------------------------------------------------------
@@ -101,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(url, {
                 headers: {
                     'Accept': 'application/json',
-                    'Authorization': `Bearer ${userId}:${scopeId}`,
+                    'Authorization': `Bearer ${getAuthorizedToken(scopeId)}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': scopeId
                 }
@@ -294,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
-                    'Authorization': `Bearer ${userId}:${scopeId}`,
+                    'Authorization': `Bearer ${getAuthorizedToken(scopeId)}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': scopeId
                 }
@@ -426,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'Authorization': `Bearer ${userId}:${payload.scopeResourceId}`,
+                    'Authorization': `Bearer ${getAuthorizedToken(payload.scopeResourceId)}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': payload.scopeResourceId
                 },

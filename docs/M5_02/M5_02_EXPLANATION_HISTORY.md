@@ -112,6 +112,10 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Kiểm tra `Enum.IsDefined` cho `JobScopeKind`, xử lý `ArgumentException` từ `JobScope.Create` để trả về HTTP **400 Bad Request** khi tham số rỗng hoặc enum không xác định (ví dụ `scopeKind=999` hoặc `scopeResourceId` chỉ có khoảng trắng).
   6. **Bổ sung kiểm thử tích hợp End-to-End & Regression Security:**
      - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 401/403 cho các trường hợp không xác thực, giả mạo header, tạo job chéo trường, Problem Details 404, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
+   7. **Bảo mật cơ chế xác thực Token bằng danh mục tin cậy (Trusted Token Whitelist — CWE-287, CWE-862):**
+      - Loại bỏ hoàn toàn việc phân tích chuỗi Bearer tự do từ client (`userId:scopeId`).
+      - Triển khai danh mục token tin cậy do server định nghĩa (`dev-system-token-hn`, `dev-teacher-hn-token`, `dev-teacher-sg-token`, `smoke-test-token-hn`, `smoke-test-token-sg`). Mọi token tự chế hoặc ngoài danh sách (như `attacker:school-sg-02`) đều bị từ chối ngay với HTTP **401 Unauthorized**.
+      - Cập nhật giao diện Status UI Dashboard (`app.js`) và Smoke Test sử dụng token hợp thức tương ứng với từng phạm vi trường học, bổ sung test tự động chặn đứng kẻ tấn công giả mạo token.
 
 ---
 
