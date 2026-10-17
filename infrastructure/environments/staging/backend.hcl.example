@@ -1,0 +1,5 @@
+bucket       = "aieb-tfstate-000000000000-ap-southeast-1"
+key          = "staging/infrastructure/terraform.tfstate"
+region       = "ap-southeast-1"
+encrypt      = true
+use_lockfile = true
