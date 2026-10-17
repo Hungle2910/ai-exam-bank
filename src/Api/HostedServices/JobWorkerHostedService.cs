@@ -116,7 +116,7 @@ public sealed class JobWorkerHostedService : BackgroundService
 
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
         using var heartbeatCts = new CancellationTokenSource();
-        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, leaseToken, leaseDuration, jobCts, heartbeatCts.Token);
+        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, leaseDuration, jobCts, heartbeatCts.Token);
 
         var jobRequest = JobRequest.Create(
             job.Type,
@@ -196,6 +196,7 @@ public sealed class JobWorkerHostedService : BackgroundService
 
     private async Task RunHeartbeatLoopAsync(
         Guid jobId,
+        string correlationId,
         Guid leaseToken,
         TimeSpan leaseDuration,
         CancellationTokenSource jobCts,
@@ -210,16 +211,20 @@ public sealed class JobWorkerHostedService : BackgroundService
                 var renewed = await _jobStore.HeartbeatAsync(jobId, leaseToken, leaseDuration, heartbeatStopToken);
                 if (!renewed)
                 {
+                    _logger.LogWarning("Heartbeat renewal failed or was fenced in API worker. Triggering job cancellation. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
                     jobCts.Cancel();
                     break;
                 }
+
+                _logger.LogDebug("Heartbeat extended successfully in API worker. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
             }
         }
         catch (OperationCanceledException)
         {
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Unexpected error in API worker heartbeat loop for JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
             jobCts.Cancel();
         }
     }

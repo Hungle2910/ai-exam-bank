@@ -221,6 +221,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
                 .FirstOrDefault();
 
             // 2. Nếu không có Pending, tìm tác vụ Running nhưng đã bị bỏ hoang (Lease quá hạn)
+            var hasModifications = false;
             if (eligibleJob is null)
             {
                 foreach (var runningJob in _jobs.Values.Where(j => j.Status == JobStatus.Running))
@@ -232,6 +233,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
                         {
                             lastAttempt.Status = AttemptStatus.Abandoned;
                             lastAttempt.FinishedAt = now;
+                            hasModifications = true;
 
                             if (runningJob.AttemptCount >= 3)
                             {
@@ -251,6 +253,10 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
             if (eligibleJob is null)
             {
+                if (hasModifications)
+                {
+                    SaveToDisk();
+                }
                 return (JobClaimResult?)null;
             }
 

@@ -130,7 +130,7 @@ public sealed class JobWorkerService : BackgroundService
 
         // 3. Khởi động Timer/Task duy trì Heartbeat ngầm mỗi 30 giây
         using var heartbeatCts = new CancellationTokenSource();
-        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, leaseToken, jobCts, heartbeatCts.Token);
+        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, jobCts, heartbeatCts.Token);
 
         // 4. Tạo JobExecutionContext và hàm callback báo cáo tiến độ
         var jobRequest = JobRequest.Create(
@@ -232,6 +232,7 @@ public sealed class JobWorkerService : BackgroundService
     /// </summary>
     private async Task RunHeartbeatLoopAsync(
         Guid jobId,
+        string correlationId,
         Guid leaseToken,
         CancellationTokenSource jobCts,
         CancellationToken heartbeatStopToken)
@@ -246,12 +247,12 @@ public sealed class JobWorkerService : BackgroundService
 
                 if (!renewed)
                 {
-                    _logger.LogWarning("Heartbeat renewal failed or was fenced. Triggering job cancellation. JobId: {JobId}", jobId);
+                    _logger.LogWarning("Heartbeat renewal failed or was fenced. Triggering job cancellation. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
                     jobCts.Cancel();
                     break;
                 }
 
-                _logger.LogDebug("Heartbeat extended successfully. JobId: {JobId}", jobId);
+                _logger.LogDebug("Heartbeat extended successfully. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
             }
         }
         catch (OperationCanceledException)
@@ -260,7 +261,7 @@ public sealed class JobWorkerService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error in heartbeat loop for JobId: {JobId}", jobId);
+            _logger.LogError(ex, "Unexpected error in heartbeat loop for JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
             jobCts.Cancel();
         }
     }
