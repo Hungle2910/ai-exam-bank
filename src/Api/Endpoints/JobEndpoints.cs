@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using AiExamBank.Api.Authentication;
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 
 namespace AiExamBank.Api.Endpoints;
 
@@ -383,6 +385,35 @@ public static class JobEndpoints
                     });
             }
         });
+
+        // 5. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
+        routes.MapGet("/api/v1/jobs/dev-token", (
+            [FromQuery] string? scopeId,
+            [FromServices] IHostEnvironment env) =>
+        {
+            if (!env.IsDevelopment())
+            {
+                return Results.NotFound();
+            }
+
+            var targetScope = string.IsNullOrWhiteSpace(scopeId) ? "school-hn-01" : scopeId.Trim();
+            var devEntry = JobEngineAuthenticationHandler.DevelopmentTokens
+                .FirstOrDefault(kvp => string.Equals(kvp.Value.ScopeId, targetScope, StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrEmpty(devEntry.Key))
+            {
+                devEntry = JobEngineAuthenticationHandler.DevelopmentTokens.First();
+            }
+
+            return Results.Ok(new
+            {
+                token = devEntry.Key,
+                userId = devEntry.Value.UserId,
+                scopeId = devEntry.Value.ScopeId
+            });
+        })
+        .WithTags("JobsDev")
+        .AllowAnonymous();
 
         return group;
     }

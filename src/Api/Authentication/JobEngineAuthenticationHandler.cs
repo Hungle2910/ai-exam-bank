@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AiExamBank.Api.Authentication;
@@ -14,9 +17,9 @@ public sealed record TrustedDevIdentity(string UserId, string ScopeId);
 
 /// <summary>
 /// Trình xử lý xác thực danh tính cho dịch vụ Job Engine (JobEngine Authentication Handler).
-/// Xác thực token dạng Bearer dựa trên danh sách token được cấp phép của máy chủ,
+/// Xác thực token dạng Bearer dựa trên cấu hình bí mật của máy chủ hoặc danh mục cách ly trong môi trường Development,
 /// ánh xạ người dùng cùng phạm vi (scope claims: scope_id, school_id) vào HttpContext.User.
-/// Chặn đứng tấn công vượt quyền và bảo đảm nguyên tắc Zero-Trust, từ chối mọi token do Client tự tạo (CWE-287, CWE-862).
+/// Chặn đứng tấn công vượt quyền và bảo đảm nguyên tắc Zero-Trust, từ chối mọi token do Client tự tạo (CWE-287, CWE-862, CWE-798).
 /// </summary>
 public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
@@ -25,11 +28,14 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
     /// </summary>
     public const string SchemeName = "JobEngineAuth";
 
+    private readonly IHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
+
     /// <summary>
-    /// Danh sách token danh tính được cấp phép và xác thực trước bởi hệ thống.
-    /// Chỉ các token trong danh sách này mới được cấp quyền truy cập; từ chối mọi token do client tự tạo.
+    /// Danh sách token danh tính được cấp phép cục bộ cho môi trường Development / Smoke test nội bộ.
+    /// Tuyệt đối bị vô hiệu hóa và từ chối nghiêm ngặt với HTTP 401 trên các môi trường triển khai (Production/Staging).
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, TrustedDevIdentity> TrustedTokens =
+    public static readonly IReadOnlyDictionary<string, TrustedDevIdentity> DevelopmentTokens =
         new Dictionary<string, TrustedDevIdentity>(StringComparer.Ordinal)
         {
             ["dev-system-token-hn"] = new("system-user", "school-hn-01"),
@@ -39,12 +45,19 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02")
         };
 
+    [Obsolete("Use DevelopmentTokens or configure tokens via IConfiguration")]
+    public static IReadOnlyDictionary<string, TrustedDevIdentity> TrustedTokens => DevelopmentTokens;
+
     public JobEngineAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
-        UrlEncoder encoder)
+        UrlEncoder encoder,
+        IHostEnvironment environment,
+        IConfiguration configuration)
         : base(options, logger, encoder)
     {
+        _environment = environment;
+        _configuration = configuration;
     }
 
     /// <inheritdoc />
@@ -69,10 +82,35 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             return Task.FromResult(AuthenticateResult.Fail("Bearer token is empty."));
         }
 
-        // 2. Xác minh token dựa trên danh mục token được cấp phép của máy chủ:
-        // Tuyệt đối không chấp nhận token do client tự chế (ví dụ: user:scope) để triệt tiêu lỗ hổng CWE-287 và CWE-862.
-        if (!TrustedTokens.TryGetValue(token, out var identityConfig))
+        // 2. Xác minh token:
+        // Trong môi trường Production/Staging: Bắt buộc đọc từ cấu hình bí mật (IConfiguration: JobEngine:TrustedTokens:<token>).
+        // Token dev tĩnh tuyệt đối không được cấp quyền ngoài môi trường Development (CWE-798).
+        TrustedDevIdentity? identityConfig = null;
+
+        var secretSection = _configuration.GetSection($"JobEngine:TrustedTokens:{token}");
+        if (secretSection.Exists())
         {
+            var userId = secretSection["UserId"];
+            var scopeId = secretSection["ScopeId"];
+            if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(scopeId))
+            {
+                identityConfig = new TrustedDevIdentity(userId, scopeId);
+            }
+        }
+
+        if (identityConfig is null && _environment.IsDevelopment())
+        {
+            DevelopmentTokens.TryGetValue(token, out identityConfig);
+        }
+
+        if (identityConfig is null)
+        {
+            if (!_environment.IsDevelopment() && DevelopmentTokens.ContainsKey(token))
+            {
+                return Task.FromResult(AuthenticateResult.Fail(
+                    "Development tokens are prohibited in non-development environments. Configure secrets via JobEngine:TrustedTokens."));
+            }
+
             return Task.FromResult(AuthenticateResult.Fail($"Untrusted or invalid Bearer token '{token}'."));
         }
 
@@ -92,3 +130,4 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }
+

@@ -245,6 +245,64 @@ def test_job_create_cross_school_returns_403(port):
     print("Cross-school create test passed: Job creation in different school rejected with HTTP 403.")
 
 
+def test_dev_tokens_rejected_in_production(assembly):
+    """Verify that development tokens are rejected with HTTP 401 and dev endpoints return 404 in Production."""
+    prod_port = available_port()
+    prod_address = f"http://127.0.0.1:{prod_port}/health/live"
+    prod_env = os.environ.copy()
+    prod_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{prod_port}"
+    prod_env["ASPNETCORE_ENVIRONMENT"] = "Production"
+
+    proc = subprocess.Popen(
+        ["dotnet", str(assembly)],
+        cwd=ROOT,
+        env=prod_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                raise RuntimeError(f"Production API process exited unexpectedly with code {proc.returncode}")
+            try:
+                with urllib.request.urlopen(prod_address, timeout=1) as resp:
+                    if resp.status == 200:
+                        break
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                time.sleep(0.2)
+        else:
+            raise RuntimeError("Production API process did not become ready within 15s")
+
+        # 1. Dev token should be rejected with 401 in Production
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{prod_port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-hn-01",
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            }
+        )
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            raise RuntimeError("Dev token should have been rejected with HTTP 401 in Production mode")
+        except urllib.error.HTTPError as err:
+            if err.code != 401:
+                raise RuntimeError(f"Expected HTTP 401 for dev token in Production, got {err.code}")
+
+        # 2. Dev token endpoint should be disabled (404) in Production
+        req_dt = urllib.request.Request(f"http://127.0.0.1:{prod_port}/api/v1/jobs/dev-token")
+        try:
+            urllib.request.urlopen(req_dt, timeout=5)
+            raise RuntimeError("Dev token endpoint should return 404 in Production mode")
+        except urllib.error.HTTPError as err:
+            if err.code != 404:
+                raise RuntimeError(f"Expected HTTP 404 for dev token endpoint in Production, got {err.code}")
+
+        print("Production security test passed: Dev tokens rejected with 401 and dev endpoints disabled (404) in Production.")
+    finally:
+        stop_api(proc, prod_port)
+
+
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
@@ -253,6 +311,7 @@ def main():
     address = f"http://127.0.0.1:{port}/health/live"
     environment = os.environ.copy()
     environment["ASPNETCORE_URLS"] = f"http://127.0.0.1:{port}"
+    environment["ASPNETCORE_ENVIRONMENT"] = "Development"
     process = subprocess.Popen(
         ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
@@ -296,6 +355,7 @@ def main():
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)
+                    test_dev_tokens_rejected_in_production(ASSEMBLY)
                     return 0
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(0.2)

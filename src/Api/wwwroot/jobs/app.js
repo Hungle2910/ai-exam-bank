@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements
     const scopeKindSelect = document.getElementById('scopeKindSelect');
     const scopeIdInput = document.getElementById('scopeIdInput');
-    const userIdInput = document.getElementById('userIdInput');
+    const tokenInput = document.getElementById('tokenInput');
     const btnRefresh = document.getElementById('btnRefresh');
     const liveIndicator = document.getElementById('liveIndicator');
     
@@ -88,11 +88,27 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#039;');
     }
 
-    function getAuthorizedToken(scopeId) {
-        if (scopeId === 'school-sg-02') {
-            return 'dev-teacher-sg-token';
+    async function getAuthorizedToken(scopeId) {
+        if (tokenInput && tokenInput.value.trim()) {
+            return tokenInput.value.trim();
         }
-        return 'dev-system-token-hn';
+
+        // Trong môi trường Development, lấy token từ server runtime endpoint
+        try {
+            const resp = await fetch(`/api/v1/jobs/dev-token?scopeId=${encodeURIComponent(scopeId || '')}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data && data.token) {
+                    if (tokenInput) {
+                        tokenInput.value = data.token;
+                    }
+                    return data.token;
+                }
+            }
+        } catch {
+            // Endpoint dev-token chỉ khả dụng trong môi trường Development
+        }
+        return '';
     }
 
     // -------------------------------------------------------------
@@ -101,18 +117,19 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchJobs() {
         const scopeKind = scopeKindSelect.value;
         const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
-        const userId = userIdInput.value.trim() || 'system-user';
 
         try {
+            const token = await getAuthorizedToken(scopeId);
+            const headers = {
+                'Accept': 'application/json',
+                'X-Scope-Id': scopeId
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const url = `/api/v1/jobs?scopeKind=${encodeURIComponent(scopeKind)}&scopeResourceId=${encodeURIComponent(scopeId)}`;
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${getAuthorizedToken(scopeId)}`,
-                    'X-User-Id': userId,
-                    'X-Scope-Id': scopeId
-                }
-            });
+            const response = await fetch(url, { headers });
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: Lỗi tải danh sách tác vụ.`);
@@ -293,18 +310,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.cancelJob = async (jobId) => {
         if (!confirm('Bạn có chắc chắn muốn hủy tác vụ này không?')) return;
-        const userId = userIdInput.value.trim() || 'system-user';
         const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
 
         try {
+            const token = await getAuthorizedToken(scopeId);
+            const headers = {
+                'Accept': 'application/json',
+                'X-Scope-Id': scopeId
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const response = await fetch(`/api/v1/jobs/${jobId}/cancel`, {
                 method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${getAuthorizedToken(scopeId)}`,
-                    'X-User-Id': userId,
-                    'X-Scope-Id': scopeId
-                }
+                headers
             });
 
             if (response.ok) {
@@ -425,18 +445,20 @@ document.addEventListener('DOMContentLoaded', () => {
             idempotencyKey: modalIdempotencyKey.value.trim()
         };
 
-        const userId = userIdInput.value.trim() || 'system-user';
-
         try {
+            const token = await getAuthorizedToken(payload.scopeResourceId);
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Scope-Id': payload.scopeResourceId
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const response = await fetch('/api/v1/jobs', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${getAuthorizedToken(payload.scopeResourceId)}`,
-                    'X-User-Id': userId,
-                    'X-Scope-Id': payload.scopeResourceId
-                },
+                headers,
                 body: JSON.stringify(payload)
             });
 
