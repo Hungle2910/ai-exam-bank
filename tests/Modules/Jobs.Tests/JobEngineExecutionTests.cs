@@ -1063,12 +1063,14 @@ public sealed class JobEngineExecutionTests
         Assert.AreEqual(32, lastPart.Length, "Phần cuối của WorkerId phải là GUID dạng N dài 32 ký tự.");
     }
 
-    private sealed class SilentLongRunningJobHandler : IJobHandler
+    private sealed class ObservingLongRunningJobHandler : IJobHandler
     {
         public string JobType => "SilentLongRunningJob";
+        public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
         {
+            using var _ = cancellationToken.Register(() => CancellationObserved.TrySetResult());
             await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
             return JobExecutionResult.Success("done");
         }
@@ -1082,7 +1084,8 @@ public sealed class JobEngineExecutionTests
     {
         var store = new InMemoryJobStore();
         var registry = new JobRegistry();
-        registry.Register(new SilentLongRunningJobHandler());
+        var handler = new ObservingLongRunningJobHandler();
+        registry.Register(handler);
 
         var options = Options.Create(new JobWorkerOptions
         {
@@ -1118,19 +1121,9 @@ public sealed class JobEngineExecutionTests
         var cancelSuccess = await store.RequestCancellationAsync(job.Id, "user-1");
         Assert.IsTrue(cancelSuccess);
 
-        // Chờ watcher phát hiện hủy trong vòng tối đa 4 giây (nhanh hơn rất nhiều so với heartbeat 30 giây)
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var cancelled = false;
-        while (stopwatch.Elapsed < TimeSpan.FromSeconds(4))
-        {
-            await Task.Delay(100);
-            var current = await store.GetByIdAsync(job.Id);
-            if (current != null && current.Status == JobStatus.Cancelled)
-            {
-                cancelled = true;
-                break;
-            }
-        }
+        // Chờ handler thực sự nhận được tín hiệu hủy thông qua CancellationToken do Watcher kích hoạt
+        var observed = await Task.WhenAny(handler.CancellationObserved.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        var cancelled = observed == handler.CancellationObserved.Task;
 
         try
         {
@@ -1141,13 +1134,15 @@ public sealed class JobEngineExecutionTests
         }
         worker.Dispose();
 
-        Assert.IsTrue(cancelled, "Job phải được hủy bởi Cancellation Watcher trong vòng vài giây mà không cần đợi heartbeat 30s.");
+        Assert.IsTrue(cancelled, "Handler phải nhận tín hiệu hủy qua CancellationToken do Watcher kích hoạt trong vòng vài giây mà không cần đợi heartbeat 30s.");
     }
 
     private sealed class FaultyGetByIdJobStore : IJobStore
     {
         private readonly IJobStore _inner;
         private int _faultInjected;
+
+        public bool FaultInjected => Volatile.Read(ref _faultInjected) == 1;
 
         public FaultyGetByIdJobStore(IJobStore inner)
         {
@@ -1201,7 +1196,8 @@ public sealed class JobEngineExecutionTests
         var innerStore = new InMemoryJobStore();
         var faultyStore = new FaultyGetByIdJobStore(innerStore);
         var registry = new JobRegistry();
-        registry.Register(new SilentLongRunningJobHandler());
+        var handler = new ObservingLongRunningJobHandler();
+        registry.Register(handler);
 
         var options = Options.Create(new JobWorkerOptions
         {
@@ -1237,19 +1233,9 @@ public sealed class JobEngineExecutionTests
         var cancelSuccess = await innerStore.RequestCancellationAsync(job.Id, "user-1");
         Assert.IsTrue(cancelSuccess);
 
-        // Chờ watcher phát hiện hủy trong vòng tối đa 5 giây (sau khi đã bỏ qua lỗi đọc tạm thời ở tick đầu)
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var cancelled = false;
-        while (stopwatch.Elapsed < TimeSpan.FromSeconds(5))
-        {
-            await Task.Delay(100);
-            var current = await innerStore.GetByIdAsync(job.Id);
-            if (current != null && current.Status == JobStatus.Cancelled)
-            {
-                cancelled = true;
-                break;
-            }
-        }
+        // Chờ handler nhận được hủy qua TaskCompletionSource do watcher truyền tới (sau khi watcher đã vượt qua lỗi đọc tạm thời ở tick đầu)
+        var observed = await Task.WhenAny(handler.CancellationObserved.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        var cancelled = observed == handler.CancellationObserved.Task;
 
         try
         {
@@ -1260,7 +1246,8 @@ public sealed class JobEngineExecutionTests
         }
         worker.Dispose();
 
-        Assert.IsTrue(cancelled, "Job phải được hủy thành công sau khi watcher vượt qua lỗi đọc tạm thời ban đầu.");
+        Assert.IsTrue(faultyStore.FaultInjected, "Lỗi đọc giả lập phải xảy ra.");
+        Assert.IsTrue(cancelled, "Handler phải nhận tín hiệu hủy sau khi watcher vượt qua lỗi đọc tạm thời ban đầu.");
     }
 
     private sealed class DelayedCompletionJobStore : IJobStore
