@@ -75,7 +75,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
 
         var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
         if (job is null)
-            return false;
+            throw new KeyNotFoundException($"Job with ID '{jobRef.Value}' was not found.");
 
         // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép hủy tác vụ chéo phạm vi (cả Kind và ResourceId)
         if (requesterScope.Kind != job.Scope.Kind ||

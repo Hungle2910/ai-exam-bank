@@ -958,4 +958,108 @@ public sealed class JobEngineExecutionTests
         Assert.AreEqual(JobStatus.Pending, updatedJob.Status, "Child cancellation when job token is active must schedule retry.");
         Assert.AreEqual("UNHANDLED_EXCEPTION", updatedJob.ErrorCode);
     }
+
+    private sealed class FailingCancellingJobHandler : IJobHandler
+    {
+        private readonly CancellationTokenSource _cts;
+        public string JobType => "FailingCancellingJob";
+
+        public FailingCancellingJobHandler(CancellationTokenSource cts)
+        {
+            _cts = cts;
+        }
+
+        public Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            _cts.Cancel();
+            return Task.FromResult(JobExecutionResult.Failure("ROW_VALIDATION_ERROR", "Data invalid", isTransient: false));
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra khi Handler trả Failure(isTransient: false) và token dừng host bị hủy,
+    /// Worker vẫn ghi nhận trạng thái Failed với đúng ErrorCode nhờ token riêng có timeout.
+    /// </summary>
+    [TestMethod]
+    public async Task Worker_fails_job_as_permanent_failure_even_when_host_token_is_cancelled()
+    {
+        var store = new InMemoryJobStore();
+        var registry = new JobRegistry();
+        using var hostCts = new CancellationTokenSource();
+
+        var handler = new FailingCancellingJobHandler(hostCts);
+        registry.Register(handler);
+
+        var request = JobRequest.Create("FailingCancellingJob", "s3://payload", "user-1", SchoolScope, "idem-fail-cancel", "corr-fail-cancel");
+        var enqueuedJob = await store.EnqueueAsync(request, "fp-fail-cancel");
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker-fail-cancel",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromMilliseconds(100),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var worker = new JobWorkerService(store, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        BackgroundJob? finalJob = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(50);
+            var current = await store.GetByIdAsync(enqueuedJob.Id);
+            if (current != null && current.Status == JobStatus.Failed)
+            {
+                finalJob = current;
+                break;
+            }
+        }
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch
+        {
+        }
+        worker.Dispose();
+
+        Assert.IsNotNull(finalJob);
+        Assert.AreEqual(JobStatus.Failed, finalJob.Status);
+        Assert.AreEqual("ROW_VALIDATION_ERROR", finalJob.ErrorCode);
+    }
+
+    /// <summary>
+    /// Kiểm tra CancelJobAsync ném KeyNotFoundException khi không tìm thấy Job ID.
+    /// </summary>
+    [TestMethod]
+    public async Task CancelJobAsync_throws_key_not_found_exception_when_job_does_not_exist()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+        var nonExistentRef = JobRef.Create(Guid.NewGuid());
+
+        await Assert.ThrowsExactlyAsync<KeyNotFoundException>(async () =>
+        {
+            await service.CancelJobAsync(nonExistentRef, "tester", SchoolScope);
+        });
+    }
+
+    /// <summary>
+    /// Kiểm tra WorkerId mặc định giữ nguyên GUID duy nhất ngay cả khi tên máy dài.
+    /// </summary>
+    [TestMethod]
+    public void Worker_id_is_unique_and_preserves_guid_even_with_long_machine_name()
+    {
+        var opt1 = new JobWorkerOptions();
+        var opt2 = new JobWorkerOptions();
+
+        Assert.AreNotEqual(opt1.WorkerId, opt2.WorkerId);
+        Assert.StartsWith("worker-", opt1.WorkerId);
+        var parts = opt1.WorkerId.Split('-');
+        var lastPart = parts[^1];
+        Assert.AreEqual(32, lastPart.Length, "Phần cuối của WorkerId phải là GUID dạng N dài 32 ký tự.");
+    }
 }

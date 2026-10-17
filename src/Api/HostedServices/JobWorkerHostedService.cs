@@ -31,7 +31,7 @@ public sealed class JobWorkerHostedService : BackgroundService
         _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
         _jobRegistry = jobRegistry ?? throw new ArgumentNullException(nameof(jobRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _workerId = $"api-worker-{Environment.MachineName}-{Guid.NewGuid():N}"[..32];
+        _workerId = $"api-worker-{Environment.MachineName[..Math.Min(Environment.MachineName.Length, 12)]}-{Guid.NewGuid():N}";
     }
 
     /// <summary>
@@ -171,13 +171,14 @@ public sealed class JobWorkerHostedService : BackgroundService
             else
             {
                 _logger.LogWarning("Job {JobId} failed. CorrelationId: {CorrelationId}, ErrorCode: {ErrorCode}", job.Id, job.CorrelationId, result.ErrorCode ?? "JOB_FAILED");
+                using var failureCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 await _jobStore.FailJobAsync(
                     job.Id,
                     leaseToken,
                     result.ErrorCode ?? "JOB_FAILED",
                     result.SafeErrorMessage ?? "The background job encountered an unhandled error.",
                     result.IsTransient,
-                    hostStoppingToken);
+                    failureCts.Token);
             }
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
@@ -190,13 +191,14 @@ public sealed class JobWorkerHostedService : BackgroundService
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
             _logger.LogError(ex, "Unhandled exception processing job {JobId}. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
+            using var errorCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             await _jobStore.FailJobAsync(
                 job.Id,
                 leaseToken,
                 "UNHANDLED_EXCEPTION",
                 "An unexpected system exception occurred during job processing.",
                 isTransient: true,
-                hostStoppingToken);
+                errorCts.Token);
         }
     }
 

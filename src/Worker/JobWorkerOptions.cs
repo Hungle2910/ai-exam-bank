@@ -9,7 +9,8 @@ public sealed class JobWorkerOptions
     /// <summary>
     /// Định danh duy nhất của Worker instance này (mặc định sinh theo tên máy và GUID).
     /// </summary>
-    public string WorkerId { get; set; } = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}"[..32];
+    public string WorkerId { get; set; } =
+        $"worker-{Environment.MachineName[..Math.Min(Environment.MachineName.Length, 12)]}-{Guid.NewGuid():N}";
 
     /// <summary>
     /// Chu kỳ thăm dò hàng đợi cơ sở (mặc định 1 giây).

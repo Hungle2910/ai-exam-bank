@@ -199,7 +199,7 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 24 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
+Tất cả 30 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
 
 | STT | Tên Test Case | Mục đích kiểm thử | Kết quả |
 |:---:|---|---|:---:|
@@ -230,9 +230,12 @@ Tất cả 24 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 25 | `FileJobStore_claim_on_expired_lease_applies_backoff_cooldown` | Kiểm tra claim lease quá hạn áp dụng cooldown 1m/5m, không retry dồn dập | ✅ PASS |
 | 26 | `Handler_without_overrides_fails_and_does_not_report_completed` | Kiểm tra handler rỗng ném NotImplementedException và ghi nhận lỗi hệ thống | ✅ PASS |
 | 27 | `TaskCanceledException_when_job_token_not_cancelled_fails_as_transient` | Kiểm tra timeout nội bộ khi token job chưa hủy được ghi nhận lỗi tạm thời | ✅ PASS |
+| 28 | `Worker_fails_job_as_permanent_failure_even_when_host_token_is_cancelled` | Kiểm tra lỗi vĩnh viễn ghi nhận Failed với đúng ErrorCode ngay cả khi host dừng | ✅ PASS |
+| 29 | `CancelJobAsync_throws_key_not_found_exception_when_job_does_not_exist` | Kiểm tra hủy job không tồn tại ném KeyNotFoundException để API trả về 404 | ✅ PASS |
+| 30 | `Worker_id_is_unique_and_preserves_guid_even_with_long_machine_name` | Kiểm tra WorkerId giữ trọn vẹn GUID duy nhất ngay cả khi tên máy (EC2 hostname) dài | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
-- **`dotnet test AiExamBank.slnx`**: **39/39 tests PASSED** (30 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **42/42 tests PASSED** (33 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.

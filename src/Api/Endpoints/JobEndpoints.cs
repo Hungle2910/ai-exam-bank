@@ -360,7 +360,7 @@ public static class JobEndpoints
                     return Results.Problem(
                         statusCode: StatusCodes.Status409Conflict,
                         title: "Cancellation Rejected",
-                        detail: "The job cannot be cancelled because it has already completed, failed, or does not exist.",
+                        detail: "The job cannot be cancelled because it has already completed or failed.",
                         extensions: new Dictionary<string, object?>
                         {
                             ["code"] = "JOB_CANNOT_BE_CANCELLED",
@@ -373,6 +373,18 @@ public static class JobEndpoints
                     success = true,
                     message = $"Cancellation requested for job '{id}'."
                 });
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Job Not Found",
+                    detail: $"Background job with ID '{id}' was not found.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "JOB_NOT_FOUND",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
             }
             catch (UnauthorizedAccessException authEx)
             {

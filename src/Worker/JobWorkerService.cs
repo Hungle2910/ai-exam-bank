@@ -186,13 +186,14 @@ public sealed class JobWorkerService : BackgroundService
                 _logger.LogWarning("Job handler reported failure. JobId: {JobId}, CorrelationId: {CorrelationId}, ErrorCode: {ErrorCode}, IsTransient: {IsTransient}",
                     job.Id, job.CorrelationId, result.ErrorCode, result.IsTransient);
 
+                using var failureCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
                 await _jobStore.FailJobAsync(
                     job.Id,
                     leaseToken,
                     result.ErrorCode ?? "JOB_FAILED",
                     result.SafeErrorMessage ?? "The background job encountered an unhandled error.",
                     result.IsTransient,
-                    hostStoppingToken);
+                    failureCts.Token);
             }
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
@@ -215,6 +216,7 @@ public sealed class JobWorkerService : BackgroundService
 
             _logger.LogError(ex, "Unhandled exception during job execution. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
+            using var errorCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             // Xử lý lỗi ngoại lệ không mong muốn như lỗi tạm thời (Transient)
             await _jobStore.FailJobAsync(
                 job.Id,
@@ -222,7 +224,7 @@ public sealed class JobWorkerService : BackgroundService
                 "UNHANDLED_EXCEPTION",
                 "An unexpected system exception occurred during job processing.",
                 isTransient: true,
-                hostStoppingToken);
+                errorCts.Token);
         }
     }
 
