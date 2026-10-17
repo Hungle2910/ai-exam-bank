@@ -14,7 +14,7 @@ public interface IJobTracker
     /// <param name="requesterScope">Phạm vi của người yêu cầu (bắt buộc cả Kind và ResourceId để ngăn chặn truy cập trái phép chéo phạm vi).</param>
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Đối tượng JobStatusDto chứa trạng thái an toàn, tiến độ, hoặc mã lỗi đã lọc dữ liệu nhạy cảm.</returns>
-    Task<JobStatusDto> GetJobStatusAsync(JobRef job, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default);
+    Task<JobStatusDto> GetJobStatusAsync(JobRef job, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Yêu cầu hủy một tác vụ đang chờ (Pending) hoặc đang chạy (Running) trong phạm vi được phân quyền.
@@ -24,7 +24,7 @@ public interface IJobTracker
     /// <param name="requesterScope">Phạm vi của người yêu cầu (bắt buộc cả Kind và ResourceId để xác thực quyền hủy).</param>
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>True nếu yêu cầu hủy thành công; False nếu tác vụ đã hoàn thành hoặc thất bại trước đó.</returns>
-    Task<bool> CancelJobAsync(JobRef job, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default);
+    Task<bool> CancelJobAsync(JobRef job, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lấy danh sách trạng thái các tác vụ thuộc phạm vi trường học hoặc kỳ thi Bộ sau khi xác thực quyền truy cập phạm vi.
@@ -35,5 +35,5 @@ public interface IJobTracker
     /// <param name="statusFilter">Bộ lọc trạng thái (tuỳ chọn).</param>
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Danh sách JobStatusDto thỏa điều kiện trong phạm vi được phân quyền.</returns>
-    Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope? requesterScope = null, JobStatus? statusFilter = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope requesterScope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default);
 }

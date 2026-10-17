@@ -304,19 +304,19 @@ public sealed class JobEngineExecutionTests
         // 1. Thiếu scope trên status check: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: null);
+            await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: null!);
         });
 
         // 2. Thiếu scope trên cancel: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.CancelJobAsync(jobRef, "teacher-hn", requesterScope: null);
+            await service.CancelJobAsync(jobRef, "teacher-hn", requesterScope: null!);
         });
 
         // 3. Thiếu scope trên list: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScope: null);
+            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScope: null!);
         });
 
         // 4. Mismatched scope trên list: Bị từ chối ngay lập tức
@@ -359,6 +359,54 @@ public sealed class JobEngineExecutionTests
         // 4. Đúng scope (cả Kind và ResourceId): thành công
         var status = await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: schoolScope);
         Assert.IsNotNull(status);
+    }
+
+    [TestMethod]
+    public async Task Case_insensitive_resource_id_in_store_list_returns_matching_jobs()
+    {
+        var inMemoryStore = new InMemoryJobStore();
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobstore_case_test_{Guid.NewGuid():N}.json");
+        try
+        {
+            var fileStore = new FileJobStore(tempFile);
+
+            var reqLower = JobRequest.Create("ExamGen", "s3://ref", "teacher-1",
+                JobScope.Create(JobScopeKind.School, "school-hn-01"), "idem-c-1", "corr-c-1");
+
+            await inMemoryStore.EnqueueAsync(reqLower, "fp-c-1");
+            await fileStore.EnqueueAsync(reqLower, "fp-c-1");
+
+            // Truy vấn với chữ hoa "SCHOOL-HN-01"
+            var queryScopeUpper = JobScope.Create(JobScopeKind.School, "SCHOOL-HN-01");
+
+            var inMemoryList = await inMemoryStore.ListByScopeAsync(queryScopeUpper);
+            Assert.HasCount(1, inMemoryList);
+
+            var fileList = await fileStore.ListByScopeAsync(queryScopeUpper);
+            Assert.HasCount(1, fileList);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [TestMethod]
+    public async Task Case_insensitive_resource_id_creates_same_idempotency_and_fingerprint()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var req1 = JobRequest.Create("ExamGen", "s3://ref", "teacher-1",
+            JobScope.Create(JobScopeKind.School, "school-hn-01"), "shared-idem-key", "corr-1");
+        var req2 = JobRequest.Create("ExamGen", "s3://ref", "teacher-1",
+            JobScope.Create(JobScopeKind.School, "SCHOOL-HN-01"), "shared-idem-key", "corr-2");
+
+        var jobRef1 = await service.EnqueueAsync(req1);
+        var jobRef2 = await service.EnqueueAsync(req2);
+
+        // Hai yêu cầu chỉ khác nhau chữ hoa/thường ở ResourceId phải được deduplicate về cùng một Job
+        Assert.AreEqual(jobRef1.Value, jobRef2.Value);
     }
 
     [TestMethod]

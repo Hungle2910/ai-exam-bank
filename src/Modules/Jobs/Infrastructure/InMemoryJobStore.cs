@@ -110,7 +110,8 @@ public sealed class InMemoryJobStore : IJobStore
         lock (_syncRoot)
         {
             var results = _jobs.Values
-                .Where(j => j.Scope.Kind == scope.Kind && j.Scope.ResourceId == scope.ResourceId)
+                .Where(j => j.Scope.Kind == scope.Kind &&
+                            string.Equals(j.Scope.ResourceId, scope.ResourceId, StringComparison.OrdinalIgnoreCase))
                 .Where(j => !statusFilter.HasValue || j.Status == statusFilter.Value)
                 .OrderByDescending(j => j.CreatedAt)
                 .Select(CloneJob)
@@ -468,7 +469,7 @@ public sealed class InMemoryJobStore : IJobStore
     }
 
     private static string BuildIdempotencyKey(JobRequest request) =>
-        $"{request.Scope.Kind}:{request.Scope.ResourceId}:{request.RequesterId}:{request.JobType}:{request.IdempotencyKey}";
+        $"{request.Scope.Kind}:{request.Scope.ResourceId.ToUpperInvariant()}:{request.RequesterId}:{request.JobType}:{request.IdempotencyKey}";
 
     private static BackgroundJob CloneJob(BackgroundJob job) => new()
     {

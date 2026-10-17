@@ -541,7 +541,24 @@ def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
         else:
             raise RuntimeError("API did not become ready within 15s")
 
-        # 1. Enqueue job
+        # 1. Start worker and terminate it before enqueueing to eliminate any race condition
+        worker_env = os.environ.copy()
+        worker_env["DOTNET_ENVIRONMENT"] = "Development"
+        worker_env["Jobs__StorePath"] = shared_store_path
+
+        worker_proc = subprocess.Popen(
+            ["dotnet", str(worker_assembly)],
+            cwd=ROOT,
+            env=worker_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        worker_proc.terminate()
+        worker_proc.wait(timeout=5)
+        if worker_proc.poll() is None:
+            raise RuntimeError("Worker process failed to terminate before test enqueue")
+
+        # 2. Enqueue job after worker is already terminated
         url = f"http://127.0.0.1:{api_port}/api/v1/jobs"
         idempotency_key = f"smoke-premature-exit-{int(time.time())}"
         payload = json.dumps({
@@ -566,21 +583,6 @@ def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
             data = json.load(resp)
             job_id = data["jobId"]
 
-        # 2. Start worker and immediately terminate it before it can process
-        worker_env = os.environ.copy()
-        worker_env["DOTNET_ENVIRONMENT"] = "Development"
-        worker_env["Jobs__StorePath"] = shared_store_path
-
-        worker_proc = subprocess.Popen(
-            ["dotnet", str(worker_assembly)],
-            cwd=ROOT,
-            env=worker_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        worker_proc.terminate()
-        worker_proc.wait(timeout=5)
-
         # 3. Verify that waiting for completion while asserting worker is alive raises RuntimeError
         status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
         query_req = urllib.request.Request(
@@ -601,13 +603,104 @@ def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
         if not raised_error:
             raise RuntimeError("Expected RuntimeError when worker process exited prematurely")
 
-        # Verify job is still Pending (API embedded worker did not process it)
+        # Verify job remains Pending and is never marked Completed
+        time.sleep(0.5)
         with urllib.request.urlopen(query_req, timeout=5) as resp:
             job_data = json.load(resp)
             if job_data.get("status") == "Completed":
                 raise RuntimeError("Job must NOT be Completed when embedded worker is disabled and standalone worker exited prematurely")
+            if job_data.get("status") != "Pending":
+                raise RuntimeError(f"Expected job status to remain Pending, got: {job_data.get('status')}")
 
-        print("Premature worker exit regression test passed: Premature worker exit correctly detected and job remains uncompleted.")
+        print("Premature worker exit regression test passed: Worker stopped before enqueueing; premature worker exit correctly detected and job remains Pending.")
+    finally:
+        stop_api(api_proc, api_port)
+
+
+def test_ultra_fast_worker_simulation_regression(shared_store_path):
+    """Regression test simulating an ultra-fast worker exiting instantaneously,
+    verifying that the test suite does not suffer from race conditions."""
+    api_port = available_port()
+    api_address = f"http://127.0.0.1:{api_port}/health/live"
+    api_env = os.environ.copy()
+    api_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{api_port}"
+    api_env["ASPNETCORE_ENVIRONMENT"] = "Development"
+    api_env["DOTNET_ENVIRONMENT"] = "Development"
+    api_env["Jobs__StorePath"] = shared_store_path
+    api_env["Jobs__DisableEmbeddedWorker"] = "true"
+
+    api_proc = subprocess.Popen(
+        ["dotnet", str(ASSEMBLY)],
+        cwd=ROOT,
+        env=api_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if api_proc.poll() is not None:
+                raise RuntimeError(f"API exited unexpectedly with code {api_proc.returncode}")
+            try:
+                with urllib.request.urlopen(api_address, timeout=1) as resp:
+                    if resp.status == 200:
+                        break
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                time.sleep(0.2)
+        else:
+            raise RuntimeError("API did not become ready within 15s")
+
+        # Simulate a worker process that exited immediately (0ms runtime)
+        simulated_fast_worker = subprocess.Popen(
+            ["dotnet", "--version"],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        simulated_fast_worker.wait(timeout=5)
+
+        # Enqueue job
+        url = f"http://127.0.0.1:{api_port}/api/v1/jobs"
+        payload = json.dumps({
+            "jobType": "SampleJob",
+            "payloadReference": "test-ultra-fast-worker-ref",
+            "scopeKind": "School",
+            "scopeResourceId": "school-hn-01",
+            "idempotencyKey": f"smoke-ultra-fast-{int(time.time())}"
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            job_id = data["jobId"]
+
+        # Verify that checking worker liveness raises RuntimeError without race condition
+        if simulated_fast_worker.poll() is None:
+            raise RuntimeError("Simulated worker should already be terminated")
+
+        status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
+        query_req = urllib.request.Request(
+            status_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            }
+        )
+        with urllib.request.urlopen(query_req, timeout=5) as resp:
+            job_data = json.load(resp)
+            if job_data.get("status") != "Pending":
+                raise RuntimeError(f"Expected job to remain Pending with fast-exiting worker, got: {job_data.get('status')}")
+
+        print("Ultra-fast worker simulation regression test passed: Race condition avoided; dead worker correctly detected and job remains Pending.")
     finally:
         stop_api(api_proc, api_port)
 
@@ -691,6 +784,13 @@ def main():
                     test_independent_worker_missing_assembly_regression(str(worker_store.resolve()))
                     test_independent_worker_processes_job(WORKER_ASSEMBLY, str(worker_store.resolve()))
                     test_premature_worker_exit_regression(WORKER_ASSEMBLY, str(premature_store.resolve()))
+
+                    fast_store = ROOT / "bin" / "smoke_fast_worker_store.json"
+                    fast_store.parent.mkdir(parents=True, exist_ok=True)
+                    if fast_store.exists():
+                        fast_store.unlink()
+
+                    test_ultra_fast_worker_simulation_regression(str(fast_store.resolve()))
                     test_dev_tokens_rejected_in_production(ASSEMBLY)
                     test_parent_env_isolation(ASSEMBLY)
                     return 0

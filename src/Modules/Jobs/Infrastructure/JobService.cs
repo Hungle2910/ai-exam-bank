@@ -28,8 +28,9 @@ public sealed class JobService : IJobPublisher, IJobTracker
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // Sinh mã băm Fingerprint từ nội dung yêu cầu để chống xung đột dữ liệu
-        var rawInput = $"{request.JobType}:{request.PayloadReference}:{request.Scope.Kind}:{request.Scope.ResourceId}";
+        // Sinh mã băm Fingerprint từ nội dung yêu cầu để chống xung đột dữ liệu (chuẩn hóa ResourceId theo kiểu không phân biệt hoa thường)
+        var normalizedResourceId = request.Scope.ResourceId.ToUpperInvariant();
+        var rawInput = $"{request.JobType}:{request.PayloadReference}:{request.Scope.Kind}:{normalizedResourceId}";
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawInput));
         var fingerprint = Convert.ToHexString(hashBytes).ToLowerInvariant();
 
@@ -38,7 +39,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <inheritdoc />
-    public async Task<JobStatusDto> GetJobStatusAsync(JobRef jobRef, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default)
+    public async Task<JobStatusDto> GetJobStatusAsync(JobRef jobRef, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobRef);
         if (string.IsNullOrWhiteSpace(requesterId))
@@ -65,7 +66,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <inheritdoc />
-    public async Task<bool> CancelJobAsync(JobRef jobRef, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default)
+    public async Task<bool> CancelJobAsync(JobRef jobRef, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobRef);
         if (string.IsNullOrWhiteSpace(requesterId))
@@ -92,7 +93,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope? requesterScope = null, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope requesterScope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(scope);
         if (string.IsNullOrWhiteSpace(requesterId))
