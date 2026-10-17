@@ -64,12 +64,9 @@ app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Chỉ phục vụ giao diện tĩnh và công cụ kiểm thử Job UI trong môi trường Development (CWE-798)
-if (app.Environment.IsDevelopment())
-{
-    app.UseDefaultFiles();
-    app.UseStaticFiles();
-}
+// Phục vụ giao diện tĩnh và công cụ giám sát Job Status UI (/jobs/)
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 // A liveness probe only: it must not imply database, worker or AWS readiness.
 app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
