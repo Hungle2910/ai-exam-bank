@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSEMBLY = ROOT / "src" / "Api" / "bin" / "Release" / "net10.0" / "AiExamBank.Api.dll"
+WORKER_ASSEMBLY = ROOT / "src" / "Worker" / "bin" / "Release" / "net10.0" / "AiExamBank.Worker.dll"
 
 
 def available_port():
@@ -247,12 +248,18 @@ def test_job_create_cross_school_returns_403(port):
 
 def test_dev_tokens_rejected_in_production(assembly):
     """Verify that development tokens are rejected with HTTP 401 and dev endpoints return 404 in Production."""
+    prod_store = ROOT / "bin" / "smoke_prod_jobs_store.json"
+    prod_store.parent.mkdir(parents=True, exist_ok=True)
+    if prod_store.exists():
+        prod_store.unlink()
+
     prod_port = available_port()
     prod_address = f"http://127.0.0.1:{prod_port}/health/live"
     prod_env = os.environ.copy()
     prod_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{prod_port}"
     prod_env["ASPNETCORE_ENVIRONMENT"] = "Production"
     prod_env["DOTNET_ENVIRONMENT"] = "Production"
+    prod_env["Jobs__StorePath"] = str(prod_store.resolve())
 
     proc = subprocess.Popen(
         ["dotnet", str(assembly)],
@@ -319,16 +326,97 @@ def test_parent_env_isolation(assembly):
             os.environ.pop("DOTNET_ENVIRONMENT", None)
 
 
+def test_independent_worker_processes_job(port, worker_assembly, shared_store_path):
+    """Verify that an independent Worker process using the shared Jobs:StorePath processes jobs enqueued by API."""
+    if not worker_assembly.is_file():
+        print(f"Worker assembly missing: {worker_assembly}, skipping standalone worker test", file=sys.stderr)
+        return
+
+    worker_env = os.environ.copy()
+    worker_env["DOTNET_ENVIRONMENT"] = "Development"
+    worker_env["Jobs__StorePath"] = shared_store_path
+
+    worker_proc = subprocess.Popen(
+        ["dotnet", str(worker_assembly)],
+        cwd=ROOT,
+        env=worker_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        url = f"http://127.0.0.1:{port}/api/v1/jobs"
+        idempotency_key = f"smoke-standalone-worker-{int(time.time())}"
+        payload = json.dumps({
+            "jobType": "SampleJob",
+            "payloadReference": "test-independent-worker-ref",
+            "scopeKind": "School",
+            "scopeResourceId": "school-hn-01",
+            "idempotencyKey": idempotency_key
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            job_id = data["jobId"]
+
+        status_url = f"http://127.0.0.1:{port}/api/v1/jobs/{job_id}"
+        deadline = time.monotonic() + 15
+        final_status = None
+        while time.monotonic() < deadline:
+            query_req = urllib.request.Request(
+                status_url,
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": "Bearer dev-teacher-hn-token"
+                }
+            )
+            with urllib.request.urlopen(query_req, timeout=5) as resp:
+                job_data = json.load(resp)
+                final_status = job_data.get("status")
+                if final_status in ("Completed", "Failed"):
+                    break
+            time.sleep(0.3)
+
+        if final_status != "Completed":
+            raise RuntimeError(f"Expected standalone Worker to complete job, but status was: {final_status}")
+
+        print("Standalone Worker integration test passed: Job created by API successfully completed by independent Worker process.")
+    finally:
+        if worker_proc.poll() is None:
+            worker_proc.terminate()
+            try:
+                worker_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                worker_proc.kill()
+                worker_proc.wait(timeout=5)
+
+
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
         return 1
+
+    smoke_store = ROOT / "bin" / "smoke_jobs_store.json"
+    smoke_store.parent.mkdir(parents=True, exist_ok=True)
+    if smoke_store.exists():
+        smoke_store.unlink()
+
     port = available_port()
     address = f"http://127.0.0.1:{port}/health/live"
     environment = os.environ.copy()
     environment["ASPNETCORE_URLS"] = f"http://127.0.0.1:{port}"
     environment["ASPNETCORE_ENVIRONMENT"] = "Development"
     environment["DOTNET_ENVIRONMENT"] = "Development"
+    environment["Jobs__StorePath"] = str(smoke_store.resolve())
     process = subprocess.Popen(
         ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
@@ -372,6 +460,7 @@ def main():
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)
+                    test_independent_worker_processes_job(port, WORKER_ASSEMBLY, str(smoke_store.resolve()))
                     test_dev_tokens_rejected_in_production(ASSEMBLY)
                     test_parent_env_isolation(ASSEMBLY)
                     return 0

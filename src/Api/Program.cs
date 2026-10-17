@@ -22,16 +22,12 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 var configuredStorePath = builder.Configuration["Jobs:StorePath"];
-if (!string.IsNullOrWhiteSpace(configuredStorePath) && !Path.IsPathFullyQualified(configuredStorePath))
+if (string.IsNullOrWhiteSpace(configuredStorePath) || !Path.IsPathFullyQualified(configuredStorePath))
 {
-    throw new InvalidOperationException("Jobs:StorePath must be an absolute path.");
+    throw new InvalidOperationException("Jobs:StorePath must be configured as a fully qualified absolute path.");
 }
 
-var jobStorePath = !string.IsNullOrWhiteSpace(configuredStorePath)
-    ? configuredStorePath
-    : Path.Combine(Path.GetTempPath(), "ai_exam_bank_jobs", "jobs_store.json");
-
-builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(jobStorePath));
+builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
 builder.Services.AddSingleton<JobRegistry>();
 
 // Đăng ký các Handler thực thi tác vụ
