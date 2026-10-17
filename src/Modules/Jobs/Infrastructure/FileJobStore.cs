@@ -107,7 +107,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
         var mutexName = "Global\\AiExamBank_JobStore_" + Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_filePath)))[..16];
         _processMutex = new Mutex(false, mutexName);
 
-        LoadFromDisk();
+        // Nạp snapshot và thực hiện migration có bảo vệ bằng Mutex chống xung đột lost-update khi khởi động đồng thời
+        ExecuteWithLock(() => true);
     }
 
     /// <inheritdoc />

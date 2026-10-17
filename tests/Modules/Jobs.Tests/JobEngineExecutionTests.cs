@@ -657,4 +657,35 @@ public sealed class JobEngineExecutionTests
             }
         }
     }
+
+    [TestMethod]
+    public void Postgres_migration_script_enforces_case_insensitive_unique_idempotency_index_and_scope_index()
+    {
+        // Tìm đường dẫn file migration SQL 001_create_jobs_and_job_attempts.sql
+        string? projectRoot = null;
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "AiExamBank.slnx")))
+            {
+                projectRoot = dir.FullName;
+                break;
+            }
+        }
+        Assert.IsNotNull(projectRoot, "Repository root containing AiExamBank.slnx was not found.");
+
+        var sqlPath = Path.Combine(projectRoot, "src", "Persistence", "Migrations", "001_create_jobs_and_job_attempts.sql");
+        Assert.IsTrue(File.Exists(sqlPath), $"Migration file not found at: {sqlPath}");
+
+        var sqlContent = File.ReadAllText(sqlPath);
+
+        // 1. Xác nhận sử dụng UPPER(scope_resource_id) cho Unique Index
+        StringAssert.Contains(sqlContent, "UPPER(scope_resource_id)");
+        StringAssert.Contains(sqlContent, "uq_jobs_idempotency_upper");
+
+        // 2. Xác nhận idx_jobs_scope_status cũng sử dụng UPPER(scope_resource_id)
+        StringAssert.Contains(sqlContent, "idx_jobs_scope_status ON jobs (scope_kind, UPPER(scope_resource_id), status, created_at DESC)");
+
+        // 3. Xác nhận ràng buộc case-sensitive cũ đã được loại bỏ
+        Assert.DoesNotContain("CONSTRAINT uq_jobs_idempotency UNIQUE", sqlContent);
+    }
 }

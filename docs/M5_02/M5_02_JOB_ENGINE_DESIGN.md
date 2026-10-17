@@ -41,19 +41,18 @@ stateDiagram-v2
     Pending --> Cancelled: CancelJobAsync (Before Claim)
     
     Running --> Running: Heartbeat 30s (Extend Lease +2m)
-    Running --> Succeeded: Handler Returns Success (100%)
+    Running --> Completed: Handler Returns Success (100%)
     
     Running --> Pending: Transient Failure & Attempt < 3 (Backoff +1m / +5m)
-    Running --> Failed: Non-transient Failure OR Attempt >= 3 (Exhausted)
+    Running --> Failed: Non-transient Failure OR Attempt >= 3 (RETRY_BUDGET_EXHAUSTED)
     
-    Running --> CancellationRequested: CancelJobAsync (While Running)
-    CancellationRequested --> Cancelled: Handler aborted via CancellationToken
-    CancellationRequested --> Succeeded: Handler finishes before observing token
+    Running --> Cancelled: CancelJobAsync (Aborted via CancellationToken)
+    Running --> Completed: Handler finishes before observing cancellation
     
     Running --> Pending: Worker Crash & Lease Expired (>2m) & Attempt < 3 (Recover)
-    Running --> Failed: Worker Crash & Lease Expired (>2m) & Attempt >= 3 (Recover)
+    Running --> Failed: Worker Crash & Lease Expired (>2m) & Attempt >= 3 (RETRY_BUDGET_EXHAUSTED)
     
-    Succeeded --> [*]
+    Completed --> [*]
     Failed --> [*]
     Cancelled --> [*]
 ```
@@ -90,7 +89,7 @@ public interface IJobHandler
 
 ### 3.2. Đăng ký Handler (`IJobRegistry` & `JobRegistry`)
 Quản lý tập trung các Handler dưới dạng Thread-safe Dictionary:
-- `Register(string jobType, IJobHandler handler)`
+- `Register(IJobHandler handler)`
 - `GetHandler(string jobType)` / `HasHandler(string jobType)`
 
 ### 3.3. Các Handler mẫu (Example Handlers)
@@ -127,10 +126,10 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 
 | Phương thức | Đường dẫn | Headers / Tham số | Phản hồi chuẩn | Mã lỗi có thể gặp | Mô tả |
 |---|---|---|---|---|---|
-| `POST` | `/api/v1/jobs` | `X-User-Id`, `X-Correlation-Id`<br>Body: `jobType`, `payloadReference`, `scopeKind`, `scopeResourceId`, `idempotencyKey` | **202 Accepted**<br>`{ jobId, status: "Pending", correlationId }` | 400 (Validation)<br>409 (`IDEMPOTENCY_CONFLICT`) | Đưa tác vụ vào hàng đợi an toàn |
-| `GET` | `/api/v1/jobs/{id}` | Path: `id`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`{ jobId, status, progressPercentage, resultId, errorCode, safeMessage }` | 403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`) | Lấy trạng thái an toàn của tác vụ |
-| `GET` | `/api/v1/jobs` | Query: `scopeKind`, `scopeResourceId`, `status`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`[ { jobId, status, ... } ]` | 400 (`Invalid Scope Kind`)<br>403 (`SCOPED_ACCESS_DENIED`) | Lọc danh sách tác vụ trong phạm vi (bắt buộc khớp `X-Scope-Id`) |
-| `POST` | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `X-User-Id`, `X-Scope-Id` | **200 OK**<br>`{ jobId, status, safeMessage }` | 403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn |
+| `POST` | `/api/v1/jobs` | Header: `Authorization: Bearer <token>` (giải quyết danh tính và scope qua `ResolveAuthenticatedScope`), `X-Correlation-Id` (tùy chọn)<br>Body: `jobType`, `payloadReference`, `scopeKind`, `scopeResourceId`, `idempotencyKey` | **202 Accepted**<br>`{ jobId, status: "Pending", correlationId }` | 400 (Validation)<br>401 (Unauthorized)<br>403 (Cross-scope)<br>409 (`IDEMPOTENCY_CONFLICT`) | Đưa tác vụ vào hàng đợi an toàn |
+| `GET` | `/api/v1/jobs/{id}` | Path: `id`<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`{ jobId, status, progressPercentage, resultId, errorCode, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`) | Lấy trạng thái an toàn của tác vụ |
+| `GET` | `/api/v1/jobs` | Query: `scopeKind`, `scopeResourceId`, `status` (tùy chọn)<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`[ { jobId, status, ... } ]` | 400 (`Invalid Scope Kind`)<br>401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`) | Lọc danh sách tác vụ trong phạm vi đã xác thực |
+| `POST` | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`{ jobId, status, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn |
 
 ### 5.2. Cấu trúc Lỗi Chuẩn RFC 7807 Problem Details
 ```json
@@ -138,7 +137,7 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
   "type": "https://tools.ietf.org/html/rfc7807",
   "title": "Access Denied",
   "status": 403,
-  "detail": "User 'teacher-1' from school 'school-1' is not authorized to access job in school 'school-2'.",
+  "detail": "Requester from scope 'School:school-1' is not authorized to access the requested job.",
   "code": "SCOPED_ACCESS_DENIED",
   "traceId": "00-5e324ed4992ba8573ba2e90267f765be-759fc475d2f1e472-00"
 }
@@ -192,36 +191,42 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 #### 3. Xử lý sự cố Worker Crash đột ngột
 - Nếu một Worker bị ngắt điện hoặc crash giữa chừng, tác vụ sẽ giữ trạng thái `Running` nhưng `Heartbeat` dừng hoạt động.
 - Sau đúng **2 phút** (`LeaseDuration`), các Worker khác đang chạy sẽ tự động kích hoạt tiến trình `RecoverExpiredLeasesAsync`.
-- Tác vụ sẽ tự động được phục hồi: nếu chưa hết 3 lần thử, tác vụ chuyển về `Pending` để chạy lại; nếu đã hết 3 lần thử, tác vụ chuyển sang `Failed` với mã lỗi `WORKER_LEASE_EXPIRED`.
+- Tác vụ sẽ tự động được phục hồi: nếu chưa hết 3 lần thử, tác vụ chuyển về `Pending` để chạy lại; nếu đã hết 3 lần thử, tác vụ chuyển sang `Failed` với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
 
 ---
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 15 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
+Tất cả 21 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
 
 | STT | Tên Test Case | Mục đích kiểm thử | Kết quả |
 |:---:|---|---|:---:|
-| 1 | `Enqueue_DuplicateRequest_ReturnsSameJobId` | Kiểm tra tính bất biến Idempotency khi gửi trùng lặp cùng Fingerprint | ✅ PASS |
-| 2 | `Enqueue_DifferentPayloadSameKey_ThrowsConflictException` | Kiểm tra phát hiện xung đột khi cùng IdempotencyKey nhưng khác Fingerprint | ✅ PASS |
-| 3 | `Claim_CompetingWorkers_OnlyOneClaimsSuccessfully` | Kiểm tra chống tranh chấp (Race Condition): 2 Worker tranh nhau claim 1 Job | ✅ PASS |
-| 4 | `Heartbeat_ValidToken_ExtendsLease` | Kiểm tra Worker gửi nhịp tim định kỳ gia hạn thành công thời hạn Lease | ✅ PASS |
-| 5 | `UpdateProgress_StaleToken_ReturnsFalse` | Kiểm tra hàng rào Fencing chặn đứng Worker cũ có token hết hạn cập nhật tiến độ | ✅ PASS |
-| 6 | `FailJob_TransientError_SchedulesRetry` | Kiểm tra Bounded Retries: Lỗi tạm thời tự động lên lịch chạy lại sau 1 phút | ✅ PASS |
-| 7 | `FailJob_ExceedsMaxRetries_MarksAsFailed` | Kiểm tra cạn kiệt ngân sách thử lại: Thất bại sau 3 lần chuyển sang `Failed` | ✅ PASS |
-| 8 | `Cancel_PendingJob_TransitionsDirectlyToCancelled` | Kiểm tra hủy tác vụ đang ở hàng đợi Pending | ✅ PASS |
-| 9 | `Cancel_RunningJob_SetsCancellationRequested` | Kiểm tra phát tín hiệu hủy cho tác vụ đang chạy (`CancellationRequested`) | ✅ PASS |
-| 10 | `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs` | Kiểm tra tự động thu hồi Job bị bỏ hoang khi Worker trước bị crash quá 2 phút | ✅ PASS |
-| 11 | `ListJobs_ScopedBySchool_FiltersCorrectly` | Kiểm tra lọc danh sách công việc đúng theo phạm vi trường học | ✅ PASS |
-| 12 | `GetJobStatus_CrossSchoolAccess_ThrowsUnauthorizedAccessException` | Kiểm tra bảo mật từ chối truy cập chéo trường học (HTTP 403) | ✅ PASS |
-| 13 | `WorkerService_ExecutesJob_ToSuccess` | Kiểm tra vòng lặp Worker Service thực thi trọn vẹn tác vụ mẫu đến thành công | ✅ PASS |
-| 14 | `JobRegistry_RegistersAndRetrievesHandler` | Kiểm tra cơ chế đăng ký và tra cứu Handler trong Registry | ✅ PASS |
-| 15 | `JobRegistry_UnregisteredJobType_ThrowsKeyNotFoundException` | Kiểm tra xử lý an toàn khi không tìm thấy Handler phù hợp | ✅ PASS |
+| 1 | `Enqueue_returns_same_job_on_identical_fingerprint` | Kiểm tra tính bất biến Idempotency khi gửi trùng lặp cùng Fingerprint | ✅ PASS |
+| 2 | `Enqueue_throws_conflict_on_mismatched_fingerprint` | Kiểm tra phát hiện xung đột khi cùng IdempotencyKey nhưng khác Fingerprint | ✅ PASS |
+| 3 | `Competing_workers_only_one_claims_job` | Kiểm tra chống tranh chấp (Race Condition): 2 Worker tranh nhau claim 1 Job | ✅ PASS |
+| 4 | `Heartbeat_renews_for_active_lease_and_fences_stale_tokens` | Kiểm tra Worker gửi nhịp tim định kỳ gia hạn thành công thời hạn Lease và rào token cũ | ✅ PASS |
+| 5 | `Fencing_prevents_stale_worker_from_completing_job` | Kiểm tra hàng rào Fencing chặn đứng Worker cũ có token hết hạn hoàn tất job | ✅ PASS |
+| 6 | `Transient_failure_schedules_bounded_retries_and_exhausts_at_attempt_3` | Kiểm tra Bounded Retries: Lỗi tạm thời tự động lên lịch chạy lại sau 1m/5m và cạn kiệt ở lần 3 | ✅ PASS |
+| 7 | `Cancellation_marks_pending_job_cancelled_immediately` | Kiểm tra hủy tác vụ đang ở hàng đợi Pending chuyển ngay sang Cancelled | ✅ PASS |
+| 8 | `Stale_lease_recovery_reclaims_abandoned_job` | Kiểm tra tự động thu hồi Job bị bỏ hoang khi Worker trước bị crash quá 2 phút | ✅ PASS |
+| 9 | `Job_service_enqueue_and_tracker_list_respects_scope` | Kiểm tra lọc danh sách công việc đúng theo phạm vi trường học | ✅ PASS |
+| 10 | `Worker_service_executes_sample_handler_to_completion` | Kiểm tra vòng lặp Worker Service thực thi trọn vẹn tác vụ mẫu đến thành công | ✅ PASS |
+| 11 | `Cross_school_read_is_denied_with_unauthorized_access_exception` | Kiểm tra bảo mật từ chối truy cập chéo trường học (HTTP 403) | ✅ PASS |
+| 12 | `Missing_scope_on_read_or_cancel_or_list_throws_unauthorized_access_exception` | Kiểm tra bắt buộc truyền scope trên read, cancel, list | ✅ PASS |
+| 13 | `Cross_scope_kind_access_with_matching_resource_id_is_rejected` | Kiểm tra bảo mật từ chối truy cập chéo loại scope (School vs MinistryExam) | ✅ PASS |
+| 14 | `Case_insensitive_resource_id_in_store_list_returns_matching_jobs` | Kiểm tra tra cứu danh sách job không phân biệt hoa thường theo ResourceId | ✅ PASS |
+| 15 | `Case_insensitive_resource_id_creates_same_idempotency_and_fingerprint` | Kiểm tra chuẩn hóa ToUpperInvariant tạo cùng khóa idempotency và fingerprint | ✅ PASS |
+| 16 | `UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token` | Kiểm tra quá hạn lease từ chối báo tiến độ hoặc complete | ✅ PASS |
+| 17 | `FileJobStore_preserves_queued_jobs_across_restart_and_instances` | Kiểm tra tính bền vững của FileJobStore qua các lần khởi động lại | ✅ PASS |
+| 18 | `Exam_generation_and_csv_import_handlers_are_registered_and_executable` | Kiểm tra đăng ký và thực thi handler sinh đề thi AI và import CSV | ✅ PASS |
+| 19 | `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum` | Kiểm tra validate enum và resourceId không được là khoảng trắng | ✅ PASS |
+| 20 | `Job_service_list_cross_school_throws_unauthorized_access_exception` | Kiểm tra từ chối liệt kê job chéo trường học | ✅ PASS |
+| 21 | `Legacy_snapshot_is_migrated_and_preserves_idempotency_via_job_service` | Kiểm tra di trú tự động snapshot SchemaVersion 1 sang SchemaVersion 2 bảo toàn Idempotency | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
-- **`dotnet test AiExamBank.slnx`**: **24/24 tests PASSED** (15 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **33/33 tests PASSED** (24 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
-- **`python tests/smoke/test_api_health.py`**: **PASSED** (Liveness probe và Problem Details RFC 7807 hoạt động hoàn hảo).
-- **`python tools/check_repository.py`**: **0 issues** trên toàn bộ 298 files được theo dõi.
+- **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
+- **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.
 - **Redacted Evidence:** Mọi mã ID kiểm thử đều sử dụng UUID giả lập (`00000000-0000-0000-0000-000000000001`, `school-1`), không chứa bất kỳ secret key hay PII nào.
 

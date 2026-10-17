@@ -56,7 +56,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
             !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
-                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to access job in scope '{job.Scope.Kind}:{job.Scope.ResourceId}'.");
+                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to access the requested job.");
         }
 
         return MapToDto(job);
@@ -83,7 +83,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
             !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
-                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to cancel job in scope '{job.Scope.Kind}:{job.Scope.ResourceId}'.");
+                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to cancel the requested job.");
         }
 
         return await _store.RequestCancellationAsync(jobRef.Value, requesterId, cancellationToken);

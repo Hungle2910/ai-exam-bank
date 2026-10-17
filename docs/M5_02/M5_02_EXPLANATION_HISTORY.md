@@ -42,7 +42,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
   - Nếu Worker bị crash đột ngột (mất điện, kill process), nhịp tim sẽ dừng lại.
   - Một tiến trình quét ngầm (`RecoverExpiredLeasesAsync`) chạy mỗi 30 giây sẽ phát hiện các Job đang `Running` nhưng đã quá hạn `LeaseExpiresAt`:
     - Nếu Job chưa chạy quá 3 lần: Thu hồi về trạng thái `Pending` để Worker khác nhận lại và chạy tiếp.
-    - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `WORKER_LEASE_EXPIRED`.
+    - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
   - 👉 *Đã kiểm chứng qua test `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs`.*
 
 ---

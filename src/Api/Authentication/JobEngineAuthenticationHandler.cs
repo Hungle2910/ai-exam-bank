@@ -126,7 +126,7 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
                     "Development tokens are prohibited in non-development environments. Configure secrets via JobEngine:TrustedTokens."));
             }
 
-            return Task.FromResult(AuthenticateResult.Fail($"Untrusted or invalid Bearer token '{token}'."));
+            return Task.FromResult(AuthenticateResult.Fail("Untrusted or invalid Bearer token."));
         }
 
         var claims = new List<Claim>

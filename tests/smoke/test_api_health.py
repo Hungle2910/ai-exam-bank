@@ -195,13 +195,14 @@ def test_forged_headers_without_auth_returns_401(port):
 
 
 def test_untrusted_bearer_token_returns_401(port):
-    """Verify that arbitrary client-forged Bearer tokens (e.g. attacker:school-sg-02) return HTTP 401."""
+    """Verify that arbitrary client-forged Bearer tokens return HTTP 401 without leaking the token in the response."""
+    untrusted_token = f"attacker-token-no-leak-{int(time.time())}"
     url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-sg-02"
     req = urllib.request.Request(
         url,
         headers={
             "Accept": "application/json",
-            "Authorization": "Bearer attacker:school-sg-02"
+            "Authorization": f"Bearer {untrusted_token}"
         }
     )
     try:
@@ -210,8 +211,40 @@ def test_untrusted_bearer_token_returns_401(port):
     except urllib.error.HTTPError as err:
         if err.code != 401:
             raise RuntimeError(f"Expected HTTP 401 for untrusted Bearer token, got {err.code}")
+        body = err.read().decode("utf-8", errors="replace")
+        if untrusted_token in body:
+            raise RuntimeError(f"Security leak: untrusted Bearer token appeared in failure response: {body}")
 
-    print("Untrusted token test passed: Arbitrary client-crafted Bearer token rejected with HTTP 401.")
+    print("Untrusted token test passed: Arbitrary client-crafted Bearer token rejected with HTTP 401 without leaking token in response.")
+
+
+def test_status_ui_assets_load_without_errors(port):
+    """Verify that /jobs/, /jobs/app.js, and /jobs/style.css load cleanly without undeclared references."""
+    # 1. UI HTML
+    html_url = f"http://127.0.0.1:{port}/jobs/"
+    with urllib.request.urlopen(html_url, timeout=5) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Expected HTTP 200 for /jobs/, got {resp.status}")
+        html = resp.read().decode("utf-8")
+        if "AI Exam Bank" not in html or "jobsTableBody" not in html:
+            raise RuntimeError("Status UI HTML does not contain expected dashboard elements")
+
+    # 2. UI JavaScript
+    js_url = f"http://127.0.0.1:{port}/jobs/app.js"
+    with urllib.request.urlopen(js_url, timeout=5) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Expected HTTP 200 for /jobs/app.js, got {resp.status}")
+        js = resp.read().decode("utf-8")
+        if "userIdInput" in js:
+            raise RuntimeError("app.js contains undeclared identifier 'userIdInput' which causes console ReferenceError")
+
+    # 3. UI CSS
+    css_url = f"http://127.0.0.1:{port}/jobs/style.css"
+    with urllib.request.urlopen(css_url, timeout=5) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Expected HTTP 200 for /jobs/style.css, got {resp.status}")
+
+    print("Status UI assets test passed: /jobs/ and app.js loaded without undeclared identifier references.")
 
 
 def test_job_create_cross_school_returns_403(port):
@@ -769,6 +802,7 @@ def main():
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)
                     test_cross_scope_kind_listing_returns_403(port)
+                    test_status_ui_assets_load_without_errors(port)
                     test_job_enqueue_and_completion(port)
 
                     worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"

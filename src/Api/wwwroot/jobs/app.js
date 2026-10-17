@@ -88,19 +88,38 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#039;');
     }
 
-    async function getAuthorizedToken(scopeId) {
-        if (tokenInput && tokenInput.value.trim()) {
+    let autoFetchedScopeKey = null;
+    let isAutoToken = false;
+
+    if (tokenInput) {
+        tokenInput.addEventListener('input', () => {
+            isAutoToken = false;
+            autoFetchedScopeKey = null;
+        });
+    }
+
+    async function getAuthorizedToken(scopeKind, scopeId) {
+        // Nếu người dùng chủ động nhập token, ưu tiên tuyệt đối token người dùng nhập
+        if (tokenInput && tokenInput.value.trim() && !isAutoToken) {
             return tokenInput.value.trim();
         }
 
-        // Trong môi trường Development, lấy token từ server runtime endpoint
+        const currentKey = `${scopeKind || ''}:${scopeId || ''}`;
+        // Nếu token hiện tại là tự động lấy cho đúng cặp scopeKind:scopeId thì tái sử dụng
+        if (isAutoToken && autoFetchedScopeKey === currentKey && tokenInput && tokenInput.value.trim()) {
+            return tokenInput.value.trim();
+        }
+
+        // Trong môi trường Development, lấy token từ server runtime endpoint theo cặp scopeKind:scopeId
         try {
-            const resp = await fetch(`/api/v1/jobs/dev-token?scopeId=${encodeURIComponent(scopeId || '')}`);
+            const resp = await fetch(`/api/v1/jobs/dev-token?scopeKind=${encodeURIComponent(scopeKind || '')}&scopeId=${encodeURIComponent(scopeId || '')}`);
             if (resp.ok) {
                 const data = await resp.json();
                 if (data && data.token) {
                     if (tokenInput) {
                         tokenInput.value = data.token;
+                        isAutoToken = true;
+                        autoFetchedScopeKey = currentKey;
                     }
                     return data.token;
                 }
@@ -108,7 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {
             // Endpoint dev-token chỉ khả dụng trong môi trường Development
         }
-        return '';
+
+        return tokenInput ? tokenInput.value.trim() : '';
     }
 
     // -------------------------------------------------------------
@@ -119,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
 
         try {
-            const token = await getAuthorizedToken(scopeId);
+            const token = await getAuthorizedToken(scopeKind, scopeId);
             const headers = {
                 'Accept': 'application/json',
                 'X-Scope-Id': scopeId
@@ -145,6 +165,10 @@ document.addEventListener('DOMContentLoaded', () => {
             adjustPollingInterval(hasActiveJobs ? 2000 : 5000);
         } catch (err) {
             console.error('Fetch jobs error:', err);
+            // Làm sạch danh sách và cập nhật UI khi gặp lỗi API
+            jobsList = [];
+            updateStats();
+            renderTable();
             // Giãn cách polling khi gặp lỗi mạng
             adjustPollingInterval(8000);
         }
@@ -393,7 +417,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     scopeKindSelect.addEventListener('change', fetchJobs);
     scopeIdInput.addEventListener('change', fetchJobs);
-    userIdInput.addEventListener('change', fetchJobs);
+    if (tokenInput) {
+        tokenInput.addEventListener('change', fetchJobs);
+    }
 
     // Tab Filter
     filterTabs.addEventListener('click', (e) => {

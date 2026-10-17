@@ -76,8 +76,8 @@ public sealed class JobWorkerHostedService : BackgroundService
                 }
 
                 currentDelay = pollingInterval;
-                _logger.LogInformation("API Worker claimed job {JobId} (Attempt {Attempt}) of type '{JobType}'",
-                    claim.Job.Id, claim.Attempt.AttemptNumber, claim.Job.Type);
+                _logger.LogInformation("API Worker claimed job {JobId} (Attempt {Attempt}) of type '{JobType}'. CorrelationId: {CorrelationId}",
+                    claim.Job.Id, claim.Attempt.AttemptNumber, claim.Job.Type, claim.Job.CorrelationId);
 
                 await ProcessJobAsync(claim, leaseDuration, stoppingToken);
             }
@@ -103,7 +103,7 @@ public sealed class JobWorkerHostedService : BackgroundService
         var handler = _jobRegistry.GetHandler(job.Type);
         if (handler is null)
         {
-            _logger.LogError("No registered handler found for JobType '{JobType}'. Failing job permanently.", job.Type);
+            _logger.LogError("No registered handler found for JobType '{JobType}' (JobId: {JobId}, CorrelationId: {CorrelationId}). Failing job permanently.", job.Type, job.Id, job.CorrelationId);
             await _jobStore.FailJobAsync(
                 job.Id,
                 leaseToken,
@@ -151,11 +151,19 @@ public sealed class JobWorkerHostedService : BackgroundService
 
             if (result.Succeeded)
             {
-                await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, hostStoppingToken);
-                _logger.LogInformation("Job {JobId} completed successfully. ResultId: {ResultId}", job.Id, result.ResultId);
+                var completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, hostStoppingToken);
+                if (completed)
+                {
+                    _logger.LogInformation("Job {JobId} completed successfully. CorrelationId: {CorrelationId}, ResultId: {ResultId}", job.Id, job.CorrelationId, result.ResultId);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to commit job completion due to fencing conflict. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
+                }
             }
             else
             {
+                _logger.LogWarning("Job {JobId} failed. CorrelationId: {CorrelationId}, ErrorCode: {ErrorCode}", job.Id, job.CorrelationId, result.ErrorCode ?? "JOB_FAILED");
                 await _jobStore.FailJobAsync(
                     job.Id,
                     leaseToken,
@@ -168,12 +176,12 @@ public sealed class JobWorkerHostedService : BackgroundService
         catch (OperationCanceledException)
         {
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
-            _logger.LogInformation("Job {JobId} was cancelled.", job.Id);
+            _logger.LogInformation("Job {JobId} was cancelled. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
         }
         catch (Exception ex)
         {
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
-            _logger.LogError(ex, "Unhandled exception processing job {JobId}.", job.Id);
+            _logger.LogError(ex, "Unhandled exception processing job {JobId}. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
             await _jobStore.FailJobAsync(
                 job.Id,

@@ -173,17 +173,17 @@ public sealed class JobWorkerService : BackgroundService
                 var completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, hostStoppingToken);
                 if (completed)
                 {
-                    _logger.LogInformation("Job completed successfully. JobId: {JobId}, ResultId: {ResultId}", job.Id, result.ResultId);
+                    _logger.LogInformation("Job completed successfully. JobId: {JobId}, CorrelationId: {CorrelationId}, ResultId: {ResultId}", job.Id, job.CorrelationId, result.ResultId);
                 }
                 else
                 {
-                    _logger.LogWarning("Failed to commit job completion due to fencing conflict. JobId: {JobId}", job.Id);
+                    _logger.LogWarning("Failed to commit job completion due to fencing conflict. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
                 }
             }
             else
             {
-                _logger.LogWarning("Job handler reported failure. JobId: {JobId}, ErrorCode: {ErrorCode}, IsTransient: {IsTransient}",
-                    job.Id, result.ErrorCode, result.IsTransient);
+                _logger.LogWarning("Job handler reported failure. JobId: {JobId}, CorrelationId: {CorrelationId}, ErrorCode: {ErrorCode}, IsTransient: {IsTransient}",
+                    job.Id, job.CorrelationId, result.ErrorCode, result.IsTransient);
 
                 await _jobStore.FailJobAsync(
                     job.Id,
@@ -200,19 +200,19 @@ public sealed class JobWorkerService : BackgroundService
 
             if (hostStoppingToken.IsCancellationRequested)
             {
-                _logger.LogWarning("Job execution aborted due to Host shutdown. JobId: {JobId}", job.Id);
+                _logger.LogWarning("Job execution aborted due to Host shutdown. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
                 // Để nguyên để lần khởi động sau Worker có thể phục hồi theo Lease
             }
             else
             {
-                _logger.LogInformation("Job execution was cancelled. JobId: {JobId}", job.Id);
+                _logger.LogInformation("Job execution was cancelled. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
             }
         }
         catch (Exception ex)
         {
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
 
-            _logger.LogError(ex, "Unhandled exception during job execution. JobId: {JobId}", job.Id);
+            _logger.LogError(ex, "Unhandled exception during job execution. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
             // Xử lý lỗi ngoại lệ không mong muốn như lỗi tạm thời (Transient)
             await _jobStore.FailJobAsync(

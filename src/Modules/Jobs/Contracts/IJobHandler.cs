@@ -19,14 +19,7 @@ public interface IJobHandler
     /// <param name="context">Hồ sơ giao việc chứa thông số và callback báo tiến độ.</param>
     /// <param name="cancellationToken">Token phát tín hiệu khi người dùng bấm hủy hoặc Worker shutdown.</param>
     /// <returns>Biên bản kết quả thực thi (thành công/thất bại, mã kết quả, lỗi an toàn, cờ thử lại).</returns>
-    Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
-        => ExecuteLegacyAsync(context, cancellationToken);
-
-    private async Task<JobExecutionResult> ExecuteLegacyAsync(JobExecutionContext context, CancellationToken cancellationToken)
-    {
-        await ExecuteAsync(context.Request, cancellationToken);
-        return JobExecutionResult.Success();
-    }
+    Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken);
 
     /// <summary>
     /// Phương thức tương thích ngược dành cho các handler đơn giản chỉ cần JobRequest.

@@ -29,19 +29,20 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- Ràng buộc kiểm tra tính hợp lệ
     CONSTRAINT chk_jobs_status CHECK (status IN ('Pending', 'Running', 'Completed', 'Failed', 'Cancelled')),
     CONSTRAINT chk_jobs_progress CHECK (progress_percentage IS NULL OR (progress_percentage >= 0 AND progress_percentage <= 100)),
-    CONSTRAINT chk_jobs_attempt_count CHECK (attempt_count >= 0 AND attempt_count <= 3),
-
-    -- Khóa chống trùng lặp nghiệp vụ (Idempotency Uniqueness Key):
-    -- Đảm bảo cùng một người dùng trong một phạm vi trường/kỳ thi không thể tạo trùng lặp tác vụ
-    CONSTRAINT uq_jobs_idempotency UNIQUE (scope_kind, scope_resource_id, created_by, type, idempotency_key)
+    CONSTRAINT chk_jobs_attempt_count CHECK (attempt_count >= 0 AND attempt_count <= 3)
 );
+
+-- Khóa chống trùng lặp nghiệp vụ (Idempotency Uniqueness Index):
+-- Chuẩn hóa UPPER(scope_resource_id) đồng nhất với FileJobStore và InMemoryJobStore
+CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_idempotency_upper 
+ON jobs (scope_kind, UPPER(scope_resource_id), created_by, type, idempotency_key);
 
 -- Chỉ mục tối ưu hóa cho Worker Polling tìm job Pending hoặc đến hạn chạy
 CREATE INDEX IF NOT EXISTS idx_jobs_polling ON jobs (status, available_at) 
 WHERE status = 'Pending';
 
--- Chỉ mục phục vụ tra cứu theo phạm vi phân quyền cho Status UI và API
-CREATE INDEX IF NOT EXISTS idx_jobs_scope_status ON jobs (scope_kind, scope_resource_id, status, created_at DESC);
+-- Chỉ mục phục vụ tra cứu theo phạm vi phân quyền cho Status UI và API (hỗ trợ so sánh scope_resource_id không phân biệt hoa thường)
+CREATE INDEX IF NOT EXISTS idx_jobs_scope_status ON jobs (scope_kind, UPPER(scope_resource_id), status, created_at DESC);
 
 -- Chỉ mục liên kết vết giám sát Correlation ID
 CREATE INDEX IF NOT EXISTS idx_jobs_correlation ON jobs (correlation_id);
