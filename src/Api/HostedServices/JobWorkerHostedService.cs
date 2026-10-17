@@ -121,8 +121,9 @@ public sealed class JobWorkerHostedService : BackgroundService
         }
 
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
-        using var heartbeatCts = new CancellationTokenSource();
-        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, leaseDuration, jobCts, heartbeatCts.Token);
+        using var backgroundCts = new CancellationTokenSource();
+        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, leaseDuration, jobCts, backgroundCts.Token);
+        var cancellationWatcherTask = RunCancellationWatcherAsync(job.Id, job.CorrelationId, jobCts, backgroundCts.Token);
 
         var jobRequest = JobRequest.Create(
             job.Type,
@@ -153,7 +154,7 @@ public sealed class JobWorkerHostedService : BackgroundService
         try
         {
             var result = await handler.ExecuteAsync(context, jobCts.Token);
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
 
             if (result.Succeeded)
             {
@@ -183,12 +184,12 @@ public sealed class JobWorkerHostedService : BackgroundService
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
             _logger.LogInformation("Job {JobId} was cancelled. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
         }
         catch (Exception ex)
         {
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
             _logger.LogError(ex, "Unhandled exception processing job {JobId}. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
             using var errorCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -247,16 +248,48 @@ public sealed class JobWorkerHostedService : BackgroundService
     }
 
     /// <summary>
-    /// Hủy và đợi hoàn tất tác vụ heartbeat loop ngầm.
+    /// Vòng lặp giám sát tín hiệu hủy ngầm độc lập với Heartbeat và ReportProgressAsync.
+    /// Giúp phát hiện yêu cầu hủy ngay lập tức (mỗi 1 giây) và truyền tín hiệu hủy cho Handler.
     /// </summary>
-    /// <param name="heartbeatCts">CancellationTokenSource điều khiển heartbeat.</param>
-    /// <param name="heartbeatTask">Task chạy vòng lặp heartbeat.</param>
-    private static async Task StopHeartbeatAsync(CancellationTokenSource heartbeatCts, Task heartbeatTask)
+    private async Task RunCancellationWatcherAsync(
+        Guid jobId,
+        string correlationId,
+        CancellationTokenSource jobCts,
+        CancellationToken watcherStopToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            while (!watcherStopToken.IsCancellationRequested && await timer.WaitForNextTickAsync(watcherStopToken))
+            {
+                var currentJob = await _jobStore.GetByIdAsync(jobId, watcherStopToken);
+                if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                {
+                    _logger.LogInformation("Cancellation detected by watcher in API worker. Cancelling job execution. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
+                    jobCts.Cancel();
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error while checking cancellation in watcher loop for JobId: {JobId}", jobId);
+        }
+    }
+
+    /// <summary>
+    /// Hủy và đợi hoàn tất các tác vụ nền (heartbeat, cancellation watcher).
+    /// </summary>
+    private static async Task StopBackgroundTasksAsync(CancellationTokenSource backgroundCts, Task heartbeatTask, Task cancellationWatcherTask)
     {
         try
         {
-            heartbeatCts.Cancel();
-            await heartbeatTask;
+            backgroundCts.Cancel();
+            await Task.WhenAll(heartbeatTask, cancellationWatcherTask);
         }
         catch
         {

@@ -199,7 +199,7 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 30 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
+Tất cả 31 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
 
 | STT | Tên Test Case | Mục đích kiểm thử | Kết quả |
 |:---:|---|---|:---:|
@@ -233,9 +233,10 @@ Tất cả 30 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 28 | `Worker_fails_job_as_permanent_failure_even_when_host_token_is_cancelled` | Kiểm tra lỗi vĩnh viễn ghi nhận Failed với đúng ErrorCode ngay cả khi host dừng | ✅ PASS |
 | 29 | `CancelJobAsync_throws_key_not_found_exception_when_job_does_not_exist` | Kiểm tra hủy job không tồn tại ném KeyNotFoundException để API trả về 404 | ✅ PASS |
 | 30 | `Worker_id_is_unique_and_preserves_guid_even_with_long_machine_name` | Kiểm tra WorkerId giữ trọn vẹn GUID duy nhất ngay cả khi tên máy (EC2 hostname) dài | ✅ PASS |
+| 31 | `Cancellation_watcher_cancels_running_job_when_handler_does_not_report_progress` | Kiểm tra Cancellation Watcher ngắt ngay job đang chạy khi bị hủy mà không cần đợi heartbeat 30s | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
-- **`dotnet test AiExamBank.slnx`**: **42/42 tests PASSED** (33 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **43/43 tests PASSED** (34 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.

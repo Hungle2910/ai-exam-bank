@@ -1062,4 +1062,85 @@ public sealed class JobEngineExecutionTests
         var lastPart = parts[^1];
         Assert.AreEqual(32, lastPart.Length, "Phần cuối của WorkerId phải là GUID dạng N dài 32 ký tự.");
     }
+
+    private sealed class SilentLongRunningJobHandler : IJobHandler
+    {
+        public string JobType => "SilentLongRunningJob";
+
+        public async Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
+            return JobExecutionResult.Success("done");
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra Cancellation Watcher phát hiện tín hiệu hủy và ngắt Handler ngay cả khi Handler không gọi ReportProgressAsync.
+    /// </summary>
+    [TestMethod]
+    public async Task Cancellation_watcher_cancels_running_job_when_handler_does_not_report_progress()
+    {
+        var store = new InMemoryJobStore();
+        var registry = new JobRegistry();
+        registry.Register(new SilentLongRunningJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker-watcher",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            LeaseDuration = TimeSpan.FromSeconds(60)
+        });
+
+        var request = JobRequest.Create("SilentLongRunningJob", "s3://payload", "user-1", SchoolScope, "idem-watcher", "corr-watcher");
+        var job = await store.EnqueueAsync(request, "fp-watcher");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(store, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        // Chờ job chuyển sang Running
+        BackgroundJob? runningJob = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(50);
+            var current = await store.GetByIdAsync(job.Id);
+            if (current != null && current.Status == JobStatus.Running)
+            {
+                runningJob = current;
+                break;
+            }
+        }
+        Assert.IsNotNull(runningJob, "Job phải được claim và chuyển sang Running.");
+
+        // Kích hoạt hủy trên Store
+        var cancelSuccess = await store.RequestCancellationAsync(job.Id, "user-1");
+        Assert.IsTrue(cancelSuccess);
+
+        // Chờ watcher phát hiện hủy trong vòng tối đa 4 giây (nhanh hơn rất nhiều so với heartbeat 30 giây)
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var cancelled = false;
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(4))
+        {
+            await Task.Delay(100);
+            var current = await store.GetByIdAsync(job.Id);
+            if (current != null && current.Status == JobStatus.Cancelled)
+            {
+                cancelled = true;
+                break;
+            }
+        }
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+
+        Assert.IsTrue(cancelled, "Job phải được hủy bởi Cancellation Watcher trong vòng vài giây mà không cần đợi heartbeat 30s.");
+    }
 }

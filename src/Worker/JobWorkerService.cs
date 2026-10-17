@@ -128,9 +128,10 @@ public sealed class JobWorkerService : BackgroundService
         // hoặc (C) Tín hiệu Heartbeat thất bại (Worker bị Fenced/tước quyền).
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
 
-        // 3. Khởi động Timer/Task duy trì Heartbeat ngầm mỗi 30 giây
-        using var heartbeatCts = new CancellationTokenSource();
-        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, jobCts, heartbeatCts.Token);
+        // 3. Khởi động Timer/Task duy trì Heartbeat ngầm mỗi 30 giây và Watcher giám sát hủy mỗi 1 giây
+        using var backgroundCts = new CancellationTokenSource();
+        var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, jobCts, backgroundCts.Token);
+        var cancellationWatcherTask = RunCancellationWatcherAsync(job.Id, job.CorrelationId, jobCts, backgroundCts.Token);
 
         // 4. Tạo JobExecutionContext và hàm callback báo cáo tiến độ
         var jobRequest = JobRequest.Create(
@@ -165,8 +166,8 @@ public sealed class JobWorkerService : BackgroundService
             // 5. Thực thi nghiệp vụ qua IJobHandler
             var result = await handler.ExecuteAsync(context, jobCts.Token);
 
-            // Dừng vòng lặp heartbeat khi handler chạy xong
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            // Dừng các tác vụ nền khi handler chạy xong
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
 
             if (result.Succeeded)
             {
@@ -198,7 +199,7 @@ public sealed class JobWorkerService : BackgroundService
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
 
             if (hostStoppingToken.IsCancellationRequested)
             {
@@ -212,7 +213,7 @@ public sealed class JobWorkerService : BackgroundService
         }
         catch (Exception ex)
         {
-            await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
 
             _logger.LogError(ex, "Unhandled exception during job execution. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
@@ -269,20 +270,51 @@ public sealed class JobWorkerService : BackgroundService
     }
 
     /// <summary>
-    /// Hủy và đợi hoàn tất tác vụ heartbeat loop ngầm của Worker độc lập.
+    /// Vòng lặp giám sát tín hiệu hủy ngầm độc lập với Heartbeat và ReportProgressAsync.
+    /// Giúp phát hiện yêu cầu hủy ngay lập tức (mỗi 1 giây) và truyền tín hiệu hủy cho Handler.
     /// </summary>
-    /// <param name="heartbeatCts">CancellationTokenSource điều khiển heartbeat.</param>
-    /// <param name="heartbeatTask">Task chạy vòng lặp heartbeat.</param>
-    private static async Task StopHeartbeatAsync(CancellationTokenSource heartbeatCts, Task heartbeatTask)
+    private async Task RunCancellationWatcherAsync(
+        Guid jobId,
+        string correlationId,
+        CancellationTokenSource jobCts,
+        CancellationToken watcherStopToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            while (!watcherStopToken.IsCancellationRequested && await timer.WaitForNextTickAsync(watcherStopToken))
+            {
+                var currentJob = await _jobStore.GetByIdAsync(jobId, watcherStopToken);
+                if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                {
+                    _logger.LogInformation("Cancellation detected by watcher in worker service. Cancelling job execution. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
+                    jobCts.Cancel();
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking cancellation in watcher for JobId: {JobId}", jobId);
+        }
+    }
+
+    /// <summary>
+    /// Hủy và đợi hoàn tất các tác vụ nền (heartbeat, cancellation watcher) của Worker độc lập.
+    /// </summary>
+    private static async Task StopBackgroundTasksAsync(CancellationTokenSource backgroundCts, Task heartbeatTask, Task cancellationWatcherTask)
     {
         try
         {
-            heartbeatCts.Cancel();
-            await heartbeatTask;
+            backgroundCts.Cancel();
+            await Task.WhenAll(heartbeatTask, cancellationWatcherTask);
         }
         catch
         {
-            // Bỏ qua ngoại lệ hủy heartbeat
         }
     }
 }
