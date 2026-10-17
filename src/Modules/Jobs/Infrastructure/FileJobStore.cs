@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AiExamBank.Modules.Jobs.Contracts;
@@ -13,10 +14,17 @@ namespace AiExamBank.Modules.Jobs.Infrastructure;
 /// </summary>
 public sealed class FileJobStore : IJobStore, IDisposable
 {
+    /// <summary>
+    /// Phiên bản lược đồ lưu trữ hiện tại.
+    /// Phiên bản 2: Chuẩn hóa ResourceId trong Fingerprint và IdempotencyIndex theo ToUpperInvariant().
+    /// </summary>
+    public const int CurrentSchemaVersion = 2;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true
     };
 
     private readonly object _syncRoot = new();
@@ -79,6 +87,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
     /// </summary>
     internal sealed class StoreSnapshot
     {
+        public int? SchemaVersion { get; set; }
         public List<JobDataDto> Jobs { get; set; } = new();
         public Dictionary<string, Guid> IdempotencyIndex { get; set; } = new();
         public Dictionary<Guid, List<AttemptDataDto>> Attempts { get; set; } = new();
@@ -605,6 +614,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
                 throw new InvalidOperationException("Job store snapshot is null or invalid.");
             }
 
+            var migrated = MigrateSnapshot(snapshot);
+
             _jobs = snapshot.Jobs.ToDictionary(
                 dto => dto.Id,
                 dto => new BackgroundJob
@@ -650,6 +661,11 @@ public sealed class FileJobStore : IJobStore, IDisposable
                     }).ToList());
 
             _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
+
+            if (migrated)
+            {
+                SaveToDisk();
+            }
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
@@ -657,10 +673,35 @@ public sealed class FileJobStore : IJobStore, IDisposable
         }
     }
 
+    private static bool MigrateSnapshot(StoreSnapshot snapshot)
+    {
+        var originalVersion = snapshot.SchemaVersion ?? 1;
+        if (originalVersion >= CurrentSchemaVersion)
+        {
+            return false;
+        }
+
+        // SchemaVersion 1 -> 2 Migration:
+        // Chuẩn hóa ResourceId theo quy tắc không phân biệt hoa thường (ToUpperInvariant)
+        // cho cả mã băm RequestFingerprint và các khóa trong IdempotencyIndex.
+        var newIndex = new Dictionary<string, Guid>();
+        foreach (var job in snapshot.Jobs)
+        {
+            job.RequestFingerprint = ComputeRequestFingerprint(job.Type, job.PayloadReference, job.ScopeKind, job.ScopeResourceId);
+            var key = BuildIdempotencyKey(job.ScopeKind, job.ScopeResourceId, job.CreatedBy, job.Type, job.IdempotencyKey);
+            newIndex[key] = job.Id;
+        }
+
+        snapshot.IdempotencyIndex = newIndex;
+        snapshot.SchemaVersion = CurrentSchemaVersion;
+        return true;
+    }
+
     private void SaveToDisk()
     {
         var snapshot = new StoreSnapshot
         {
+            SchemaVersion = CurrentSchemaVersion,
             Jobs = _jobs.Values.Select(job => new JobDataDto
             {
                 Id = job.Id,
@@ -716,8 +757,19 @@ public sealed class FileJobStore : IJobStore, IDisposable
         _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
     }
 
+    internal static string ComputeRequestFingerprint(string jobType, string payloadReference, JobScopeKind scopeKind, string scopeResourceId)
+    {
+        var normalizedResourceId = scopeResourceId.ToUpperInvariant();
+        var rawInput = $"{jobType}:{payloadReference}:{scopeKind}:{normalizedResourceId}";
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawInput));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    internal static string BuildIdempotencyKey(JobScopeKind scopeKind, string scopeResourceId, string requesterId, string jobType, string idempotencyKey) =>
+        $"{scopeKind}:{scopeResourceId.ToUpperInvariant()}:{requesterId}:{jobType}:{idempotencyKey}";
+
     private static string BuildIdempotencyKey(JobRequest request) =>
-        $"{request.Scope.Kind}:{request.Scope.ResourceId.ToUpperInvariant()}:{request.RequesterId}:{request.JobType}:{request.IdempotencyKey}";
+        BuildIdempotencyKey(request.Scope.Kind, request.Scope.ResourceId, request.RequesterId, request.JobType, request.IdempotencyKey);
 
     private static BackgroundJob CloneJob(BackgroundJob job) => new()
     {

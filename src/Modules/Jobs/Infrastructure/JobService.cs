@@ -29,10 +29,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
         ArgumentNullException.ThrowIfNull(request);
 
         // Sinh mã băm Fingerprint từ nội dung yêu cầu để chống xung đột dữ liệu (chuẩn hóa ResourceId theo kiểu không phân biệt hoa thường)
-        var normalizedResourceId = request.Scope.ResourceId.ToUpperInvariant();
-        var rawInput = $"{request.JobType}:{request.PayloadReference}:{request.Scope.Kind}:{normalizedResourceId}";
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawInput));
-        var fingerprint = Convert.ToHexString(hashBytes).ToLowerInvariant();
+        var fingerprint = FileJobStore.ComputeRequestFingerprint(request.JobType, request.PayloadReference, request.Scope.Kind, request.Scope.ResourceId);
 
         var job = await _store.EnqueueAsync(request, fingerprint, cancellationToken);
         return JobRef.Create(job.Id);

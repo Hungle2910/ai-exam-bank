@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
 using AiExamBank.Modules.Jobs.Infrastructure;
@@ -553,5 +556,105 @@ public sealed class JobEngineExecutionTests
         {
             await service.ListJobsAsync(schoolSg, "teacher-hn", requesterScope: schoolHn);
         });
+    }
+
+    [TestMethod]
+    public async Task Legacy_snapshot_is_migrated_and_preserves_idempotency_via_job_service()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobstore_legacy_migration_{Guid.NewGuid():N}.json");
+        try
+        {
+            var legacyJobId = Guid.NewGuid();
+            var rawScopeResourceId = "school-legacy-hn-01";
+            var rawRequesterId = "teacher-legacy-1";
+            var jobType = "SampleJob";
+            var payloadRef = "s3://legacy-snapshot/sample.json";
+            var idempotencyKey = "legacy-idem-123";
+            var correlationId = "corr-legacy-1";
+
+            // Tạo fingerprint theo thuật toán cũ của HEAD^ (chưa chuẩn hóa ResourceId bằng ToUpperInvariant)
+            var rawOldFingerprintInput = $"{jobType}:{payloadRef}:{JobScopeKind.School}:{rawScopeResourceId}";
+            var oldFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawOldFingerprintInput))).ToLowerInvariant();
+
+            // Khóa IdempotencyIndex theo định dạng cũ của HEAD^ (chưa chuẩn hóa ResourceId)
+            var oldIdempotencyKey = $"{JobScopeKind.School}:{rawScopeResourceId}:{rawRequesterId}:{jobType}:{idempotencyKey}";
+
+            var legacyJson = JsonSerializer.Serialize(new
+            {
+                Jobs = new[]
+                {
+                    new
+                    {
+                        Id = legacyJobId,
+                        Type = jobType,
+                        Status = (int)JobStatus.Pending,
+                        PayloadReference = payloadRef,
+                        CreatedBy = rawRequesterId,
+                        ScopeKind = (int)JobScopeKind.School,
+                        ScopeResourceId = rawScopeResourceId,
+                        IdempotencyKey = idempotencyKey,
+                        RequestFingerprint = oldFingerprint,
+                        CorrelationId = correlationId,
+                        AttemptCount = 0,
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    }
+                },
+                IdempotencyIndex = new Dictionary<string, Guid>
+                {
+                    [oldIdempotencyKey] = legacyJobId
+                },
+                Attempts = new Dictionary<Guid, object>()
+            }, new JsonSerializerOptions { WriteIndented = true });
+
+            await File.WriteAllTextAsync(tempFile, legacyJson);
+
+            // Nạp snapshot cũ vào FileJobStore hiện tại -> Kích hoạt migration tự động và lưu snapshot nâng cấp
+            var store = new FileJobStore(tempFile);
+            var service = new JobService(store);
+
+            // Enqueue cùng yêu cầu thông qua JobService
+            var sameRequest = JobRequest.Create(
+                jobType,
+                payloadRef,
+                rawRequesterId,
+                JobScope.Create(JobScopeKind.School, rawScopeResourceId),
+                idempotencyKey,
+                correlationId);
+
+            var enqueuedRef = await service.EnqueueAsync(sameRequest);
+
+            // Xác nhận JobId được giữ nguyên và không xảy ra JobConflictException
+            Assert.AreEqual(legacyJobId, enqueuedRef.Value);
+
+            // Xác nhận enqueue với chữ hoa cũng trả về cùng JobId mà không xung đột
+            var upperRequest = JobRequest.Create(
+                jobType,
+                payloadRef,
+                rawRequesterId,
+                JobScope.Create(JobScopeKind.School, rawScopeResourceId.ToUpperInvariant()),
+                idempotencyKey,
+                correlationId);
+
+            var upperEnqueuedRef = await service.EnqueueAsync(upperRequest);
+            Assert.AreEqual(legacyJobId, upperEnqueuedRef.Value);
+
+            // Kiểm tra tệp trên đĩa đã được nâng cấp lên SchemaVersion 2
+            var upgradedJson = await File.ReadAllTextAsync(tempFile);
+            using var doc = JsonDocument.Parse(upgradedJson);
+            Assert.IsTrue(doc.RootElement.TryGetProperty("SchemaVersion", out var versionProp));
+            Assert.AreEqual(FileJobStore.CurrentSchemaVersion, versionProp.GetInt32());
+
+            var expectedUpgradedKey = $"{JobScopeKind.School}:{rawScopeResourceId.ToUpperInvariant()}:{rawRequesterId}:{jobType}:{idempotencyKey}";
+            Assert.IsTrue(doc.RootElement.GetProperty("IdempotencyIndex").TryGetProperty(expectedUpgradedKey, out var indexedJobIdProp));
+            Assert.AreEqual(legacyJobId, indexedJobIdProp.GetGuid());
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
     }
 }
