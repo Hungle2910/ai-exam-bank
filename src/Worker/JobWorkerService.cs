@@ -266,6 +266,11 @@ public sealed class JobWorkerService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Hủy và đợi hoàn tất tác vụ heartbeat loop ngầm của Worker độc lập.
+    /// </summary>
+    /// <param name="heartbeatCts">CancellationTokenSource điều khiển heartbeat.</param>
+    /// <param name="heartbeatTask">Task chạy vòng lặp heartbeat.</param>
     private static async Task StopHeartbeatAsync(CancellationTokenSource heartbeatCts, Task heartbeatTask)
     {
         try

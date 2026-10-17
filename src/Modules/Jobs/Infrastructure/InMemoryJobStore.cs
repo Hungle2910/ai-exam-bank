@@ -162,8 +162,11 @@ public sealed class InMemoryJobStore : IJobStore
                                 continue;
                             }
 
-                            eligibleJob = runningJob;
-                            break;
+                            var retryDelayMinutes = runningJob.AttemptCount == 1 ? 1 : 5;
+                            runningJob.Status = JobStatus.Pending;
+                            runningJob.AvailableAt = now.AddMinutes(retryDelayMinutes);
+                            runningJob.UpdatedAt = now;
+                            continue;
                         }
                     }
                 }

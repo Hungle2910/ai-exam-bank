@@ -763,6 +763,61 @@ public sealed class JobEngineExecutionTests
         Assert.AreEqual("cancel-result", finalJob.ResultId);
     }
 
+    /// <summary>
+    /// Kiểm tra FileJobStore khi claim trúng lease đã hết hạn thì phải áp dụng backoff cooldown,
+    /// đưa job về Pending và không cho claim ngay lập tức trước khi hết thời gian chờ.
+    /// </summary>
+    [TestMethod]
+    public async Task FileJobStore_claim_on_expired_lease_applies_backoff_cooldown()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobstore-backoff-{Guid.NewGuid():N}.json");
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            using var store = new FileJobStore(tempFile, () => now);
+
+            var req = JobRequest.Create("ExamGen", "s3://ref", "user-1", SchoolScope, "key-backoff", "corr-backoff");
+            var job = await store.EnqueueAsync(req, "fp-backoff");
+
+            // Lượt 1: Worker-1 claim với lease 2 phút
+            var claim1 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(claim1);
+            Assert.AreEqual(1, claim1.Attempt.AttemptNumber);
+
+            // Tua thời gian quá hạn lease 2 phút (Worker-1 bị crash)
+            now = now.AddMinutes(2).AddSeconds(5);
+
+            // Worker-2 gọi ClaimNextJobAsync:
+            // Phải đánh dấu attempt cũ là Abandoned, đưa job về Pending với backoff 1 phút và TRẢ VỀ NULL (chưa claim ngay)
+            var claim2Premature = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
+            Assert.IsNull(claim2Premature, "Job must not be immediately claimed; it must enter cooldown.");
+
+            var jobAfterAbandon = await store.GetByIdAsync(job.Id);
+            Assert.IsNotNull(jobAfterAbandon);
+            Assert.AreEqual(JobStatus.Pending, jobAfterAbandon.Status);
+            Assert.IsNotNull(jobAfterAbandon.AvailableAt);
+            Assert.IsTrue(jobAfterAbandon.AvailableAt > now);
+
+            // Thử claim lại khi chưa hết 1 phút cooldown: vẫn phải trả về null
+            now = now.AddSeconds(30);
+            var claimStillCooling = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
+            Assert.IsNull(claimStillCooling, "Job must remain unclaimable before cooldown expires.");
+
+            // Tua qua 1 phút cooldown: Worker-2 claim thành công attempt 2
+            now = now.AddSeconds(35);
+            var claim2Ready = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(claim2Ready, "Job must be claimable after cooldown expires.");
+            Assert.AreEqual(2, claim2Ready.Attempt.AttemptNumber);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+    }
+
     private sealed class LegacySampleJobHandler : IJobHandler
     {
         public string JobType => "LegacyJob";

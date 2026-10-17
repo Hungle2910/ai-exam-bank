@@ -95,6 +95,12 @@ public sealed class JobWorkerHostedService : BackgroundService
         _logger.LogInformation("In-process JobWorkerHostedService stopped.");
     }
 
+    /// <summary>
+    /// Xử lý một tác vụ đã claim thành công trong Worker tích hợp.
+    /// </summary>
+    /// <param name="claim">Kết quả claim tác vụ.</param>
+    /// <param name="leaseDuration">Thời hạn hiệu lực của lease.</param>
+    /// <param name="hostStoppingToken">Token báo hiệu dừng host API.</param>
     private async Task ProcessJobAsync(JobClaimResult claim, TimeSpan leaseDuration, CancellationToken hostStoppingToken)
     {
         var job = claim.Job;
@@ -194,6 +200,15 @@ public sealed class JobWorkerHostedService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Vòng lặp gia hạn Heartbeat ngầm trong quá trình API Worker xử lý tác vụ.
+    /// </summary>
+    /// <param name="jobId">Mã định danh tác vụ.</param>
+    /// <param name="correlationId">Mã tương quan phục vụ truy vết phân tán.</param>
+    /// <param name="leaseToken">Token lease dùng để xác thực fencing.</param>
+    /// <param name="leaseDuration">Khoảng thời gian gia hạn lease mỗi lần tick.</param>
+    /// <param name="jobCts">Token nguồn dùng để hủy xử lý khi mất lease.</param>
+    /// <param name="heartbeatStopToken">Token báo hiệu kết thúc vòng lặp heartbeat.</param>
     private async Task RunHeartbeatLoopAsync(
         Guid jobId,
         string correlationId,
@@ -229,6 +244,11 @@ public sealed class JobWorkerHostedService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Hủy và đợi hoàn tất tác vụ heartbeat loop ngầm.
+    /// </summary>
+    /// <param name="heartbeatCts">CancellationTokenSource điều khiển heartbeat.</param>
+    /// <param name="heartbeatTask">Task chạy vòng lặp heartbeat.</param>
     private static async Task StopHeartbeatAsync(CancellationTokenSource heartbeatCts, Task heartbeatTask)
     {
         try
