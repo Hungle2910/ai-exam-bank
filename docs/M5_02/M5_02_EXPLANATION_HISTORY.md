@@ -97,9 +97,11 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Đã bổ sung `FileJobStore` bền vững với khóa đồng bộ liên tiến trình (`Mutex`) và lược đồ JSON đối chiếu 1-1 với bảng PostgreSQL (`jobs`, `job_attempts`). Dữ liệu hàng đợi không bị mất khi tiến trình khởi động lại hoặc crash.
      - Đăng ký `JobWorkerHostedService` ngay trong tiến trình `AiExamBank.Api` giúp các tác vụ đẩy qua API/Dashboard được xử lý tức thời đến hoàn tất mà không cần khởi động Worker riêng lẻ trong môi trường Dev.
      - Cấu hình Worker độc lập (`AiExamBank.Worker`) dùng chung `FileJobStore`, loại bỏ đăng ký DI đệ quy của `IJobRegistry`.
-  2. **Bảo mật phân quyền bắt buộc (Mandatory Scoped Authorization — CWE-639 IDOR):**
-     - `JobService` và các HTTP Endpoints yêu cầu bắt buộc header `X-Scope-Id` đối với cả 3 thao tác: `GetJobStatusAsync`, `CancelJobAsync`, và `ListJobsAsync`.
-     - Ràng buộc phạm vi với danh tính đã xác thực (`ResolveAuthenticatedScopeId`): Nếu client cố tình gửi `X-Scope-Id` của trường khác trong khi danh tính thuộc trường hiện tại, API lập tức từ chối với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
+  2. **Bảo mật phân quyền bắt buộc & Lược đồ xác thực danh tính (Authentication Scheme & Zero-Trust Scoped Authorization — CWE-639, CWE-862, CWE-306):**
+     - Cấu hình lược đồ xác thực `JobEngineAuthenticationHandler` (`JobEngineAuth`) đăng ký trong `Program.cs` và áp dụng `RequireAuthorization()` cho nhóm route `/api/v1/jobs`.
+     - Các yêu cầu không có thông tin xác thực hoặc chỉ gửi header giả mạo từ client lập tức bị từ chối với HTTP **401 Unauthorized**.
+     - Ràng buộc tạo và truy cập tác vụ với danh tính đã xác thực (`ResolveAuthenticatedScopeId`): Chỉ trích xuất scope từ Claims (`scope_id`, `school_id`, `scope`, `tenant_id`) của `ClaimsPrincipal`, loại bỏ hoàn toàn việc tin cậy các header do client tự khai báo (`X-Scope-Id`, `X-User-Scope-Id`).
+     - Tại `POST /api/v1/jobs`: Từ chối ngay với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`) nếu người gọi thiếu scope xác thực hoặc cố tình tạo job với `scopeResourceId` thuộc trường khác.
   3. **Hàng rào Fencing chặn đứng Lease quá hạn:**
      - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
   4. **Đồng bộ đa tiến trình an toàn & Ghi đĩa nguyên tử:**
@@ -108,8 +110,8 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Phương thức `SaveToDisk` ghi JSON vào file tạm `*.tmp` rồi dùng `File.Move(..., overwrite: true)` để đảm bảo tính nguyên tử (atomic) trên file system, không nuốt lỗi ghi đĩa.
   5. **Xác thực dữ liệu đầu vào chuẩn RESTful:**
      - Kiểm tra `Enum.IsDefined` cho `JobScopeKind`, xử lý `ArgumentException` từ `JobScope.Create` để trả về HTTP **400 Bad Request** khi tham số rỗng hoặc enum không xác định (ví dụ `scopeKind=999` hoặc `scopeResourceId` chỉ có khoảng trắng).
-  6. **Bổ sung kiểm thử tích hợp End-to-End:**
-     - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 400/403, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
+  6. **Bổ sung kiểm thử tích hợp End-to-End & Regression Security:**
+     - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 401/403 cho các trường hợp không xác thực, giả mạo header, tạo job chéo trường, Problem Details 404, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
 
 ---
 
@@ -149,6 +151,6 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 |---|---|---|
 | **Chạy Web API & Dashboard** | `dotnet run --project src/Api` (hoặc bấm `F5`) | Mở trình duyệt vào `http://localhost:5000/jobs/` |
 | **Tắt Server** | Bấm `Ctrl + C` trong Terminal | Hoặc gõ `Stop-Process -Name dotnet` |
-| **Chạy toàn bộ 27 Tests** | `dotnet test AiExamBank.slnx` | Kiểm tra tất cả module của cả nhóm |
-| **Chạy riêng 18 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests` | Kiểm tra riêng tính năng Background Jobs |
+| **Chạy toàn bộ 29 Tests** | `dotnet test AiExamBank.slnx` | Kiểm tra tất cả module của cả nhóm |
+| **Chạy riêng 20 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests` | Kiểm tra riêng tính năng Background Jobs |
 | **Kiểm tra độ sạch Repo** | `python tools/check_repository.py` | Đảm bảo không dính secret key, link hỏng |

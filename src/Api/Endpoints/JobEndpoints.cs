@@ -50,12 +50,12 @@ public static class JobEndpoints
     public static RouteGroupBuilder MapJobEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/v1/jobs")
-            .WithTags("Jobs");
+            .WithTags("Jobs")
+            .RequireAuthorization();
 
         // 1. POST /api/v1/jobs - Đẩy tác vụ mới vào hàng đợi (Idempotent Enqueue)
         group.MapPost("/", async (
             [FromBody] CreateJobApiRequest request,
-            [FromHeader(Name = "X-User-Id")] string? headerUserId,
             [FromHeader(Name = "X-Correlation-Id")] string? headerCorrelationId,
             [FromServices] IJobPublisher publisher,
             HttpContext httpContext,
@@ -65,9 +65,7 @@ public static class JobEndpoints
                 ? Activity.Current?.Id ?? httpContext.TraceIdentifier
                 : headerCorrelationId;
 
-            var requesterId = string.IsNullOrWhiteSpace(headerUserId)
-                ? "system-user"
-                : headerUserId;
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
 
             if (!Enum.TryParse<JobScopeKind>(request.ScopeKind, ignoreCase: true, out var scopeKind) || !Enum.IsDefined(scopeKind))
             {
@@ -77,14 +75,14 @@ public static class JobEndpoints
                     detail: $"Scope kind '{request.ScopeKind}' is invalid. Supported values: School, MinistryExam.");
             }
 
-            var authenticatedScope = ResolveAuthenticatedScopeId(httpContext, headerUserId, null);
-            if (!string.IsNullOrWhiteSpace(authenticatedScope) &&
+            var authenticatedScope = ResolveAuthenticatedScopeId(httpContext);
+            if (string.IsNullOrWhiteSpace(authenticatedScope) ||
                 !string.Equals(authenticatedScope, request.ScopeResourceId, StringComparison.OrdinalIgnoreCase))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: $"Caller identity from scope '{authenticatedScope}' is not authorized to create jobs in scope '{request.ScopeResourceId}'.",
+                    detail: $"Caller identity from scope '{authenticatedScope ?? "unscoped"}' is not authorized to create jobs in scope '{request.ScopeResourceId}'.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -138,21 +136,19 @@ public static class JobEndpoints
         // 2. GET /api/v1/jobs/{id} - Lấy chi tiết trạng thái tác vụ
         group.MapGet("/{id:guid}", async (
             Guid id,
-            [FromHeader(Name = "X-User-Id")] string? headerUserId,
-            [FromHeader(Name = "X-Scope-Id")] string? headerScopeId,
             [FromServices] IJobTracker tracker,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
 
             if (string.IsNullOrWhiteSpace(authenticatedScopeId))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: "Header 'X-Scope-Id' is required to access scoped jobs.",
+                    detail: "Authenticated scope claim is required to access scoped jobs.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -204,23 +200,21 @@ public static class JobEndpoints
             [FromQuery] string scopeKind,
             [FromQuery] string scopeResourceId,
             [FromQuery] string? status,
-            [FromHeader(Name = "X-User-Id")] string? headerUserId,
-            [FromHeader(Name = "X-Scope-Id")] string? headerScopeId,
             [FromServices] IJobTracker tracker,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
 
-            // Xác định phạm vi được phép từ danh tính đã xác thực (ClaimsPrincipal hoặc Header danh tính)
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+            // Xác định phạm vi được phép từ danh tính đã xác thực (ClaimsPrincipal)
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
 
             if (string.IsNullOrWhiteSpace(authenticatedScopeId))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: "Header 'X-Scope-Id' is required to list scoped jobs.",
+                    detail: "Authenticated scope claim is required to list scoped jobs.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -300,21 +294,19 @@ public static class JobEndpoints
         // 4. POST /api/v1/jobs/{id}/cancel - Yêu cầu hủy tác vụ an toàn
         group.MapPost("/{id:guid}/cancel", async (
             Guid id,
-            [FromHeader(Name = "X-User-Id")] string? headerUserId,
-            [FromHeader(Name = "X-Scope-Id")] string? headerScopeId,
             [FromServices] IJobTracker tracker,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var requesterId = string.IsNullOrWhiteSpace(headerUserId) ? "system-user" : headerUserId;
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext, headerUserId, headerScopeId);
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
+            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
 
             if (string.IsNullOrWhiteSpace(authenticatedScopeId))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: "Header 'X-Scope-Id' is required to cancel scoped jobs.",
+                    detail: "Authenticated scope claim is required to cancel scoped jobs.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -365,15 +357,13 @@ public static class JobEndpoints
     }
 
     /// <summary>
-    /// Trích xuất và xác thực phạm vi phân quyền của người gọi từ danh tính đã xác thực (ClaimsPrincipal hoặc Header danh tính).
+    /// Trích xuất và xác thực phạm vi phân quyền của người gọi từ danh tính đã xác thực (ClaimsPrincipal).
+    /// Tuyệt đối không tin cậy các HTTP Headers do Client tự gửi để triệt tiêu lỗ hổng IDOR / Scope Bypass (CWE-639, CWE-862).
     /// </summary>
     /// <param name="httpContext">HTTP Context hiện tại.</param>
-    /// <param name="headerUserId">Header ID người dùng.</param>
-    /// <param name="headerScopeId">Header mã trường được gửi kèm.</param>
-    /// <returns>Mã phạm vi được phép, hoặc null nếu không thể xác định danh tính hợp lệ.</returns>
-    private static string? ResolveAuthenticatedScopeId(HttpContext httpContext, string? headerUserId, string? headerScopeId)
+    /// <returns>Mã phạm vi được phép từ claim danh tính đã xác thực, hoặc null nếu không tồn tại claim hợp lệ.</returns>
+    internal static string? ResolveAuthenticatedScopeId(HttpContext httpContext)
     {
-        // 1. Kiểm tra claims từ danh tính đã xác thực trên HttpContext.User
         if (httpContext.User?.Identity?.IsAuthenticated == true)
         {
             var claimScope = httpContext.User.FindFirst("scope_id")?.Value
@@ -387,30 +377,6 @@ public static class JobEndpoints
             }
         }
 
-        // 2. Kiểm tra header danh tính phạm vi được xác thực riêng (X-User-Scope-Id / X-Authenticated-Scope-Id)
-        if (httpContext.Request.Headers.TryGetValue("X-User-Scope-Id", out var userScopeHeader) &&
-            !string.IsNullOrWhiteSpace(userScopeHeader))
-        {
-            return userScopeHeader.ToString().Trim();
-        }
-
-        if (httpContext.Request.Headers.TryGetValue("X-Authenticated-Scope-Id", out var authScopeHeader) &&
-            !string.IsNullOrWhiteSpace(authScopeHeader))
-        {
-            return authScopeHeader.ToString().Trim();
-        }
-
-        // 3. Nếu danh tính user có định dạng scoped (ví dụ: user@school-hn-01 hoặc school-hn-01:user)
-        if (!string.IsNullOrWhiteSpace(headerUserId) && headerUserId.Contains('@'))
-        {
-            var parts = headerUserId.Split('@');
-            if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
-            {
-                return parts[1].Trim();
-            }
-        }
-
-        // 4. Fallback về header X-Scope-Id cho tương thích ngược nếu không có claim danh tính xung đột
-        return string.IsNullOrWhiteSpace(headerScopeId) ? null : headerScopeId.Trim();
+        return null;
     }
 }

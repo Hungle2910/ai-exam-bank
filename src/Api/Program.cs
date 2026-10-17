@@ -1,12 +1,24 @@
+using AiExamBank.Api.Authentication;
 using AiExamBank.Api.Endpoints;
 using AiExamBank.Api.HostedServices;
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
 using AiExamBank.Modules.Jobs.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
-builder.Services.AddAuthentication();
+
+// Cấu hình xác thực danh tính cho API host qua JobEngineAuthenticationHandler
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JobEngineAuthenticationHandler.SchemeName;
+    options.DefaultChallengeScheme = JobEngineAuthenticationHandler.SchemeName;
+})
+.AddScheme<AuthenticationSchemeOptions, JobEngineAuthenticationHandler>(
+    JobEngineAuthenticationHandler.SchemeName,
+    _ => { });
+
 builder.Services.AddAuthorization();
 
 // Cấu hình Job Engine Services cho API host:

@@ -56,6 +56,7 @@ def test_job_enqueue_and_completion(port):
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "Authorization": "Bearer smoke-tester:school-hn-01",
             "X-User-Id": "smoke-tester",
             "X-Scope-Id": "school-hn-01"
         },
@@ -78,6 +79,7 @@ def test_job_enqueue_and_completion(port):
             status_url,
             headers={
                 "Accept": "application/json",
+                "Authorization": "Bearer smoke-tester:school-hn-01",
                 "X-User-Id": "smoke-tester",
                 "X-Scope-Id": "school-hn-01"
             }
@@ -98,7 +100,10 @@ def test_invalid_scope_returns_400(port):
     url_whitespace = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=%20%20%20"
     req_ws = urllib.request.Request(
         url_whitespace,
-        headers={"Accept": "application/json", "X-Scope-Id": "   "}
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer smoke-tester:   "
+        }
     )
     try:
         urllib.request.urlopen(req_ws, timeout=5)
@@ -111,7 +116,10 @@ def test_invalid_scope_returns_400(port):
     url_invalid_kind = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=999&scopeResourceId=school-hn-01"
     req_kind = urllib.request.Request(
         url_invalid_kind,
-        headers={"Accept": "application/json", "X-Scope-Id": "school-hn-01"}
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer smoke-tester:school-hn-01"
+        }
     )
     try:
         urllib.request.urlopen(req_kind, timeout=5)
@@ -126,13 +134,13 @@ def test_invalid_scope_returns_400(port):
 def test_cross_school_listing_returns_403(port):
     """Verify that listing jobs across different schools is rejected with HTTP 403 SCOPED_ACCESS_DENIED."""
     url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-sg-02"
-    # User belongs to school-hn-01, but attempts to query school-sg-02
+    # User belongs to school-hn-01 in authenticated claim, but attempts to query school-sg-02
     req = urllib.request.Request(
         url,
         headers={
             "Accept": "application/json",
-            "X-User-Id": "teacher-hn",
-            "X-User-Scope-Id": "school-hn-01",
+            "Authorization": "Bearer teacher-hn:school-hn-01",
+            "X-User-Scope-Id": "school-sg-02",
             "X-Scope-Id": "school-sg-02"
         }
     )
@@ -144,6 +152,77 @@ def test_cross_school_listing_returns_403(port):
             raise RuntimeError(f"Expected HTTP 403 for cross-school listing, got {err.code}")
 
     print("Cross-school authorization test passed: Querying jobs of another school returns HTTP 403.")
+
+
+def test_unauthenticated_request_returns_401(port):
+    """Verify that requests missing credentials to /api/v1/jobs are rejected with HTTP 401 Unauthorized."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-hn-01"
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json"}
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Unauthenticated request should have returned HTTP 401 Unauthorized")
+    except urllib.error.HTTPError as err:
+        if err.code != 401:
+            raise RuntimeError(f"Expected HTTP 401 for unauthenticated request, got {err.code}")
+
+    print("Authentication test passed: Unauthenticated request rejected with HTTP 401.")
+
+
+def test_forged_headers_without_auth_returns_401(port):
+    """Verify that forged client headers (X-Scope-Id, X-User-Scope-Id) without credentials return HTTP 401."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-hn-01"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "X-User-Id": "attacker",
+            "X-Scope-Id": "school-hn-01",
+            "X-User-Scope-Id": "school-hn-01"
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Forged headers request should have returned HTTP 401 Unauthorized")
+    except urllib.error.HTTPError as err:
+        if err.code != 401:
+            raise RuntimeError(f"Expected HTTP 401 for forged headers request, got {err.code}")
+
+    print("Header forgery test passed: Request with only fake client headers rejected with HTTP 401.")
+
+
+def test_job_create_cross_school_returns_403(port):
+    """Verify that creating a job in a different school than authenticated identity is rejected with HTTP 403."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs"
+    payload = json.dumps({
+        "jobType": "SampleJob",
+        "payloadReference": "s3://test-cross",
+        "scopeKind": "School",
+        "scopeResourceId": "school-sg-02",
+        "idempotencyKey": f"cross-create-{int(time.time())}"
+    }).encode("utf-8")
+
+    # User authenticated for school-hn-01 tries to create job in school-sg-02
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer teacher-hn:school-hn-01"
+        },
+        method="POST"
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Cross-school job creation should have returned HTTP 403 Forbidden")
+    except urllib.error.HTTPError as err:
+        if err.code != 403:
+            raise RuntimeError(f"Expected HTTP 403 for cross-school job creation, got {err.code}")
+
+    print("Cross-school create test passed: Job creation in different school rejected with HTTP 403.")
 
 
 def main():
@@ -190,6 +269,9 @@ def main():
                         ):
                             raise RuntimeError(f"Unexpected error response: {error.code} {problem}")
                     print("API liveness and error response smoke tests passed.")
+                    test_unauthenticated_request_returns_401(port)
+                    test_forged_headers_without_auth_returns_401(port)
+                    test_job_create_cross_school_returns_403(port)
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)

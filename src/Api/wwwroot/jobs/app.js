@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(url, {
                 headers: {
                     'Accept': 'application/json',
+                    'Authorization': `Bearer ${userId}:${scopeId}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': scopeId
                 }
@@ -293,6 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
+                    'Authorization': `Bearer ${userId}:${scopeId}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': scopeId
                 }
@@ -424,6 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
+                    'Authorization': `Bearer ${userId}:${payload.scopeResourceId}`,
                     'X-User-Id': userId,
                     'X-Scope-Id': payload.scopeResourceId
                 },
