@@ -218,10 +218,10 @@ public sealed class JobEngineExecutionTests
         var jobRef2 = await service.EnqueueAsync(req2);
         await service.EnqueueAsync(reqOtherSchool);
 
-        var schoolList = await service.ListJobsAsync(SchoolScope, "teacher-1", requesterScopeId: "school-hn-01");
+        var schoolList = await service.ListJobsAsync(SchoolScope, "teacher-1", requesterScope: SchoolScope);
         Assert.HasCount(2, schoolList);
 
-        var status1 = await service.GetJobStatusAsync(jobRef1, "teacher-1", requesterScopeId: "school-hn-01");
+        var status1 = await service.GetJobStatusAsync(jobRef1, "teacher-1", requesterScope: SchoolScope);
         Assert.AreEqual(JobStatus.Pending, status1.Status);
     }
 
@@ -282,18 +282,18 @@ public sealed class JobEngineExecutionTests
         var jobRef = await service.EnqueueAsync(request);
 
         // Truy cập cùng trường: Thành công
-        var validStatus = await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScopeId: "school-hn-01");
+        var validStatus = await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: SchoolScope);
         Assert.IsNotNull(validStatus);
 
         // Truy cập chéo trường khác: Bị từ chối (403 Forbidden)
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.GetJobStatusAsync(jobRef, "teacher-sg", requesterScopeId: "school-sg-02");
+            await service.GetJobStatusAsync(jobRef, "teacher-sg", requesterScope: JobScope.Create(JobScopeKind.School, "school-sg-02"));
         });
     }
 
     [TestMethod]
-    public async Task Missing_scope_id_on_read_or_cancel_or_list_throws_unauthorized_access_exception()
+    public async Task Missing_scope_on_read_or_cancel_or_list_throws_unauthorized_access_exception()
     {
         var store = new InMemoryJobStore();
         var service = new JobService(store);
@@ -304,26 +304,61 @@ public sealed class JobEngineExecutionTests
         // 1. Thiếu scope trên status check: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScopeId: null);
+            await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: null);
         });
 
         // 2. Thiếu scope trên cancel: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.CancelJobAsync(jobRef, "teacher-hn", requesterScopeId: null);
+            await service.CancelJobAsync(jobRef, "teacher-hn", requesterScope: null);
         });
 
         // 3. Thiếu scope trên list: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScopeId: null);
+            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScope: null);
         });
 
         // 4. Mismatched scope trên list: Bị từ chối ngay lập tức
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScopeId: "school-diff-99");
+            await service.ListJobsAsync(SchoolScope, "teacher-hn", requesterScope: JobScope.Create(JobScopeKind.School, "school-diff-99"));
         });
+    }
+
+    [TestMethod]
+    public async Task Cross_scope_kind_access_with_matching_resource_id_is_rejected()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var schoolScope = JobScope.Create(JobScopeKind.School, "resource-01");
+        var ministryScope = JobScope.Create(JobScopeKind.MinistryExam, "resource-01");
+
+        var request = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", schoolScope, "idem-cross-kind-1", "corr-kind");
+        var jobRef = await service.EnqueueAsync(request);
+
+        // 1. GetJobStatusAsync: requester có MinistryExam với cùng resourceId "resource-01" không được phép đọc job School
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.GetJobStatusAsync(jobRef, "officer", requesterScope: ministryScope);
+        });
+
+        // 2. CancelJobAsync: requester có MinistryExam với cùng resourceId không được phép hủy job School
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.CancelJobAsync(jobRef, "officer", requesterScope: ministryScope);
+        });
+
+        // 3. ListJobsAsync: requester có MinistryExam không được phép list job School
+        await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.ListJobsAsync(schoolScope, "officer", requesterScope: ministryScope);
+        });
+
+        // 4. Đúng scope (cả Kind và ResourceId): thành công
+        var status = await service.GetJobStatusAsync(jobRef, "teacher-hn", requesterScope: schoolScope);
+        Assert.IsNotNull(status);
     }
 
     [TestMethod]
@@ -468,7 +503,7 @@ public sealed class JobEngineExecutionTests
         // Requester từ school-hn-01 cố tình liệt kê job của school-sg-02 -> Bị từ chối
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
         {
-            await service.ListJobsAsync(schoolSg, "teacher-hn", requesterScopeId: "school-hn-01");
+            await service.ListJobsAsync(schoolSg, "teacher-hn", requesterScope: schoolHn);
         });
     }
 }

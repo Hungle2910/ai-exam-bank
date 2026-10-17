@@ -90,14 +90,15 @@ public static class JobEndpoints
                     });
             }
 
-            var authenticatedScope = ResolveAuthenticatedScopeId(httpContext);
-            if (string.IsNullOrWhiteSpace(authenticatedScope) ||
-                !string.Equals(authenticatedScope, request.ScopeResourceId, StringComparison.OrdinalIgnoreCase))
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
+            if (authenticatedScope is null ||
+                authenticatedScope.Kind != scopeKind ||
+                !string.Equals(authenticatedScope.ResourceId, request.ScopeResourceId, StringComparison.OrdinalIgnoreCase))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: $"Caller identity from scope '{authenticatedScope ?? "unscoped"}' is not authorized to create jobs in scope '{request.ScopeResourceId}'.",
+                    detail: $"Caller identity from scope '{authenticatedScope?.Kind.ToString() ?? "unscoped"}:{authenticatedScope?.ResourceId ?? "unscoped"}' is not authorized to create jobs in scope '{scopeKind}:{request.ScopeResourceId}'.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -156,9 +157,9 @@ public static class JobEndpoints
             CancellationToken cancellationToken) =>
         {
             var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
 
-            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
+            if (authenticatedScope is null)
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
@@ -175,7 +176,7 @@ public static class JobEndpoints
 
             try
             {
-                var status = await tracker.GetJobStatusAsync(jobRef, requesterId, authenticatedScopeId, cancellationToken);
+                var status = await tracker.GetJobStatusAsync(jobRef, requesterId, authenticatedScope, cancellationToken);
 
                 return Results.Ok(new JobApiResponse(
                     status.Job.Value,
@@ -222,9 +223,9 @@ public static class JobEndpoints
             var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
 
             // Xác định phạm vi được phép từ danh tính đã xác thực (ClaimsPrincipal)
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
 
-            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
+            if (authenticatedScope is null)
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
@@ -263,13 +264,14 @@ public static class JobEndpoints
                     });
             }
 
-            // Kiểm tra phân quyền: Không cho phép người dùng truy cập danh sách job của trường khác
-            if (!string.Equals(authenticatedScopeId, scopeResourceId, StringComparison.OrdinalIgnoreCase))
+            // Kiểm tra phân quyền: Không cho phép người dùng truy cập danh sách job của scope khác (cả Kind và ResourceId)
+            if (authenticatedScope.Kind != parsedKind ||
+                !string.Equals(authenticatedScope.ResourceId, scopeResourceId, StringComparison.OrdinalIgnoreCase))
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: $"Caller identity from scope '{authenticatedScopeId}' is not authorized to list jobs in scope '{scopeResourceId}'.",
+                    detail: $"Caller identity from scope '{authenticatedScope.Kind}:{authenticatedScope.ResourceId}' is not authorized to list jobs in scope '{parsedKind}:{scopeResourceId}'.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -286,7 +288,7 @@ public static class JobEndpoints
             try
             {
                 var scope = JobScope.Create(parsedKind, scopeResourceId);
-                var jobs = await tracker.ListJobsAsync(scope, requesterId, authenticatedScopeId, statusFilter, cancellationToken);
+                var jobs = await tracker.ListJobsAsync(scope, requesterId, authenticatedScope, statusFilter, cancellationToken);
 
                 var response = jobs.Select(j => new JobApiResponse(
                     j.Job.Value,
@@ -332,9 +334,9 @@ public static class JobEndpoints
             CancellationToken cancellationToken) =>
         {
             var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
-            var authenticatedScopeId = ResolveAuthenticatedScopeId(httpContext);
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
 
-            if (string.IsNullOrWhiteSpace(authenticatedScopeId))
+            if (authenticatedScope is null)
             {
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
@@ -351,7 +353,7 @@ public static class JobEndpoints
 
             try
             {
-                var cancelled = await tracker.CancelJobAsync(jobRef, requesterId, authenticatedScopeId, cancellationToken);
+                var cancelled = await tracker.CancelJobAsync(jobRef, requesterId, authenticatedScope, cancellationToken);
 
                 if (!cancelled)
                 {
@@ -389,6 +391,7 @@ public static class JobEndpoints
         // 5. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
         routes.MapGet("/api/v1/jobs/dev-token", (
             [FromQuery] string? scopeId,
+            [FromQuery] string? scopeKind,
             [FromServices] IHostEnvironment env) =>
         {
             if (!env.IsDevelopment())
@@ -397,8 +400,17 @@ public static class JobEndpoints
             }
 
             var targetScope = string.IsNullOrWhiteSpace(scopeId) ? "school-hn-01" : scopeId.Trim();
+            JobScopeKind? targetKind = null;
+            if (!string.IsNullOrWhiteSpace(scopeKind) &&
+                Enum.TryParse<JobScopeKind>(scopeKind, ignoreCase: true, out var parsedKind) &&
+                Enum.IsDefined(parsedKind))
+            {
+                targetKind = parsedKind;
+            }
+
             var devEntry = JobEngineAuthenticationHandler.DevelopmentTokens
-                .FirstOrDefault(kvp => string.Equals(kvp.Value.ScopeId, targetScope, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(kvp => string.Equals(kvp.Value.ScopeId, targetScope, StringComparison.OrdinalIgnoreCase) &&
+                                       (targetKind is null || kvp.Value.ScopeKind == targetKind.Value));
 
             if (string.IsNullOrEmpty(devEntry.Key))
             {
@@ -409,7 +421,8 @@ public static class JobEndpoints
             {
                 token = devEntry.Key,
                 userId = devEntry.Value.UserId,
-                scopeId = devEntry.Value.ScopeId
+                scopeId = devEntry.Value.ScopeId,
+                scopeKind = devEntry.Value.ScopeKind.ToString()
             });
         })
         .WithTags("JobsDev")
@@ -420,23 +433,35 @@ public static class JobEndpoints
 
     /// <summary>
     /// Trích xuất và xác thực phạm vi phân quyền của người gọi từ danh tính đã xác thực (ClaimsPrincipal).
+    /// Bao gồm cả ScopeKind và ScopeResourceId.
     /// Tuyệt đối không tin cậy các HTTP Headers do Client tự gửi để triệt tiêu lỗ hổng IDOR / Scope Bypass (CWE-639, CWE-862).
     /// </summary>
     /// <param name="httpContext">HTTP Context hiện tại.</param>
-    /// <returns>Mã phạm vi được phép từ claim danh tính đã xác thực, hoặc null nếu không tồn tại claim hợp lệ.</returns>
-    internal static string? ResolveAuthenticatedScopeId(HttpContext httpContext)
+    /// <returns>Đối tượng JobScope hợp lệ từ claim danh tính đã xác thực, hoặc null nếu không tồn tại claim hợp lệ.</returns>
+    internal static JobScope? ResolveAuthenticatedScope(HttpContext httpContext)
     {
         if (httpContext.User?.Identity?.IsAuthenticated == true)
         {
-            var claimScope = httpContext.User.FindFirst("scope_id")?.Value
+            var claimScopeId = httpContext.User.FindFirst("scope_id")?.Value
                 ?? httpContext.User.FindFirst("school_id")?.Value
                 ?? httpContext.User.FindFirst("scope")?.Value
                 ?? httpContext.User.FindFirst("tenant_id")?.Value;
 
-            if (!string.IsNullOrWhiteSpace(claimScope))
+            if (string.IsNullOrWhiteSpace(claimScopeId))
             {
-                return claimScope.Trim();
+                return null;
             }
+
+            var claimScopeKind = httpContext.User.FindFirst("scope_kind")?.Value;
+            var kind = JobScopeKind.School;
+            if (!string.IsNullOrWhiteSpace(claimScopeKind) &&
+                Enum.TryParse<JobScopeKind>(claimScopeKind, ignoreCase: true, out var parsedKind) &&
+                Enum.IsDefined(parsedKind))
+            {
+                kind = parsedKind;
+            }
+
+            return JobScope.Create(kind, claimScopeId.Trim());
         }
 
         return null;

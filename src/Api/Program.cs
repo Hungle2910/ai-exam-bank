@@ -50,8 +50,11 @@ builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
 builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
 
-// Đăng ký dịch vụ nền thực thi Worker ngay trong API process
-builder.Services.AddHostedService<JobWorkerHostedService>();
+// Đăng ký dịch vụ nền thực thi Worker ngay trong API process (có thể tắt khi chạy cụm Worker độc lập hoặc test)
+if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))
+{
+    builder.Services.AddHostedService<JobWorkerHostedService>();
+}
 
 var app = builder.Build();
 

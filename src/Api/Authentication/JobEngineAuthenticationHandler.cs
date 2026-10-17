@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using AiExamBank.Modules.Jobs.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -12,13 +13,17 @@ namespace AiExamBank.Api.Authentication;
 /// Bản ghi danh tính người dùng được cấu hình an toàn cho môi trường chạy ứng dụng.
 /// </summary>
 /// <param name="UserId">Mã định danh người dùng.</param>
-/// <param name="ScopeId">Mã phạm vi (trường / tổ chức) được ủy quyền.</param>
-public sealed record TrustedDevIdentity(string UserId, string ScopeId);
+/// <param name="ScopeId">Mã phạm vi (trường / tổ chức / kỳ thi) được ủy quyền.</param>
+/// <param name="ScopeKind">Loại phạm vi phân quyền (School hoặc MinistryExam).</param>
+public sealed record TrustedDevIdentity(
+    string UserId,
+    string ScopeId,
+    JobScopeKind ScopeKind = JobScopeKind.School);
 
 /// <summary>
 /// Trình xử lý xác thực danh tính cho dịch vụ Job Engine (JobEngine Authentication Handler).
 /// Xác thực token dạng Bearer dựa trên cấu hình bí mật của máy chủ hoặc danh mục cách ly trong môi trường Development,
-/// ánh xạ người dùng cùng phạm vi (scope claims: scope_id, school_id) vào HttpContext.User.
+/// ánh xạ người dùng cùng phạm vi (scope claims: scope_id, scope_kind, school_id) vào HttpContext.User.
 /// Chặn đứng tấn công vượt quyền và bảo đảm nguyên tắc Zero-Trust, từ chối mọi token do Client tự tạo (CWE-287, CWE-862, CWE-798).
 /// </summary>
 public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
@@ -38,11 +43,12 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
     public static readonly IReadOnlyDictionary<string, TrustedDevIdentity> DevelopmentTokens =
         new Dictionary<string, TrustedDevIdentity>(StringComparer.Ordinal)
         {
-            ["dev-system-token-hn"] = new("system-user", "school-hn-01"),
-            ["dev-teacher-hn-token"] = new("teacher-hn", "school-hn-01"),
-            ["dev-teacher-sg-token"] = new("teacher-sg", "school-sg-02"),
-            ["smoke-test-token-hn"] = new("smoke-tester", "school-hn-01"),
-            ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02")
+            ["dev-system-token-hn"] = new("system-user", "school-hn-01", JobScopeKind.School),
+            ["dev-teacher-hn-token"] = new("teacher-hn", "school-hn-01", JobScopeKind.School),
+            ["dev-teacher-sg-token"] = new("teacher-sg", "school-sg-02", JobScopeKind.School),
+            ["smoke-test-token-hn"] = new("smoke-tester", "school-hn-01", JobScopeKind.School),
+            ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02", JobScopeKind.School),
+            ["dev-ministry-token"] = new("ministry-officer", "national-exam-2026", JobScopeKind.MinistryExam)
         };
 
     [Obsolete("Use DevelopmentTokens or configure tokens via IConfiguration")]
@@ -92,9 +98,18 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
         {
             var userId = secretSection["UserId"];
             var scopeId = secretSection["ScopeId"];
+            var scopeKindStr = secretSection["ScopeKind"];
+            var scopeKind = JobScopeKind.School;
+            if (!string.IsNullOrWhiteSpace(scopeKindStr) &&
+                Enum.TryParse<JobScopeKind>(scopeKindStr, ignoreCase: true, out var parsedKind) &&
+                Enum.IsDefined(parsedKind))
+            {
+                scopeKind = parsedKind;
+            }
+
             if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(scopeId))
             {
-                identityConfig = new TrustedDevIdentity(userId, scopeId);
+                identityConfig = new TrustedDevIdentity(userId, scopeId, scopeKind);
             }
         }
 
@@ -118,6 +133,7 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
         {
             new(ClaimTypes.NameIdentifier, identityConfig.UserId),
             new(ClaimTypes.Name, identityConfig.UserId),
+            new("scope_kind", identityConfig.ScopeKind.ToString()),
             new("scope_id", identityConfig.ScopeId),
             new("school_id", identityConfig.ScopeId),
             new("scope", identityConfig.ScopeId)

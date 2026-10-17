@@ -100,8 +100,9 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
   2. **Bảo mật phân quyền bắt buộc & Lược đồ xác thực danh tính (Authentication Scheme & Zero-Trust Scoped Authorization — CWE-639, CWE-862, CWE-306):**
      - Cấu hình lược đồ xác thực `JobEngineAuthenticationHandler` (`JobEngineAuth`) đăng ký trong `Program.cs` và áp dụng `RequireAuthorization()` cho nhóm route `/api/v1/jobs`.
      - Các yêu cầu không có thông tin xác thực hoặc chỉ gửi header giả mạo từ client lập tức bị từ chối với HTTP **401 Unauthorized**.
-     - Ràng buộc tạo và truy cập tác vụ với danh tính đã xác thực (`ResolveAuthenticatedScopeId`): Chỉ trích xuất scope từ Claims (`scope_id`, `school_id`, `scope`, `tenant_id`) của `ClaimsPrincipal`, loại bỏ hoàn toàn việc tin cậy các header do client tự khai báo (`X-Scope-Id`, `X-User-Scope-Id`).
-     - Tại `POST /api/v1/jobs`: Từ chối ngay với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`) nếu người gọi thiếu scope xác thực hoặc cố tình tạo job với `scopeResourceId` thuộc trường khác.
+     - Ràng buộc tạo và truy cập tác vụ với danh tính đã xác thực (`ResolveAuthenticatedScope`): Trích xuất đầy đủ cặp phạm vi (`JobScopeKind ScopeKind`, `string ResourceId`) từ Claims (`scope_kind`, `scope_id`, `school_id`, `scope`, `tenant_id`) của `ClaimsPrincipal`, loại bỏ hoàn toàn việc tin cậy các header do client tự khai báo (`X-Scope-Id`, `X-User-Scope-Id`).
+     - Truyền trực tiếp `JobScope` vào các phương thức `GetJobStatusAsync`, `CancelJobAsync`, `ListJobsAsync` của `IJobTracker` và `JobService`: Bắt buộc kiểm tra đồng thời cả hai trường `Scope.Kind` và `Scope.ResourceId`, triệt tiêu lỗ hổng bypass IDOR khi caller chỉ khớp ResourceId nhưng thuộc loại phạm vi khác (ví dụ: token của trường học không thể tạo, đọc, hủy hoặc liệt kê job thuộc kỳ thi cấp Bộ `MinistryExam`).
+     - Tại `POST /api/v1/jobs`: Từ chối ngay với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`) nếu người gọi thiếu scope xác thực hoặc cố tình tạo job với `scopeKind` hoặc `scopeResourceId` không thuộc quyền của mình.
   3. **Hàng rào Fencing chặn đứng Lease quá hạn:**
      - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
   4. **Đồng bộ đa tiến trình an toàn & Ghi đĩa nguyên tử:**
@@ -109,15 +110,17 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Dưới khóa Mutex, luôn gọi `LoadFromDisk()` để tránh bỏ sót các lần ghi cùng tick. Lan truyền ngoại lệ rõ ràng khi đọc hoặc deserialize snapshot thất bại, ngăn chặn `SaveToDisk()` ghi đè phá hủy dữ liệu hiện có.
      - Phương thức `SaveToDisk` ghi JSON vào file tạm `*.tmp` rồi dùng `File.Move(..., overwrite: true)` để đảm bảo tính nguyên tử (atomic) trên file system, không nuốt lỗi ghi đĩa.
      - Bắt buộc cấu hình đường dẫn tuyệt đối dùng chung `Jobs:StorePath` cho cả API và Worker, từ chối khởi động nếu thiếu hoặc không phải đường dẫn tuyệt đối để đảm bảo hai host truy cập cùng kho job.
+     - Hỗ trợ cờ cấu hình `Jobs:DisableEmbeddedWorker=true` cho API, cho phép tắt `JobWorkerHostedService` trong tiến trình Web API khi triển khai cụm Worker độc lập hoặc phục vụ kiểm thử cô lập chuyên biệt.
   5. **Xác thực dữ liệu đầu vào chuẩn RESTful:**
      - Kiểm tra `Enum.IsDefined` cho `JobScopeKind`, xử lý `ArgumentException` từ `JobScope.Create` để trả về HTTP **400 Bad Request** khi tham số rỗng hoặc enum không xác định (ví dụ `scopeKind=999` hoặc `scopeResourceId` chỉ có khoảng trắng).
   6. **Bổ sung kiểm thử tích hợp End-to-End & Regression Security:**
-     - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 401/403 cho các trường hợp không xác thực, giả mạo header, tạo job chéo trường, Problem Details 404, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
-     - Bổ sung kiểm thử tích hợp xác nhận tiến trình Worker độc lập (out-of-process Worker) chia sẻ cùng `Jobs:StorePath` tự động tiếp nhận và xử lý hoàn tất job do API tạo.
+     - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 401/403 cho các trường hợp không xác thực, giả mạo header, tạo job chéo trường / chéo loại phạm vi (`scopeKind`), Problem Details 404, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
+     - Bổ sung kiểm thử tích hợp xác nhận tiến trình Worker độc lập (out-of-process Worker) chia sẻ cùng `Jobs:StorePath` tự động tiếp nhận và xử lý hoàn tất job do API tạo trong môi trường API đã tắt embedded worker (`Jobs:DisableEmbeddedWorker=true`), kiểm tra tiến trình Worker độc lập vẫn sống đến khi hoàn tất.
+     - Bổ sung ca hồi quy xác nhận báo lỗi ngay nếu thiếu assembly của Worker hoặc Worker độc lập thoát sớm trước khi job được xử lý.
      - Cố định đồng bộ cả `ASPNETCORE_ENVIRONMENT` và `DOTNET_ENVIRONMENT` cho các tiến trình test; bổ sung kiểm thử hồi quy xác nhận tiến trình Production từ chối token dev và endpoint dev trả về 404 bất kể biến môi trường của tiến trình cha.
   7. **Bảo mật cơ chế xác thực Token theo nguyên tắc Zero-Trust (CWE-287, CWE-862, CWE-798):**
      - Loại bỏ hoàn toàn việc phân tích chuỗi Bearer tự do từ client (`userId:scopeId`).
-     - Triển khai cơ chế xác thực Bearer Token do máy chủ kiểm soát: trong môi trường phát triển (Development), sử dụng danh mục token nội bộ cách ly; trong môi trường triển khai (Production), bắt buộc đọc thông tin từ cấu hình bí mật (`JobEngine:TrustedTokens`), tuyệt đối từ chối token phát triển cố định với HTTP **401 Unauthorized**.
+     - Triển khai cơ chế xác thực Bearer Token do máy chủ kiểm soát: trong môi trường phát triển (Development), sử dụng danh mục token nội bộ cách ly kèm theo loại phạm vi (`ScopeKind`); trong môi trường triển khai (Production), bắt buộc đọc thông tin từ cấu hình bí mật (`JobEngine:TrustedTokens`), tuyệt đối từ chối token phát triển cố định với HTTP **401 Unauthorized**.
      - Giao diện Status UI Dashboard không nhúng cứng bearer token trong JavaScript tĩnh, hỗ trợ tự động lấy token phiên từ endpoint dev an toàn hoặc cho phép người dùng tự nhập. Bổ sung kiểm thử tự động ngăn chặn truy cập trái phép và vượt quyền giữa các phạm vi trường học (HTTP 401/403).
 
 ---

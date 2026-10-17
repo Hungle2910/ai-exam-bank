@@ -246,6 +246,58 @@ def test_job_create_cross_school_returns_403(port):
     print("Cross-school create test passed: Job creation in different school rejected with HTTP 403.")
 
 
+def test_job_create_cross_scope_kind_returns_403(port):
+    """Verify that creating a job with a mismatched ScopeKind (e.g. MinistryExam for a School token) is rejected with HTTP 403."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs"
+    payload = json.dumps({
+        "jobType": "SampleJob",
+        "payloadReference": "s3://test-cross-kind",
+        "scopeKind": "MinistryExam",
+        "scopeResourceId": "school-hn-01",
+        "idempotencyKey": f"cross-kind-create-{int(time.time())}"
+    }).encode("utf-8")
+
+    # User authenticated for (School, school-hn-01) tries to create a MinistryExam job for school-hn-01
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer dev-teacher-hn-token"
+        },
+        method="POST"
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Cross-scope-kind job creation should have returned HTTP 403 Forbidden")
+    except urllib.error.HTTPError as err:
+        if err.code != 403:
+            raise RuntimeError(f"Expected HTTP 403 for cross-scope-kind job creation, got {err.code}")
+
+    print("Cross-scope-kind create test passed: Job creation with mismatched ScopeKind rejected with HTTP 403.")
+
+
+def test_cross_scope_kind_listing_returns_403(port):
+    """Verify that querying jobs with mismatched ScopeKind is rejected with HTTP 403 SCOPED_ACCESS_DENIED."""
+    url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=MinistryExam&scopeResourceId=school-hn-01"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer dev-teacher-hn-token"
+        }
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        raise RuntimeError("Cross-scope-kind listing should have returned HTTP 403 Forbidden")
+    except urllib.error.HTTPError as err:
+        if err.code != 403:
+            raise RuntimeError(f"Expected HTTP 403 for cross-scope-kind listing, got {err.code}")
+
+    print("Cross-scope-kind listing test passed: Querying jobs with mismatched ScopeKind rejected with HTTP 403.")
+
+
 def test_dev_tokens_rejected_in_production(assembly):
     """Verify that development tokens are rejected with HTTP 401 and dev endpoints return 404 in Production."""
     prod_store = ROOT / "bin" / "smoke_prod_jobs_store.json"
@@ -326,25 +378,57 @@ def test_parent_env_isolation(assembly):
             os.environ.pop("DOTNET_ENVIRONMENT", None)
 
 
-def test_independent_worker_processes_job(port, worker_assembly, shared_store_path):
-    """Verify that an independent Worker process using the shared Jobs:StorePath processes jobs enqueued by API."""
+def test_independent_worker_processes_job(worker_assembly, shared_store_path):
+    """Verify that an independent Worker process using the shared Jobs:StorePath processes jobs enqueued by API,
+    with API's embedded JobWorkerHostedService explicitly disabled."""
     if not worker_assembly.is_file():
-        print(f"Worker assembly missing: {worker_assembly}, skipping standalone worker test", file=sys.stderr)
-        return
+        raise RuntimeError(f"Worker assembly missing: {worker_assembly}. Ensure Worker is built before running smoke tests.")
 
-    worker_env = os.environ.copy()
-    worker_env["DOTNET_ENVIRONMENT"] = "Development"
-    worker_env["Jobs__StorePath"] = shared_store_path
+    api_port = available_port()
+    api_address = f"http://127.0.0.1:{api_port}/health/live"
+    api_env = os.environ.copy()
+    api_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{api_port}"
+    api_env["ASPNETCORE_ENVIRONMENT"] = "Development"
+    api_env["DOTNET_ENVIRONMENT"] = "Development"
+    api_env["Jobs__StorePath"] = shared_store_path
+    api_env["Jobs__DisableEmbeddedWorker"] = "true"
 
-    worker_proc = subprocess.Popen(
-        ["dotnet", str(worker_assembly)],
+    api_proc = subprocess.Popen(
+        ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
-        env=worker_env,
+        env=api_env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+    worker_proc = None
     try:
-        url = f"http://127.0.0.1:{port}/api/v1/jobs"
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if api_proc.poll() is not None:
+                raise RuntimeError(f"Standalone-test API exited unexpectedly with code {api_proc.returncode}")
+            try:
+                with urllib.request.urlopen(api_address, timeout=1) as resp:
+                    if resp.status == 200:
+                        break
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                time.sleep(0.2)
+        else:
+            raise RuntimeError("Standalone-test API did not become ready within 15s")
+
+        worker_env = os.environ.copy()
+        worker_env["DOTNET_ENVIRONMENT"] = "Development"
+        worker_env["Jobs__StorePath"] = shared_store_path
+
+        worker_proc = subprocess.Popen(
+            ["dotnet", str(worker_assembly)],
+            cwd=ROOT,
+            env=worker_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        url = f"http://127.0.0.1:{api_port}/api/v1/jobs"
         idempotency_key = f"smoke-standalone-worker-{int(time.time())}"
         payload = json.dumps({
             "jobType": "SampleJob",
@@ -368,10 +452,12 @@ def test_independent_worker_processes_job(port, worker_assembly, shared_store_pa
             data = json.load(resp)
             job_id = data["jobId"]
 
-        status_url = f"http://127.0.0.1:{port}/api/v1/jobs/{job_id}"
+        status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
         deadline = time.monotonic() + 15
         final_status = None
         while time.monotonic() < deadline:
+            if worker_proc.poll() is not None:
+                raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode} before job completed.")
             query_req = urllib.request.Request(
                 status_url,
                 headers={
@@ -386,23 +472,152 @@ def test_independent_worker_processes_job(port, worker_assembly, shared_store_pa
                     break
             time.sleep(0.3)
 
+        if worker_proc.poll() is not None:
+            raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode}.")
+
         if final_status != "Completed":
             raise RuntimeError(f"Expected standalone Worker to complete job, but status was: {final_status}")
 
-        print("Standalone Worker integration test passed: Job created by API successfully completed by independent Worker process.")
+        print("Standalone Worker integration test passed: Job created by API (with embedded worker disabled) successfully completed by independent Worker process.")
     finally:
-        if worker_proc.poll() is None:
+        if worker_proc is not None and worker_proc.poll() is None:
             worker_proc.terminate()
             try:
                 worker_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 worker_proc.kill()
                 worker_proc.wait(timeout=5)
+        if api_proc is not None:
+            stop_api(api_proc, api_port)
+
+
+def test_independent_worker_missing_assembly_regression(shared_store_path):
+    """Verify that test_independent_worker_processes_job fails loudly when worker assembly is missing."""
+    dummy_worker = ROOT / "bin" / "nonexistent_worker_assembly_for_test.dll"
+    try:
+        test_independent_worker_processes_job(dummy_worker, shared_store_path)
+        raise RuntimeError("Expected test_independent_worker_processes_job to raise RuntimeError when worker assembly is missing")
+    except RuntimeError as err:
+        if "Worker assembly missing" in str(err):
+            print("Missing worker assembly regression test passed: correctly raised RuntimeError when worker assembly is missing.")
+        else:
+            raise
+
+
+def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
+    """Verify that if the standalone Worker process exits prematurely before processing the job,
+    the job remains uncompleted and the test fails loudly."""
+    if not worker_assembly.is_file():
+        raise RuntimeError(f"Worker assembly missing: {worker_assembly}")
+
+    api_port = available_port()
+    api_address = f"http://127.0.0.1:{api_port}/health/live"
+    api_env = os.environ.copy()
+    api_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{api_port}"
+    api_env["ASPNETCORE_ENVIRONMENT"] = "Development"
+    api_env["DOTNET_ENVIRONMENT"] = "Development"
+    api_env["Jobs__StorePath"] = shared_store_path
+    api_env["Jobs__DisableEmbeddedWorker"] = "true"
+
+    api_proc = subprocess.Popen(
+        ["dotnet", str(ASSEMBLY)],
+        cwd=ROOT,
+        env=api_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if api_proc.poll() is not None:
+                raise RuntimeError(f"API exited unexpectedly with code {api_proc.returncode}")
+            try:
+                with urllib.request.urlopen(api_address, timeout=1) as resp:
+                    if resp.status == 200:
+                        break
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                time.sleep(0.2)
+        else:
+            raise RuntimeError("API did not become ready within 15s")
+
+        # 1. Enqueue job
+        url = f"http://127.0.0.1:{api_port}/api/v1/jobs"
+        idempotency_key = f"smoke-premature-exit-{int(time.time())}"
+        payload = json.dumps({
+            "jobType": "SampleJob",
+            "payloadReference": "test-premature-exit-ref",
+            "scopeKind": "School",
+            "scopeResourceId": "school-hn-01",
+            "idempotencyKey": idempotency_key
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+            job_id = data["jobId"]
+
+        # 2. Start worker and immediately terminate it before it can process
+        worker_env = os.environ.copy()
+        worker_env["DOTNET_ENVIRONMENT"] = "Development"
+        worker_env["Jobs__StorePath"] = shared_store_path
+
+        worker_proc = subprocess.Popen(
+            ["dotnet", str(worker_assembly)],
+            cwd=ROOT,
+            env=worker_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        worker_proc.terminate()
+        worker_proc.wait(timeout=5)
+
+        # 3. Verify that waiting for completion while asserting worker is alive raises RuntimeError
+        status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
+        query_req = urllib.request.Request(
+            status_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            }
+        )
+
+        raised_error = False
+        try:
+            if worker_proc.poll() is not None:
+                raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode} before job completed.")
+        except RuntimeError:
+            raised_error = True
+
+        if not raised_error:
+            raise RuntimeError("Expected RuntimeError when worker process exited prematurely")
+
+        # Verify job is still Pending (API embedded worker did not process it)
+        with urllib.request.urlopen(query_req, timeout=5) as resp:
+            job_data = json.load(resp)
+            if job_data.get("status") == "Completed":
+                raise RuntimeError("Job must NOT be Completed when embedded worker is disabled and standalone worker exited prematurely")
+
+        print("Premature worker exit regression test passed: Premature worker exit correctly detected and job remains uncompleted.")
+    finally:
+        stop_api(api_proc, api_port)
 
 
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
+        return 1
+    if not WORKER_ASSEMBLY.is_file():
+        print(f"Built Worker assembly missing: {WORKER_ASSEMBLY}", file=sys.stderr)
         return 1
 
     smoke_store = ROOT / "bin" / "smoke_jobs_store.json"
@@ -457,10 +672,25 @@ def main():
                     test_forged_headers_without_auth_returns_401(port)
                     test_untrusted_bearer_token_returns_401(port)
                     test_job_create_cross_school_returns_403(port)
+                    test_job_create_cross_scope_kind_returns_403(port)
                     test_invalid_scope_returns_400(port)
                     test_cross_school_listing_returns_403(port)
+                    test_cross_scope_kind_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)
-                    test_independent_worker_processes_job(port, WORKER_ASSEMBLY, str(smoke_store.resolve()))
+
+                    worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"
+                    worker_store.parent.mkdir(parents=True, exist_ok=True)
+                    if worker_store.exists():
+                        worker_store.unlink()
+
+                    premature_store = ROOT / "bin" / "smoke_premature_worker_store.json"
+                    premature_store.parent.mkdir(parents=True, exist_ok=True)
+                    if premature_store.exists():
+                        premature_store.unlink()
+
+                    test_independent_worker_missing_assembly_regression(str(worker_store.resolve()))
+                    test_independent_worker_processes_job(WORKER_ASSEMBLY, str(worker_store.resolve()))
+                    test_premature_worker_exit_regression(WORKER_ASSEMBLY, str(premature_store.resolve()))
                     test_dev_tokens_rejected_in_production(ASSEMBLY)
                     test_parent_env_isolation(ASSEMBLY)
                     return 0

@@ -38,74 +38,77 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <inheritdoc />
-    public async Task<JobStatusDto> GetJobStatusAsync(JobRef jobRef, string requesterId, string? requesterScopeId = null, CancellationToken cancellationToken = default)
+    public async Task<JobStatusDto> GetJobStatusAsync(JobRef jobRef, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobRef);
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
 
-        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        if (requesterScope is null)
         {
-            throw new UnauthorizedAccessException("Requester scope ID is required for scoped job access.");
+            throw new UnauthorizedAccessException("Requester scope is required for scoped job access.");
         }
 
         var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
         if (job is null)
             throw new KeyNotFoundException($"Job with ID '{jobRef.Value}' was not found.");
 
-        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép truy cập tác vụ chéo trường
-        if (!string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép truy cập tác vụ chéo phạm vi (cả Kind và ResourceId)
+        if (requesterScope.Kind != job.Scope.Kind ||
+            !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
-                $"Requester from scope '{requesterScopeId}' is not authorized to access job in scope '{job.Scope.ResourceId}'.");
+                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to access job in scope '{job.Scope.Kind}:{job.Scope.ResourceId}'.");
         }
 
         return MapToDto(job);
     }
 
     /// <inheritdoc />
-    public async Task<bool> CancelJobAsync(JobRef jobRef, string requesterId, string? requesterScopeId = null, CancellationToken cancellationToken = default)
+    public async Task<bool> CancelJobAsync(JobRef jobRef, string requesterId, JobScope? requesterScope = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobRef);
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
 
-        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        if (requesterScope is null)
         {
-            throw new UnauthorizedAccessException("Requester scope ID is required for scoped job cancellation.");
+            throw new UnauthorizedAccessException("Requester scope is required for scoped job cancellation.");
         }
 
         var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
         if (job is null)
             return false;
 
-        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép hủy tác vụ chéo trường
-        if (!string.Equals(requesterScopeId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép hủy tác vụ chéo phạm vi (cả Kind và ResourceId)
+        if (requesterScope.Kind != job.Scope.Kind ||
+            !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
-                $"Requester from scope '{requesterScopeId}' is not authorized to cancel job in scope '{job.Scope.ResourceId}'.");
+                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to cancel job in scope '{job.Scope.Kind}:{job.Scope.ResourceId}'.");
         }
 
         return await _store.RequestCancellationAsync(jobRef.Value, requesterId, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, string? requesterScopeId = null, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope? requesterScope = null, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(scope);
         if (string.IsNullOrWhiteSpace(requesterId))
             throw new ArgumentException("Requester ID is required.", nameof(requesterId));
 
-        if (string.IsNullOrWhiteSpace(requesterScopeId))
+        if (requesterScope is null)
         {
-            throw new UnauthorizedAccessException("Requester scope ID is required to list scoped jobs.");
+            throw new UnauthorizedAccessException("Requester scope is required to list scoped jobs.");
         }
 
-        // Kiểm tra phân quyền phạm vi: Chỉ được liệt kê các tác vụ trong phạm vi của chính người yêu cầu
-        if (!string.Equals(requesterScopeId, scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        // Kiểm tra phân quyền phạm vi: Chỉ được liệt kê các tác vụ trong phạm vi của chính người yêu cầu (cả Kind và ResourceId)
+        if (requesterScope.Kind != scope.Kind ||
+            !string.Equals(requesterScope.ResourceId, scope.ResourceId, StringComparison.OrdinalIgnoreCase))
         {
             throw new UnauthorizedAccessException(
-                $"Requester from scope '{requesterScopeId}' is not authorized to list jobs in scope '{scope.ResourceId}'.");
+                $"Requester from scope '{requesterScope.Kind}:{requesterScope.ResourceId}' is not authorized to list jobs in scope '{scope.Kind}:{scope.ResourceId}'.");
         }
 
         var jobs = await _store.ListByScopeAsync(scope, statusFilter, cancellationToken);
