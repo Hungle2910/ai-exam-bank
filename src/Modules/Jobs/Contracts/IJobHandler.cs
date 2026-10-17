@@ -33,5 +33,6 @@ public interface IJobHandler
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Task đại diện cho tiến trình thực thi.</returns>
     Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
-        => Task.CompletedTask;
+        => throw new NotImplementedException(
+            $"Handler '{JobType}' must override ExecuteAsync(JobExecutionContext, CancellationToken) or ExecuteAsync(JobRequest, CancellationToken).");
 }

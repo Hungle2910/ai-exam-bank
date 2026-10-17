@@ -49,11 +49,4 @@ public sealed class SampleJobHandler : IJobHandler
         var generatedResultId = $"result-{context.JobId.Value:N}";
         return JobExecutionResult.Success(generatedResultId);
     }
-
-    /// <inheritdoc />
-    public Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
-    {
-        // Tương thích ngược với interface cũ
-        return Task.CompletedTask;
-    }
 }

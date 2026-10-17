@@ -180,7 +180,7 @@ public sealed class JobWorkerHostedService : BackgroundService
                     hostStoppingToken);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
             _logger.LogInformation("Job {JobId} was cancelled. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);

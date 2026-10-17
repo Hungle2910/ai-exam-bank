@@ -847,4 +847,115 @@ public sealed class JobEngineExecutionTests
             return Task.FromResult(JobExecutionResult.Success("cancel-result"));
         }
     }
+
+    private sealed class EmptyJobHandler : IJobHandler
+    {
+        public string JobType => "EmptyJob";
+    }
+
+    private sealed class ChildTimeoutJobHandler : IJobHandler
+    {
+        public string JobType => "ChildTimeoutJob";
+
+        public Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            throw new TaskCanceledException("Internal HTTP timeout");
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra Handler không override bất kỳ overload ExecuteAsync nào phải ném NotImplementedException
+    /// và ghi nhận lỗi hệ thống, không được báo hoàn thành giả.
+    /// </summary>
+    [TestMethod]
+    public async Task Handler_without_overrides_fails_and_does_not_report_completed()
+    {
+        var store = new InMemoryJobStore();
+        var registry = new JobRegistry();
+        registry.Register(new EmptyJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromMilliseconds(100),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var request = JobRequest.Create("EmptyJob", "s3://payload", "tester", SchoolScope, "key-empty", "corr-empty");
+        var job = await store.EnqueueAsync(request, "fp-empty");
+
+        using var workerCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(store, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(workerCts.Token);
+
+        BackgroundJob? updatedJob = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(50);
+            var current = await store.GetByIdAsync(job.Id);
+            if (current != null && current.Status != JobStatus.Running)
+            {
+                updatedJob = current;
+                break;
+            }
+        }
+
+        await worker.StopAsync(CancellationToken.None);
+        worker.Dispose();
+
+        Assert.IsNotNull(updatedJob);
+        Assert.AreNotEqual(JobStatus.Completed, updatedJob.Status, "Handler without overrides must not report Completed.");
+        Assert.AreEqual(JobStatus.Pending, updatedJob.Status, "Transient unhandled exception schedules retry.");
+        Assert.AreEqual("UNHANDLED_EXCEPTION", updatedJob.ErrorCode);
+    }
+
+    /// <summary>
+    /// Kiểm tra khi Handler ném TaskCanceledException hoặc OperationCanceledException
+    /// nhưng CancellationToken của Job chưa bị hủy thì phải coi là lỗi ngoại lệ (transient failure),
+    /// đưa job về Pending để retry thay vì xem là người dùng bấm hủy.
+    /// </summary>
+    [TestMethod]
+    public async Task TaskCanceledException_when_job_token_not_cancelled_fails_as_transient()
+    {
+        var store = new InMemoryJobStore();
+        var registry = new JobRegistry();
+        registry.Register(new ChildTimeoutJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromMilliseconds(100),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var request = JobRequest.Create("ChildTimeoutJob", "s3://payload", "tester", SchoolScope, "key-timeout", "corr-timeout");
+        var job = await store.EnqueueAsync(request, "fp-timeout");
+
+        using var workerCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(store, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(workerCts.Token);
+
+        BackgroundJob? updatedJob = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(50);
+            var current = await store.GetByIdAsync(job.Id);
+            if (current != null && current.Status != JobStatus.Running)
+            {
+                updatedJob = current;
+                break;
+            }
+        }
+
+        await worker.StopAsync(CancellationToken.None);
+        worker.Dispose();
+
+        Assert.IsNotNull(updatedJob);
+        Assert.AreEqual(JobStatus.Pending, updatedJob.Status, "Child cancellation when job token is active must schedule retry.");
+        Assert.AreEqual("UNHANDLED_EXCEPTION", updatedJob.ErrorCode);
+    }
 }

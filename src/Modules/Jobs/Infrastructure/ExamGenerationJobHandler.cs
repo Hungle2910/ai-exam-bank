@@ -50,10 +50,4 @@ public sealed class ExamGenerationJobHandler : IJobHandler
         var examSnapshotId = $"exam-snap-{context.JobId.Value:N}";
         return JobExecutionResult.Success(examSnapshotId);
     }
-
-    /// <inheritdoc />
-    public Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
 }

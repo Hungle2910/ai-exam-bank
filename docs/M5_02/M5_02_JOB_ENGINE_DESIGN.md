@@ -38,18 +38,17 @@ stateDiagram-v2
     [*] --> Pending: EnqueueAsync (Idempotent)
     
     Pending --> Running: Worker Claims Lease (Atomic)
-    Pending --> Cancelled: CancelJobAsync (Before Claim)
+    Pending --> Cancelled: RequestCancellationAsync (Immediate)
     
     Running --> Running: Heartbeat 30s (Extend Lease +2m)
-    Running --> Completed: Handler Returns Success (100%)
+    Running --> Completed: Handler Returns Success (CompleteJobAsync Blocked If Cancelled)
     
     Running --> Pending: Transient Failure & Attempt < 3 (Backoff +1m / +5m)
-    Running --> Failed: Non-transient Failure OR Attempt >= 3 (RETRY_BUDGET_EXHAUSTED)
+    Running --> Failed: Non-transient Failure (Preserves Handler ErrorCode) OR Attempt >= 3 (RETRY_BUDGET_EXHAUSTED)
     
-    Running --> Cancelled: CancelJobAsync (Aborted via CancellationToken)
-    Running --> Completed: Handler finishes before observing cancellation
+    Running --> Cancelled: RequestCancellationAsync (Marks Cancelled Immediately; Signals CancellationToken)
     
-    Running --> Pending: Worker Crash & Lease Expired (>2m) & Attempt < 3 (Recover)
+    Running --> Pending: Worker Crash & Lease Expired (>2m) & Attempt < 3 (Recover with Backoff)
     Running --> Failed: Worker Crash & Lease Expired (>2m) & Attempt >= 3 (RETRY_BUDGET_EXHAUSTED)
     
     Completed --> [*]
@@ -61,11 +60,14 @@ stateDiagram-v2
 1. **Pending**: Tác vụ đã được tiếp nhận, đang chờ Worker thăm dò.
 2. **Running**: Worker đã chiếm được `LeaseToken` ngẫu nhiên.
 3. **Heartbeat & Lease**: Lease có hiệu lực **2 phút**. Worker gửi nhịp tim mỗi **30 giây** để gia hạn thêm 2 phút.
-4. **Cơ chế Bounded Retries**:
+4. **Cơ chế Bounded Retries & Thất bại**:
    - Thất bại lần 1 (Transient error): `AttemptCount = 1` $\rightarrow$ Hẹn giờ chạy lại sau **1 phút** (`AvailableAt = UtcNow + 1m`), quay về `Pending`.
    - Thất bại lần 2 (Transient error): `AttemptCount = 2` $\rightarrow$ Hẹn giờ chạy lại sau **5 phút** (`AvailableAt = UtcNow + 5m`), quay về `Pending`.
-   - Thất bại lần 3 (hoặc gặp lỗi nghiệp vụ cố định Non-transient): Chuyển thẳng sang `Failed` với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
-5. **Hủy an toàn (Safe Cancellation)**: Tác vụ đang chạy khi bị yêu cầu hủy sẽ được kích hoạt `CancellationToken` liên kết. Handler có cơ hội hoàn tất dọn dẹp tài nguyên trước khi chuyển sang `Cancelled`.
+   - Thất bại lần 3 (Transient error vượt ngân sách): Chuyển sang `Failed` với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
+   - Gặp lỗi nghiệp vụ cố định (Non-transient): Chuyển thẳng sang `Failed`, giữ nguyên `ErrorCode` do Handler trả về (không bị ghi đè thành `RETRY_BUDGET_EXHAUSTED`).
+5. **Hủy an toàn (Cancellation & Fencing)**:
+   - Khi `RequestCancellationAsync` được gọi, trạng thái tác vụ chuyển sang `Cancelled` ngay lập tức trong Store (`CancellationRequestedAt` được ghi nhận) và phát tín hiệu tới `CancellationToken` của Worker.
+   - Khi một tác vụ đã ở trạng thái `Cancelled` hoặc đã có yêu cầu hủy, `CompleteJobAsync` sẽ bị từ chối (trả về `false`) để ngăn chặn việc ghi nhận hoàn tất sau khi đã hủy.
 
 ---
 
@@ -225,9 +227,12 @@ Tất cả 24 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 22 | `Postgres_migration_script_enforces_case_insensitive_unique_idempotency_index_and_scope_index` | Kiểm tra migration PostgreSQL áp dụng UPPER(scope_resource_id) cho unique index và scope index | ✅ PASS |
 | 23 | `Legacy_handler_overload_is_invoked_and_returns_success_through_default_interface_implementation` | Kiểm tra tính tương thích ngược của IJobHandler cho handler chỉ triển khai overload cũ | ✅ PASS |
 | 24 | `Worker_commits_job_as_completed_even_when_host_token_is_cancelled_immediately_after_handler_success` | Kiểm tra tính bền vững của Worker khi Host shutdown ngay sau khi Handler hoàn tất | ✅ PASS |
+| 25 | `FileJobStore_claim_on_expired_lease_applies_backoff_cooldown` | Kiểm tra claim lease quá hạn áp dụng cooldown 1m/5m, không retry dồn dập | ✅ PASS |
+| 26 | `Handler_without_overrides_fails_and_does_not_report_completed` | Kiểm tra handler rỗng ném NotImplementedException và ghi nhận lỗi hệ thống | ✅ PASS |
+| 27 | `TaskCanceledException_when_job_token_not_cancelled_fails_as_transient` | Kiểm tra timeout nội bộ khi token job chưa hủy được ghi nhận lỗi tạm thời | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
-- **`dotnet test AiExamBank.slnx`**: **33/33 tests PASSED** (24 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **39/39 tests PASSED** (30 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.

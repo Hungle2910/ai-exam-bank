@@ -183,6 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
             label.textContent = `Auto-Polling (${(pollIntervalMs / 1000).toFixed(0)}s)`;
         }
 
+        if (document.hidden) {
+            return;
+        }
+
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(fetchJobs, pollIntervalMs);
     }
@@ -196,6 +200,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             liveIndicator.querySelector('.dot').classList.remove('pulse');
         } else {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
             liveIndicator.querySelector('.dot').classList.add('pulse');
             fetchJobs();
             pollTimer = setInterval(fetchJobs, pollIntervalMs);
@@ -334,10 +342,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.cancelJob = async (jobId) => {
         if (!confirm('Bạn có chắc chắn muốn hủy tác vụ này không?')) return;
-        const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
+        const job = jobsList.find(j => j.jobId === jobId);
+        const scopeKind = job?.scopeKind || scopeKindSelect.value;
+        const scopeId = job?.scopeResourceId || scopeIdInput.value.trim() || 'school-hn-01';
 
         try {
-            const token = await getAuthorizedToken(scopeId);
+            const token = await getAuthorizedToken(scopeKind, scopeId);
             const headers = {
                 'Accept': 'application/json',
                 'X-Scope-Id': scopeId
@@ -472,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         try {
-            const token = await getAuthorizedToken(payload.scopeResourceId);
+            const token = await getAuthorizedToken(payload.scopeKind, payload.scopeResourceId);
             const headers = {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',

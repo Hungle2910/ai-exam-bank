@@ -195,7 +195,7 @@ public sealed class JobWorkerService : BackgroundService
                     hostStoppingToken);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
             await StopHeartbeatAsync(heartbeatCts, heartbeatTask);
 

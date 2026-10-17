@@ -48,10 +48,4 @@ public sealed class CsvImportJobHandler : IJobHandler
         var batchResultId = $"import-batch-{context.JobId.Value:N}";
         return JobExecutionResult.Success(batchResultId);
     }
-
-    /// <inheritdoc />
-    public Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
 }

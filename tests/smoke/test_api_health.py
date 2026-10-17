@@ -769,6 +769,7 @@ def main():
         stderr=subprocess.DEVNULL,
     )
     try:
+        ready = False
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -797,43 +798,48 @@ def main():
                         ):
                             raise RuntimeError(f"Unexpected error response: {error.code} {problem}")
                     print("API liveness and error response smoke tests passed.")
-                    test_unauthenticated_request_returns_401(port)
-                    test_forged_headers_without_auth_returns_401(port)
-                    test_untrusted_bearer_token_returns_401(port)
-                    test_job_create_cross_school_returns_403(port)
-                    test_job_create_cross_scope_kind_returns_403(port)
-                    test_invalid_scope_returns_400(port)
-                    test_cross_school_listing_returns_403(port)
-                    test_cross_scope_kind_listing_returns_403(port)
-                    test_status_ui_assets_load_without_errors(port)
-                    test_job_enqueue_and_completion(port)
-
-                    worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"
-                    worker_store.parent.mkdir(parents=True, exist_ok=True)
-                    if worker_store.exists():
-                        worker_store.unlink()
-
-                    premature_store = ROOT / "bin" / "smoke_premature_worker_store.json"
-                    premature_store.parent.mkdir(parents=True, exist_ok=True)
-                    if premature_store.exists():
-                        premature_store.unlink()
-
-                    test_independent_worker_missing_assembly_regression(str(worker_store.resolve()))
-                    test_independent_worker_processes_job(WORKER_ASSEMBLY, str(worker_store.resolve()))
-                    test_premature_worker_exit_regression(WORKER_ASSEMBLY, str(premature_store.resolve()))
-
-                    fast_store = ROOT / "bin" / "smoke_fast_worker_store.json"
-                    fast_store.parent.mkdir(parents=True, exist_ok=True)
-                    if fast_store.exists():
-                        fast_store.unlink()
-
-                    test_ultra_fast_worker_simulation_regression(str(fast_store.resolve()))
-                    test_dev_tokens_rejected_in_production(ASSEMBLY)
-                    test_parent_env_isolation(ASSEMBLY)
-                    return 0
+                    ready = True
+                    break
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(0.2)
-        raise RuntimeError("API did not become ready within 20 seconds")
+
+        if not ready:
+            raise RuntimeError("API did not become ready within 20 seconds")
+
+        test_unauthenticated_request_returns_401(port)
+        test_forged_headers_without_auth_returns_401(port)
+        test_untrusted_bearer_token_returns_401(port)
+        test_job_create_cross_school_returns_403(port)
+        test_job_create_cross_scope_kind_returns_403(port)
+        test_invalid_scope_returns_400(port)
+        test_cross_school_listing_returns_403(port)
+        test_cross_scope_kind_listing_returns_403(port)
+        test_status_ui_assets_load_without_errors(port)
+        test_job_enqueue_and_completion(port)
+
+        worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"
+        worker_store.parent.mkdir(parents=True, exist_ok=True)
+        if worker_store.exists():
+            worker_store.unlink()
+
+        premature_store = ROOT / "bin" / "smoke_premature_worker_store.json"
+        premature_store.parent.mkdir(parents=True, exist_ok=True)
+        if premature_store.exists():
+            premature_store.unlink()
+
+        test_independent_worker_missing_assembly_regression(str(worker_store.resolve()))
+        test_independent_worker_processes_job(WORKER_ASSEMBLY, str(worker_store.resolve()))
+        test_premature_worker_exit_regression(WORKER_ASSEMBLY, str(premature_store.resolve()))
+
+        fast_store = ROOT / "bin" / "smoke_fast_worker_store.json"
+        fast_store.parent.mkdir(parents=True, exist_ok=True)
+        if fast_store.exists():
+            fast_store.unlink()
+
+        test_ultra_fast_worker_simulation_regression(str(fast_store.resolve()))
+        test_dev_tokens_rejected_in_production(ASSEMBLY)
+        test_parent_env_isolation(ASSEMBLY)
+        return 0
     except RuntimeError as error:
         print(error, file=sys.stderr)
         return 1
