@@ -1021,7 +1021,7 @@ public sealed class JobEngineExecutionTests
         {
             await worker.StopAsync(CancellationToken.None);
         }
-        catch
+        catch (OperationCanceledException)
         {
         }
         worker.Dispose();
