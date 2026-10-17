@@ -106,12 +106,14 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
   4. **Đồng bộ đa tiến trình an toàn & Ghi đĩa nguyên tử:**
      - `FileJobStore.ExecuteWithLock` ném `TimeoutException` nếu không lấy được mutex sau 5s, ngăn ngừa chạy trùng và mất mát dữ liệu snapshot.
-     - Dưới khóa Mutex, luôn gọi `LoadFromDisk()` để tránh bỏ sót các lần ghi cùng tick.
+     - Dưới khóa Mutex, luôn gọi `LoadFromDisk()` để tránh bỏ sót các lần ghi cùng tick. Lan truyền ngoại lệ rõ ràng khi đọc hoặc deserialize snapshot thất bại, ngăn chặn `SaveToDisk()` ghi đè phá hủy dữ liệu hiện có.
      - Phương thức `SaveToDisk` ghi JSON vào file tạm `*.tmp` rồi dùng `File.Move(..., overwrite: true)` để đảm bảo tính nguyên tử (atomic) trên file system, không nuốt lỗi ghi đĩa.
+     - Đăng ký `FileJobStore` cho cả API và Worker sử dụng chung đường dẫn tuyệt đối qua cấu hình `Jobs:StorePath` (hoặc thư mục chia sẻ) thay vì phụ thuộc `AppContext.BaseDirectory`.
   5. **Xác thực dữ liệu đầu vào chuẩn RESTful:**
      - Kiểm tra `Enum.IsDefined` cho `JobScopeKind`, xử lý `ArgumentException` từ `JobScope.Create` để trả về HTTP **400 Bad Request** khi tham số rỗng hoặc enum không xác định (ví dụ `scopeKind=999` hoặc `scopeResourceId` chỉ có khoảng trắng).
   6. **Bổ sung kiểm thử tích hợp End-to-End & Regression Security:**
      - Smoke test `tests/smoke/test_api_health.py` tự động kiểm tra liveness, mã lỗi 401/403 cho các trường hợp không xác thực, giả mạo header, tạo job chéo trường, Problem Details 404, và luồng đẩy job qua HTTP API -> Worker trong API nhận xử lý -> kiểm chứng đạt trạng thái `Completed`.
+     - Cố định đồng bộ cả `ASPNETCORE_ENVIRONMENT` và `DOTNET_ENVIRONMENT` cho các tiến trình test; bổ sung kiểm thử hồi quy xác nhận tiến trình Production từ chối token dev và endpoint dev trả về 404 bất kể biến môi trường của tiến trình cha.
   7. **Bảo mật cơ chế xác thực Token theo nguyên tắc Zero-Trust (CWE-287, CWE-862, CWE-798):**
      - Loại bỏ hoàn toàn việc phân tích chuỗi Bearer tự do từ client (`userId:scopeId`).
      - Triển khai cơ chế xác thực Bearer Token do máy chủ kiểm soát: trong môi trường phát triển (Development), sử dụng danh mục token nội bộ cách ly; trong môi trường triển khai (Production), bắt buộc đọc thông tin từ cấu hình bí mật (`JobEngine:TrustedTokens`), tuyệt đối từ chối token phát triển cố định với HTTP **401 Unauthorized**.

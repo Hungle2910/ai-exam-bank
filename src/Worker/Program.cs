@@ -8,7 +8,17 @@ using Microsoft.Extensions.Hosting;
 var builder = Host.CreateApplicationBuilder(args);
 
 // Cấu hình kho lưu trữ Job bền vững và danh mục Handler
-builder.Services.AddSingleton<IJobStore, FileJobStore>();
+var configuredStorePath = builder.Configuration["Jobs:StorePath"];
+if (!string.IsNullOrWhiteSpace(configuredStorePath) && !Path.IsPathFullyQualified(configuredStorePath))
+{
+    throw new InvalidOperationException("Jobs:StorePath must be an absolute path.");
+}
+
+var jobStorePath = !string.IsNullOrWhiteSpace(configuredStorePath)
+    ? configuredStorePath
+    : Path.Combine(Path.GetTempPath(), "ai_exam_bank_jobs", "jobs_store.json");
+
+builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(jobStorePath));
 builder.Services.AddSingleton<JobRegistry>();
 
 // Đăng ký các Handler thực thi tác vụ

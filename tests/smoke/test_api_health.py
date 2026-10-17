@@ -252,6 +252,7 @@ def test_dev_tokens_rejected_in_production(assembly):
     prod_env = os.environ.copy()
     prod_env["ASPNETCORE_URLS"] = f"http://127.0.0.1:{prod_port}"
     prod_env["ASPNETCORE_ENVIRONMENT"] = "Production"
+    prod_env["DOTNET_ENVIRONMENT"] = "Production"
 
     proc = subprocess.Popen(
         ["dotnet", str(assembly)],
@@ -303,6 +304,21 @@ def test_dev_tokens_rejected_in_production(assembly):
         stop_api(proc, prod_port)
 
 
+def test_parent_env_isolation(assembly):
+    """Verify that even when parent process has DOTNET_ENVIRONMENT=Development,
+    a Production subprocess correctly runs in Production mode (rejecting dev tokens and dev endpoints)."""
+    original_dotnet_env = os.environ.get("DOTNET_ENVIRONMENT")
+    try:
+        os.environ["DOTNET_ENVIRONMENT"] = "Development"
+        test_dev_tokens_rejected_in_production(assembly)
+        print("Parent environment isolation regression test passed: Production process enforces Production rules despite parent DOTNET_ENVIRONMENT=Development.")
+    finally:
+        if original_dotnet_env is not None:
+            os.environ["DOTNET_ENVIRONMENT"] = original_dotnet_env
+        else:
+            os.environ.pop("DOTNET_ENVIRONMENT", None)
+
+
 def main():
     if not ASSEMBLY.is_file():
         print(f"Built API assembly missing: {ASSEMBLY}", file=sys.stderr)
@@ -312,6 +328,7 @@ def main():
     environment = os.environ.copy()
     environment["ASPNETCORE_URLS"] = f"http://127.0.0.1:{port}"
     environment["ASPNETCORE_ENVIRONMENT"] = "Development"
+    environment["DOTNET_ENVIRONMENT"] = "Development"
     process = subprocess.Popen(
         ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
@@ -356,6 +373,7 @@ def main():
                     test_cross_school_listing_returns_403(port)
                     test_job_enqueue_and_completion(port)
                     test_dev_tokens_rejected_in_production(ASSEMBLY)
+                    test_parent_env_isolation(ASSEMBLY)
                     return 0
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(0.2)

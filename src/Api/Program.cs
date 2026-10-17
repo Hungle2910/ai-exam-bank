@@ -21,9 +21,17 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Cấu hình Job Engine Services cho API host:
-// Sử dụng FileJobStore để lưu trữ bền vững qua các lần khởi động lại và chia sẻ cùng tiến trình Worker
-builder.Services.AddSingleton<IJobStore, FileJobStore>();
+var configuredStorePath = builder.Configuration["Jobs:StorePath"];
+if (!string.IsNullOrWhiteSpace(configuredStorePath) && !Path.IsPathFullyQualified(configuredStorePath))
+{
+    throw new InvalidOperationException("Jobs:StorePath must be an absolute path.");
+}
+
+var jobStorePath = !string.IsNullOrWhiteSpace(configuredStorePath)
+    ? configuredStorePath
+    : Path.Combine(Path.GetTempPath(), "ai_exam_bank_jobs", "jobs_store.json");
+
+builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(jobStorePath));
 builder.Services.AddSingleton<JobRegistry>();
 
 // Đăng ký các Handler thực thi tác vụ

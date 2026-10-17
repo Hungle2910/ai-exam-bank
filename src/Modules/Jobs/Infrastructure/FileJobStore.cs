@@ -599,7 +599,10 @@ public sealed class FileJobStore : IJobStore, IDisposable
         {
             var json = File.ReadAllText(_filePath);
             var snapshot = JsonSerializer.Deserialize<StoreSnapshot>(json, JsonOptions);
-            if (snapshot is null) return;
+            if (snapshot is null)
+            {
+                throw new InvalidOperationException("Job store snapshot is null or invalid.");
+            }
 
             _jobs = snapshot.Jobs.ToDictionary(
                 dto => dto.Id,
@@ -647,9 +650,9 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
             _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
         }
-        catch
+        catch (Exception ex) when (ex is not InvalidOperationException)
         {
-            // Nếu file hỏng hoặc bị khóa tạm thời, giữ nguyên dữ liệu hiện có
+            throw new InvalidOperationException("Failed to load the job store snapshot.", ex);
         }
     }
 
