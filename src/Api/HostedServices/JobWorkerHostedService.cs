@@ -12,6 +12,12 @@ namespace AiExamBank.Api.HostedServices;
 /// </summary>
 public sealed class JobWorkerHostedService : BackgroundService
 {
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxPollingInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RecoveryInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
+
     private readonly IJobStore _jobStore;
     private readonly IJobRegistry _jobRegistry;
     private readonly ILogger<JobWorkerHostedService> _logger;
@@ -42,10 +48,10 @@ public sealed class JobWorkerHostedService : BackgroundService
     {
         _logger.LogInformation("In-process JobWorkerHostedService started. WorkerId: {WorkerId}", _workerId);
 
-        var pollingInterval = TimeSpan.FromSeconds(1);
-        var maxPollingInterval = TimeSpan.FromSeconds(5);
-        var leaseDuration = TimeSpan.FromMinutes(2);
-        var recoveryInterval = TimeSpan.FromSeconds(30);
+        var pollingInterval = PollingInterval;
+        var maxPollingInterval = MaxPollingInterval;
+        var leaseDuration = DefaultLeaseDuration;
+        var recoveryInterval = RecoveryInterval;
 
         var currentDelay = pollingInterval;
         var lastRecoveryCheck = DateTimeOffset.UtcNow;
@@ -154,7 +160,6 @@ public sealed class JobWorkerHostedService : BackgroundService
         try
         {
             var result = await handler.ExecuteAsync(context, jobCts.Token);
-            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
 
             if (result.Succeeded)
             {
@@ -184,12 +189,10 @@ public sealed class JobWorkerHostedService : BackgroundService
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
-            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
             _logger.LogInformation("Job {JobId} was cancelled. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
         }
         catch (Exception ex)
         {
-            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
             _logger.LogError(ex, "Unhandled exception processing job {JobId}. CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
 
             using var errorCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -201,10 +204,15 @@ public sealed class JobWorkerHostedService : BackgroundService
                 isTransient: true,
                 errorCts.Token);
         }
+        finally
+        {
+            await StopBackgroundTasksAsync(backgroundCts, heartbeatTask, cancellationWatcherTask);
+        }
     }
 
     /// <summary>
     /// Vòng lặp gia hạn Heartbeat ngầm trong quá trình API Worker xử lý tác vụ.
+    /// Giữ hiệu lực lease xuyên suốt quá trình thực thi và ghi nhận trạng thái cuối cùng.
     /// </summary>
     /// <param name="jobId">Mã định danh tác vụ.</param>
     /// <param name="correlationId">Mã tương quan phục vụ truy vết phân tán.</param>
@@ -220,7 +228,7 @@ public sealed class JobWorkerHostedService : BackgroundService
         CancellationTokenSource jobCts,
         CancellationToken heartbeatStopToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        using var timer = new PeriodicTimer(HeartbeatInterval);
 
         try
         {
@@ -229,6 +237,12 @@ public sealed class JobWorkerHostedService : BackgroundService
                 var renewed = await _jobStore.HeartbeatAsync(jobId, leaseToken, leaseDuration, heartbeatStopToken);
                 if (!renewed)
                 {
+                    var currentJob = await _jobStore.GetByIdAsync(jobId, heartbeatStopToken);
+                    if (currentJob is not null && currentJob.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled)
+                    {
+                        break;
+                    }
+
                     _logger.LogWarning("Heartbeat renewal failed or was fenced in API worker. Triggering job cancellation. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
                     jobCts.Cancel();
                     break;
@@ -250,6 +264,7 @@ public sealed class JobWorkerHostedService : BackgroundService
     /// <summary>
     /// Vòng lặp giám sát tín hiệu hủy ngầm độc lập với Heartbeat và ReportProgressAsync.
     /// Giúp phát hiện yêu cầu hủy ngay lập tức (mỗi 1 giây) và truyền tín hiệu hủy cho Handler.
+    /// Khả năng chịu lỗi: Bỏ qua lỗi đọc tạm thời và tiếp tục thử lại ở tick kế tiếp.
     /// </summary>
     private async Task RunCancellationWatcherAsync(
         Guid jobId,
@@ -259,10 +274,15 @@ public sealed class JobWorkerHostedService : BackgroundService
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
 
-        try
+        while (!watcherStopToken.IsCancellationRequested)
         {
-            while (!watcherStopToken.IsCancellationRequested && await timer.WaitForNextTickAsync(watcherStopToken))
+            try
             {
+                if (!await timer.WaitForNextTickAsync(watcherStopToken))
+                {
+                    break;
+                }
+
                 var currentJob = await _jobStore.GetByIdAsync(jobId, watcherStopToken);
                 if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
                 {
@@ -271,13 +291,14 @@ public sealed class JobWorkerHostedService : BackgroundService
                     break;
                 }
             }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error while checking cancellation in watcher loop for JobId: {JobId}", jobId);
+            catch (OperationCanceledException) when (watcherStopToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Transient error while checking cancellation in watcher loop for JobId: {JobId}. Watcher will retry.", jobId);
+            }
         }
     }
 

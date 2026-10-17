@@ -1143,4 +1143,234 @@ public sealed class JobEngineExecutionTests
 
         Assert.IsTrue(cancelled, "Job phải được hủy bởi Cancellation Watcher trong vòng vài giây mà không cần đợi heartbeat 30s.");
     }
+
+    private sealed class FaultyGetByIdJobStore : IJobStore
+    {
+        private readonly IJobStore _inner;
+        private int _faultInjected;
+
+        public FaultyGetByIdJobStore(IJobStore inner)
+        {
+            _inner = inner;
+        }
+
+        public async Task<BackgroundJob?> GetByIdAsync(Guid jobId, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _faultInjected, 1) == 0)
+            {
+                throw new InvalidOperationException("Simulated transient read failure in watcher loop.");
+            }
+            return await _inner.GetByIdAsync(jobId, cancellationToken);
+        }
+
+        public Task<BackgroundJob> EnqueueAsync(JobRequest request, string requestFingerprint, CancellationToken cancellationToken = default)
+            => _inner.EnqueueAsync(request, requestFingerprint, cancellationToken);
+
+        public Task<IReadOnlyList<BackgroundJob>> ListByScopeAsync(JobScope scope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
+            => _inner.ListByScopeAsync(scope, statusFilter, cancellationToken);
+
+        public Task<JobClaimResult?> ClaimNextJobAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => _inner.ClaimNextJobAsync(workerId, leaseDuration, cancellationToken);
+
+        public Task<bool> HeartbeatAsync(Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => _inner.HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
+
+        public Task<bool> UpdateProgressAsync(Guid jobId, Guid leaseToken, int progressPercentage, CancellationToken cancellationToken = default)
+            => _inner.UpdateProgressAsync(jobId, leaseToken, progressPercentage, cancellationToken);
+
+        public Task<bool> CompleteJobAsync(Guid jobId, Guid leaseToken, string? resultId, CancellationToken cancellationToken = default)
+            => _inner.CompleteJobAsync(jobId, leaseToken, resultId, cancellationToken);
+
+        public Task<bool> FailJobAsync(Guid jobId, Guid leaseToken, string errorCode, string safeErrorMessage, bool isTransient, CancellationToken cancellationToken = default)
+            => _inner.FailJobAsync(jobId, leaseToken, errorCode, safeErrorMessage, isTransient, cancellationToken);
+
+        public Task<bool> RequestCancellationAsync(Guid jobId, string requesterId, CancellationToken cancellationToken = default)
+            => _inner.RequestCancellationAsync(jobId, requesterId, cancellationToken);
+
+        public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default)
+            => _inner.RecoverExpiredLeasesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Kiểm tra Watcher không bị chết khi gặp lỗi đọc tạm thời (transient error) từ GetByIdAsync,
+    /// mà vẫn kiên trì thử lại ở tick kế tiếp và truyền tín hiệu hủy đến handler thành công.
+    /// </summary>
+    [TestMethod]
+    public async Task Cancellation_watcher_survives_transient_read_fault_and_propagates_cancellation()
+    {
+        var innerStore = new InMemoryJobStore();
+        var faultyStore = new FaultyGetByIdJobStore(innerStore);
+        var registry = new JobRegistry();
+        registry.Register(new SilentLongRunningJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker-watcher-fault",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromSeconds(30),
+            LeaseDuration = TimeSpan.FromSeconds(60)
+        });
+
+        var request = JobRequest.Create("SilentLongRunningJob", "s3://payload", "user-1", SchoolScope, "idem-watcher-fault", "corr-watcher-fault");
+        var job = await innerStore.EnqueueAsync(request, "fp-watcher-fault");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(faultyStore, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        // Chờ job chuyển sang Running
+        BackgroundJob? runningJob = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await Task.Delay(50);
+            var current = await innerStore.GetByIdAsync(job.Id);
+            if (current != null && current.Status == JobStatus.Running)
+            {
+                runningJob = current;
+                break;
+            }
+        }
+        Assert.IsNotNull(runningJob, "Job phải được claim và chuyển sang Running.");
+
+        // Kích hoạt hủy trên Store
+        var cancelSuccess = await innerStore.RequestCancellationAsync(job.Id, "user-1");
+        Assert.IsTrue(cancelSuccess);
+
+        // Chờ watcher phát hiện hủy trong vòng tối đa 5 giây (sau khi đã bỏ qua lỗi đọc tạm thời ở tick đầu)
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var cancelled = false;
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(100);
+            var current = await innerStore.GetByIdAsync(job.Id);
+            if (current != null && current.Status == JobStatus.Cancelled)
+            {
+                cancelled = true;
+                break;
+            }
+        }
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+
+        Assert.IsTrue(cancelled, "Job phải được hủy thành công sau khi watcher vượt qua lỗi đọc tạm thời ban đầu.");
+    }
+
+    private sealed class DelayedCompletionJobStore : IJobStore
+    {
+        private readonly IJobStore _inner;
+        private readonly TimeSpan _completionDelay;
+
+        public DelayedCompletionJobStore(IJobStore inner, TimeSpan completionDelay)
+        {
+            _inner = inner;
+            _completionDelay = completionDelay;
+        }
+
+        public async Task<bool> CompleteJobAsync(Guid jobId, Guid leaseToken, string? resultId, CancellationToken cancellationToken = default)
+        {
+            // Mô phỏng tranh chấp lock/mutex giữ quyền ghi khiến CompleteJobAsync bị hoãn lại
+            await Task.Delay(_completionDelay, cancellationToken);
+            return await _inner.CompleteJobAsync(jobId, leaseToken, resultId, cancellationToken);
+        }
+
+        public Task<BackgroundJob> EnqueueAsync(JobRequest request, string requestFingerprint, CancellationToken cancellationToken = default)
+            => _inner.EnqueueAsync(request, requestFingerprint, cancellationToken);
+
+        public Task<BackgroundJob?> GetByIdAsync(Guid jobId, CancellationToken cancellationToken = default)
+            => _inner.GetByIdAsync(jobId, cancellationToken);
+
+        public Task<IReadOnlyList<BackgroundJob>> ListByScopeAsync(JobScope scope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default)
+            => _inner.ListByScopeAsync(scope, statusFilter, cancellationToken);
+
+        public Task<JobClaimResult?> ClaimNextJobAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => _inner.ClaimNextJobAsync(workerId, leaseDuration, cancellationToken);
+
+        public Task<bool> HeartbeatAsync(Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => _inner.HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
+
+        public Task<bool> UpdateProgressAsync(Guid jobId, Guid leaseToken, int progressPercentage, CancellationToken cancellationToken = default)
+            => _inner.UpdateProgressAsync(jobId, leaseToken, progressPercentage, cancellationToken);
+
+        public Task<bool> FailJobAsync(Guid jobId, Guid leaseToken, string errorCode, string safeErrorMessage, bool isTransient, CancellationToken cancellationToken = default)
+            => _inner.FailJobAsync(jobId, leaseToken, errorCode, safeErrorMessage, isTransient, cancellationToken);
+
+        public Task<bool> RequestCancellationAsync(Guid jobId, string requesterId, CancellationToken cancellationToken = default)
+            => _inner.RequestCancellationAsync(jobId, requesterId, cancellationToken);
+
+        public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default)
+            => _inner.RecoverExpiredLeasesAsync(cancellationToken);
+    }
+
+    private sealed class FastJobHandler : IJobHandler
+    {
+        public string JobType => "FastJob";
+
+        public Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(JobExecutionResult.Success("fast-result"));
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra heartbeat vẫn duy trì hoạt động trong quá trình ghi terminal state (CompleteJobAsync)
+    /// khi có tranh chấp mutex/lock làm chậm quá trình ghi, ngăn việc recovery thu hồi nhầm lease và không để job bị chạy lại.
+    /// </summary>
+    [TestMethod]
+    public async Task Heartbeat_kept_alive_during_terminal_write_prevents_lease_expiration_and_duplicate_execution()
+    {
+        var innerStore = new InMemoryJobStore();
+        // Trì hoãn CompleteJobAsync 2.5s (lớn hơn LeaseDuration 2s)
+        var delayedStore = new DelayedCompletionJobStore(innerStore, TimeSpan.FromSeconds(2.5));
+        var registry = new JobRegistry();
+        registry.Register(new FastJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker-contention",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollingInterval = TimeSpan.FromMilliseconds(100),
+            HeartbeatInterval = TimeSpan.FromSeconds(1),
+            LeaseDuration = TimeSpan.FromSeconds(2),
+            RecoveryInterval = TimeSpan.FromSeconds(60)
+        });
+
+        var request = JobRequest.Create("FastJob", "s3://payload", "user-1", SchoolScope, "idem-contention", "corr-contention");
+        var job = await innerStore.EnqueueAsync(request, "fp-contention");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(delayedStore, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        // Đợi 2.2s (tổng 2.2s > LeaseDuration 2s ban đầu, lúc này handler đã xong nhưng CompleteJobAsync vẫn đang bị hoãn do contention)
+        await Task.Delay(TimeSpan.FromMilliseconds(2200));
+
+        // Kích hoạt quét thu hồi (nếu heartbeat bị dừng trước CompleteJobAsync thì lease đã hết hạn và bị thu hồi!)
+        var recovered = await innerStore.RecoverExpiredLeasesAsync();
+        Assert.AreEqual(0, recovered, "Lease không được bị thu hồi vì heartbeat vẫn đang gia hạn ngầm trong lúc CompleteJobAsync đang chờ ghi nhận.");
+
+        // Chờ CompleteJobAsync hoàn tất (tổng delay 2.5s)
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        var completedJob = await innerStore.GetByIdAsync(job.Id);
+        Assert.IsNotNull(completedJob);
+        Assert.AreEqual(JobStatus.Completed, completedJob.Status);
+        Assert.AreEqual(1, completedJob.AttemptCount, "Job chỉ được chạy đúng 1 lần duy nhất, không bị re-run do tranh chấp mutex.");
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+    }
 }
