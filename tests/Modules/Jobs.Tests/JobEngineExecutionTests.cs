@@ -688,4 +688,108 @@ public sealed class JobEngineExecutionTests
         // 3. Xác nhận ràng buộc case-sensitive cũ đã được loại bỏ
         Assert.DoesNotContain("CONSTRAINT uq_jobs_idempotency UNIQUE", sqlContent);
     }
+
+    [TestMethod]
+    public async Task Legacy_handler_overload_is_invoked_and_returns_success_through_default_interface_implementation()
+    {
+        var legacyHandler = new LegacySampleJobHandler();
+        IJobHandler handler = legacyHandler;
+
+        var request = JobRequest.Create("LegacyJob", "s3://payload", "user-1", SchoolScope, "idem-1", "corr-1");
+        var context = new JobExecutionContext
+        {
+            JobId = JobRef.Create(Guid.NewGuid()),
+            Request = request,
+            AttemptNumber = 1
+        };
+
+        var result = await handler.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded);
+        Assert.IsTrue(legacyHandler.WasExecuted);
+    }
+
+    [TestMethod]
+    public async Task Worker_commits_job_as_completed_even_when_host_token_is_cancelled_immediately_after_handler_success()
+    {
+        var store = new InMemoryJobStore();
+        var registry = new JobRegistry();
+        using var hostCts = new CancellationTokenSource();
+
+        var cancelHandler = new CancellingJobHandler(hostCts);
+        registry.Register(cancelHandler);
+
+        var request = JobRequest.Create("CancellingJob", "s3://payload", "user-1", SchoolScope, "idem-cancel", "corr-cancel");
+        var enqueuedJob = await store.EnqueueAsync(request, "fp-cancel");
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "test-worker-cancel",
+            PollingInterval = TimeSpan.FromMilliseconds(20),
+            LeaseDuration = TimeSpan.FromSeconds(10)
+        });
+
+        var worker = new JobWorkerService(store, registry, options, NullLogger<JobWorkerService>.Instance);
+
+        // Start worker background loop
+        _ = worker.StartAsync(hostCts.Token);
+
+        // Wait for handler to cancel hostCts and CompleteJobAsync to finish
+        var completed = false;
+        for (var i = 0; i < 40; i++)
+        {
+            var job = await store.GetByIdAsync(enqueuedJob.Id);
+            if (job?.Status == JobStatus.Completed)
+            {
+                completed = true;
+                break;
+            }
+            await Task.Delay(50);
+        }
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Worker shutdown might throw on cancellation, ignore
+        }
+
+        Assert.IsTrue(completed, "Job should reach Completed status even though hostStoppingToken was cancelled upon handler completion.");
+        var finalJob = await store.GetByIdAsync(enqueuedJob.Id);
+        Assert.IsNotNull(finalJob);
+        Assert.AreEqual(JobStatus.Completed, finalJob.Status);
+        Assert.AreEqual("cancel-result", finalJob.ResultId);
+    }
+
+    private sealed class LegacySampleJobHandler : IJobHandler
+    {
+        public string JobType => "LegacyJob";
+        public bool WasExecuted { get; private set; }
+
+        public Task ExecuteAsync(JobRequest request, CancellationToken cancellationToken)
+        {
+            WasExecuted = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CancellingJobHandler : IJobHandler
+    {
+        private readonly CancellationTokenSource _cts;
+        public string JobType => "CancellingJob";
+
+        public CancellingJobHandler(CancellationTokenSource cts)
+        {
+            _cts = cts;
+        }
+
+        public Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            // Simulate host stopping token cancelled immediately when handler finishes
+            _cts.Cancel();
+            return Task.FromResult(JobExecutionResult.Success("cancel-result"));
+        }
+    }
 }

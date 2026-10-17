@@ -197,7 +197,7 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 21 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
+Tất cả 24 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) đều **PASSED 100%**:
 
 | STT | Tên Test Case | Mục đích kiểm thử | Kết quả |
 |:---:|---|---|:---:|
@@ -222,6 +222,9 @@ Tất cả 21 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 19 | `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum` | Kiểm tra validate enum và resourceId không được là khoảng trắng | ✅ PASS |
 | 20 | `Job_service_list_cross_school_throws_unauthorized_access_exception` | Kiểm tra từ chối liệt kê job chéo trường học | ✅ PASS |
 | 21 | `Legacy_snapshot_is_migrated_and_preserves_idempotency_via_job_service` | Kiểm tra di trú tự động snapshot SchemaVersion 1 sang SchemaVersion 2 bảo toàn Idempotency | ✅ PASS |
+| 22 | `Postgres_migration_script_enforces_case_insensitive_unique_idempotency_index_and_scope_index` | Kiểm tra migration PostgreSQL áp dụng UPPER(scope_resource_id) cho unique index và scope index | ✅ PASS |
+| 23 | `Legacy_handler_overload_is_invoked_and_returns_success_through_default_interface_implementation` | Kiểm tra tính tương thích ngược của IJobHandler cho handler chỉ triển khai overload cũ | ✅ PASS |
+| 24 | `Worker_commits_job_as_completed_even_when_host_token_is_cancelled_immediately_after_handler_success` | Kiểm tra tính bền vững của Worker khi Host shutdown ngay sau khi Handler hoàn tất | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
 - **`dotnet test AiExamBank.slnx`**: **33/33 tests PASSED** (24 Jobs + 3 Questions + 3 Exams + 3 Architecture).

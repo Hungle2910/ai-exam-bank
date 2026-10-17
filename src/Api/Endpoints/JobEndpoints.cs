@@ -98,7 +98,7 @@ public static class JobEndpoints
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: $"Caller identity from scope '{authenticatedScope?.Kind.ToString() ?? "unscoped"}:{authenticatedScope?.ResourceId ?? "unscoped"}' is not authorized to create jobs in scope '{scopeKind}:{request.ScopeResourceId}'.",
+                    detail: "Caller identity is not authorized to create jobs in the requested scope.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
@@ -271,7 +271,7 @@ public static class JobEndpoints
                 return Results.Problem(
                     statusCode: StatusCodes.Status403Forbidden,
                     title: "Access Denied",
-                    detail: $"Caller identity from scope '{authenticatedScope.Kind}:{authenticatedScope.ResourceId}' is not authorized to list jobs in scope '{parsedKind}:{scopeResourceId}'.",
+                    detail: "Caller identity is not authorized to list jobs in the requested scope.",
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",

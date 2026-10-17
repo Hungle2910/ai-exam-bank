@@ -170,7 +170,8 @@ public sealed class JobWorkerService : BackgroundService
 
             if (result.Succeeded)
             {
-                var completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, hostStoppingToken);
+                using var completionCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, completionCts.Token);
                 if (completed)
                 {
                     _logger.LogInformation("Job completed successfully. JobId: {JobId}, CorrelationId: {CorrelationId}, ResultId: {ResultId}", job.Id, job.CorrelationId, result.ResultId);

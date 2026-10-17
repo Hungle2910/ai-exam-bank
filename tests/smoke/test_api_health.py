@@ -151,6 +151,9 @@ def test_cross_school_listing_returns_403(port):
     except urllib.error.HTTPError as err:
         if err.code != 403:
             raise RuntimeError(f"Expected HTTP 403 for cross-school listing, got {err.code}")
+        body = err.read().decode("utf-8", errors="replace")
+        if "school-sg-02" in body or "school-hn-01" in body:
+            raise RuntimeError(f"Security leak: cross-school listing 403 response contained ResourceId: {body}")
 
     print("Cross-school authorization test passed: Querying jobs of another school returns HTTP 403.")
 
