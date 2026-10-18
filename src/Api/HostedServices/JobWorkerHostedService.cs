@@ -126,18 +126,32 @@ public sealed class JobWorkerHostedService : BackgroundService
             return;
         }
 
+        // 2. Kiểm tra tính hợp lệ của bản ghi Job và khởi tạo JobRequest TRƯỚC KHI khởi động các task nền.
+        JobRequest jobRequest;
+        try
+        {
+            jobRequest = JobRequest.Create(
+                job.Type,
+                job.PayloadReference,
+                job.CreatedBy,
+                job.Scope,
+                job.IdempotencyKey,
+                job.CorrelationId);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError(ex, "Persisted job record is invalid. JobId: {JobId}", job.Id);
+            using var invalidCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _jobStore.FailJobAsync(job.Id, leaseToken, "INVALID_JOB_RECORD",
+                "The stored job record is invalid.", isTransient: false, invalidCts.Token);
+            return;
+        }
+
+        // 3. Khởi động Timer/Task duy trì Heartbeat ngầm và Watcher giám sát hủy
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
         using var backgroundCts = new CancellationTokenSource();
         var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, leaseDuration, jobCts, backgroundCts.Token);
         var cancellationWatcherTask = RunCancellationWatcherAsync(job.Id, job.CorrelationId, jobCts, backgroundCts.Token);
-
-        var jobRequest = JobRequest.Create(
-            job.Type,
-            job.PayloadReference,
-            job.CreatedBy,
-            job.Scope,
-            job.IdempotencyKey,
-            job.CorrelationId);
 
         var context = new JobExecutionContext
         {

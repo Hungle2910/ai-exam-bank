@@ -789,19 +789,14 @@ public sealed class FileJobStore : IJobStore, IDisposable
         }
     }
 
-    internal static string ComputeRequestFingerprint(string jobType, string payloadReference, JobScopeKind scopeKind, string scopeResourceId)
-    {
-        var normalizedResourceId = scopeResourceId.ToUpperInvariant();
-        var rawInput = $"{jobType}:{payloadReference}:{scopeKind}:{normalizedResourceId}";
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawInput));
-        return Convert.ToHexString(hashBytes).ToLowerInvariant();
-    }
+    internal static string ComputeRequestFingerprint(string jobType, string payloadReference, JobScopeKind scopeKind, string scopeResourceId) =>
+        JobIdempotency.ComputeRequestFingerprint(jobType, payloadReference, scopeKind, scopeResourceId);
 
     internal static string BuildIdempotencyKey(JobScopeKind scopeKind, string scopeResourceId, string requesterId, string jobType, string idempotencyKey) =>
-        $"{scopeKind}:{scopeResourceId.ToUpperInvariant()}:{requesterId}:{jobType}:{idempotencyKey}";
+        JobIdempotency.BuildIdempotencyKey(scopeKind, scopeResourceId, requesterId, jobType, idempotencyKey);
 
     private static string BuildIdempotencyKey(JobRequest request) =>
-        BuildIdempotencyKey(request.Scope.Kind, request.Scope.ResourceId, request.RequesterId, request.JobType, request.IdempotencyKey);
+        JobIdempotency.BuildIdempotencyKey(request);
 
     private static BackgroundJob CloneJob(BackgroundJob job) => new()
     {

@@ -218,14 +218,14 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 #### 3. Xử lý sự cố Worker Crash đột ngột
 
 - Nếu một Worker bị ngắt điện hoặc crash giữa chừng, tác vụ sẽ giữ trạng thái `Running` nhưng `Heartbeat` dừng hoạt động.
-- Sau đúng **2 phút** (`LeaseDuration`), các Worker khác đang chạy sẽ tự động kích hoạt tiến trình `RecoverExpiredLeasesAsync`.
-- Tác vụ sẽ tự động được phục hồi: nếu chưa hết 3 lần thử, tác vụ chuyển về `Pending` để chạy lại; nếu đã hết 3 lần thử, tác vụ chuyển sang `Failed` với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
+- Sau khi lease hết hạn (`LeaseDuration` = 2 phút), Worker còn sống phát hiện job ở lần quét `RecoverExpiredLeasesAsync` kế tiếp (tối đa thêm `RecoveryInterval` = 30 giây).
+- Nếu `AttemptCount < 3`, tác vụ chuyển về `Pending` với backoff 1 phút hoặc 5 phút trước khi được claim lại. Nếu `AttemptCount >= 3`, tác vụ chuyển sang `Failed` với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
 
 ---
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 40 phương thức kiểm thử (42 lượt chạy / test executions) trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs) = tổng cộng 43 phương thức kiểm thử, 45 lượt chạy tại Module Jobs) đều **PASSED 100%**:
+Tất cả 42 phương thức kiểm thử (44 lượt chạy / test executions) trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs) = tổng cộng 45 phương thức kiểm thử, 47 lượt chạy tại Module Jobs) đều **PASSED 100%**:
 
 | STT | Tên Test Case                                                                                         | Mục đích kiểm thử                                                                                                                      | Kết quả |
 | :-: | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | :-----: |
@@ -269,11 +269,13 @@ Tất cả 40 phương thức kiểm thử (42 lượt chạy / test executions)
 | 37  | `Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception`                 | Kiểm tra Worker ghi nhận lỗi transient và retry an toàn khi Complete bước cuối gặp lỗi bất thường                                       | ✅ PASS |
 | 38  | `FileJobStore_reloads_changes_across_instances_even_when_mtime_is_reset`                               | Kiểm tra FileJobStore luôn nạp lại snapshot khi giữ Mutex, instance khác thấy thay đổi dù mtime bị trùng                                 | ✅ PASS |
 | 39  | `Progress_report_failure_does_not_fail_or_retry_job`                                                   | Kiểm tra lỗi tạm thời khi báo tiến độ (UpdateProgressAsync lỗi) không làm fail hoặc retry job                                           | ✅ PASS |
-| 40  | `JobContractTests: Scope and Request validation` (3 tests)                                            | Kiểm tra ràng buộc hợp đồng JobScope (loại/resource hợp lệ) và JobRequest (IdempotencyKey bắt buộc, bảo toàn CorrelationId)             | ✅ PASS |
+| 40  | `JobEnginePathDefaults_resolves_configured_and_default_paths`                                         | Kiểm tra phân giải đường dẫn kho job: kiểm tra đường dẫn tuyệt đối hợp lệ và fallback mặc định dùng chung                               | ✅ PASS |
+| 41  | `Worker_fails_job_as_invalid_record_when_job_request_creation_throws_argument_exception`             | Kiểm tra Worker phát hiện bản ghi hỏng (CorrelationId rỗng) ghi nhận INVALID_JOB_RECORD trước khi bật task ngầm                         | ✅ PASS |
+| 42  | `JobContractTests: Scope and Request validation` (3 tests)                                            | Kiểm tra ràng buộc hợp đồng JobScope (loại/resource hợp lệ) và JobRequest (IdempotencyKey bắt buộc, bảo toàn CorrelationId)             | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
 
-- **`dotnet test AiExamBank.slnx`**: **54/54 test executions PASSED** (45 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **56/56 test executions PASSED** (47 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.

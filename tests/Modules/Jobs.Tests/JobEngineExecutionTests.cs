@@ -1690,6 +1690,80 @@ public sealed class JobEngineExecutionTests
         worker.Dispose();
     }
 
+    /// <summary>
+    /// Kiểm tra JobEnginePathDefaults phân giải chính xác cấu hình đường dẫn tuyệt đối,
+    /// từ chối đường dẫn tương đối và áp dụng đường dẫn mặc định dùng chung khi thiếu cấu hình.
+    /// </summary>
+    [TestMethod]
+    public void JobEnginePathDefaults_resolves_configured_and_default_paths()
+    {
+        // 1. Cấu hình đường dẫn tương đối -> phải ném InvalidOperationException
+        Assert.ThrowsExactly<InvalidOperationException>(() => JobEnginePathDefaults.ResolveStorePath("relative/jobs.json"));
+
+        // 2. Cấu hình đường dẫn tuyệt đối hợp lệ -> trả về đúng đường dẫn đó
+        var absPath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "test-store.json"));
+        Assert.AreEqual(absPath, JobEnginePathDefaults.ResolveStorePath(absPath));
+
+        // 3. Thiếu cấu hình -> trả về đường dẫn tuyệt đối mặc định dùng chung
+        var defaultPath = JobEnginePathDefaults.ResolveStorePath(null);
+        Assert.IsTrue(Path.IsPathFullyQualified(defaultPath));
+        Assert.IsTrue(defaultPath.EndsWith("jobs-store.json", StringComparison.OrdinalIgnoreCase));
+
+        var defaultPathFromWhitespace = JobEnginePathDefaults.ResolveStorePath("   ");
+        Assert.AreEqual(defaultPath, defaultPathFromWhitespace);
+    }
+
+    /// <summary>
+    /// Kiểm tra Worker khi claim trúng job có bản ghi không hợp lệ (ví dụ CorrelationId rỗng)
+    /// thì phải đánh dấu Failed với mã lỗi INVALID_JOB_RECORD trước khi khởi động heartbeat/watcher,
+    /// không để rò rỉ tác vụ nền.
+    /// </summary>
+    [TestMethod]
+    public async Task Worker_fails_job_as_invalid_record_when_job_request_creation_throws_argument_exception()
+    {
+        var innerStore = new InMemoryJobStore();
+        var invalidRecordStore = new InvalidRecordJobStore(innerStore);
+
+        var registry = new JobRegistry();
+        registry.Register(new SampleJobHandler());
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "invalid-record-worker",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var request = JobRequest.Create("SampleJob", "s3://payload", "tester", SchoolScope, "key-invalid-rec", "corr-invalid-rec");
+        var job = await innerStore.EnqueueAsync(request, "fp-invalid-rec");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(invalidRecordStore, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            var j = await innerStore.GetByIdAsync(job.Id);
+            if (j?.Status == JobStatus.Failed) break;
+            await Task.Delay(25);
+        }
+
+        var finalJob = await innerStore.GetByIdAsync(job.Id);
+        Assert.IsNotNull(finalJob);
+        Assert.AreEqual(JobStatus.Failed, finalJob.Status);
+        Assert.AreEqual("INVALID_JOB_RECORD", finalJob.ErrorCode);
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+    }
+
     private sealed class ThrowingCompleteJobStore : IJobStore
     {
         private readonly IJobStore _inner;
@@ -1803,5 +1877,70 @@ public sealed class JobEngineExecutionTests
             }
             return JobExecutionResult.Success("res-progress-success");
         }
+    }
+
+    private sealed class InvalidRecordJobStore : IJobStore
+    {
+        private readonly IJobStore _inner;
+
+        public InvalidRecordJobStore(IJobStore inner) => _inner = inner;
+
+        public Task<BackgroundJob> EnqueueAsync(JobRequest request, string requestFingerprint, CancellationToken cancellationToken = default) =>
+            _inner.EnqueueAsync(request, requestFingerprint, cancellationToken);
+
+        public async Task<JobClaimResult?> ClaimNextJobAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            var result = await _inner.ClaimNextJobAsync(workerId, leaseDuration, cancellationToken);
+            if (result is null) return null;
+
+            // Giả lập bản ghi bị hỏng (CorrelationId rỗng)
+            var corruptedJob = new BackgroundJob
+            {
+                Id = result.Job.Id,
+                Type = result.Job.Type,
+                Status = result.Job.Status,
+                PayloadReference = result.Job.PayloadReference,
+                ResultId = result.Job.ResultId,
+                CreatedBy = result.Job.CreatedBy,
+                Scope = result.Job.Scope,
+                IdempotencyKey = result.Job.IdempotencyKey,
+                RequestFingerprint = result.Job.RequestFingerprint,
+                CorrelationId = "", // Không hợp lệ, JobRequest.Create sẽ ném ArgumentException
+                AvailableAt = result.Job.AvailableAt,
+                CancellationRequestedAt = result.Job.CancellationRequestedAt,
+                AttemptCount = result.Job.AttemptCount,
+                ProgressPercentage = result.Job.ProgressPercentage,
+                ErrorCode = result.Job.ErrorCode,
+                SafeErrorMessage = result.Job.SafeErrorMessage,
+                CreatedAt = result.Job.CreatedAt,
+                UpdatedAt = result.Job.UpdatedAt
+            };
+
+            return new JobClaimResult(corruptedJob, result.Attempt, result.LeaseToken);
+        }
+
+        public Task<bool> HeartbeatAsync(Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) =>
+            _inner.HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
+
+        public Task<bool> UpdateProgressAsync(Guid jobId, Guid leaseToken, int progressPercentage, CancellationToken cancellationToken = default) =>
+            _inner.UpdateProgressAsync(jobId, leaseToken, progressPercentage, cancellationToken);
+
+        public Task<bool> CompleteJobAsync(Guid jobId, Guid leaseToken, string? resultId, CancellationToken cancellationToken = default) =>
+            _inner.CompleteJobAsync(jobId, leaseToken, resultId, cancellationToken);
+
+        public Task<bool> FailJobAsync(Guid jobId, Guid leaseToken, string errorCode, string safeErrorMessage, bool isTransient, CancellationToken cancellationToken = default) =>
+            _inner.FailJobAsync(jobId, leaseToken, errorCode, safeErrorMessage, isTransient, cancellationToken);
+
+        public Task<bool> RequestCancellationAsync(Guid jobId, string requestedBy, CancellationToken cancellationToken = default) =>
+            _inner.RequestCancellationAsync(jobId, requestedBy, cancellationToken);
+
+        public Task<BackgroundJob?> GetByIdAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetByIdAsync(jobId, cancellationToken);
+
+        public Task<IReadOnlyList<BackgroundJob>> ListByScopeAsync(JobScope scope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default) =>
+            _inner.ListByScopeAsync(scope, statusFilter, cancellationToken);
+
+        public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
+            _inner.RecoverExpiredLeasesAsync(cancellationToken);
     }
 }

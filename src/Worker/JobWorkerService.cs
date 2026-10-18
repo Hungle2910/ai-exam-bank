@@ -123,24 +123,40 @@ public sealed class JobWorkerService : BackgroundService
             return;
         }
 
-        // 2. Thiết lập CancellationTokenSource liên kết:
+        // 2. Kiểm tra tính hợp lệ của bản ghi Job và khởi tạo JobRequest TRƯỚC KHI khởi động các task nền.
+        // Nếu bản ghi trên đĩa bị hỏng (thiếu trường bắt buộc), ném ArgumentException thì ghi nhận Failed (INVALID_JOB_RECORD)
+        // và thoát ra ngay, không để các task Heartbeat/Watcher ngầm bị rò rỉ (orphan).
+        JobRequest jobRequest;
+        try
+        {
+            jobRequest = JobRequest.Create(
+                job.Type,
+                job.PayloadReference,
+                job.CreatedBy,
+                job.Scope,
+                job.IdempotencyKey,
+                job.CorrelationId);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogError(ex, "Persisted job record is invalid. JobId: {JobId}", job.Id);
+            using var invalidCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _jobStore.FailJobAsync(job.Id, leaseToken, "INVALID_JOB_RECORD",
+                "The stored job record is invalid.", isTransient: false, invalidCts.Token);
+            return;
+        }
+
+        // 3. Thiết lập CancellationTokenSource liên kết:
         // Sẽ bị trigger nếu (A) Host server tắt máy, hoặc (B) Người dùng/hệ thống yêu cầu hủy job,
         // hoặc (C) Tín hiệu Heartbeat thất bại (Worker bị Fenced/tước quyền).
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken);
 
-        // 3. Khởi động Timer/Task duy trì Heartbeat ngầm mỗi 30 giây và Watcher giám sát hủy mỗi 1 giây
+        // 4. Khởi động Timer/Task duy trì Heartbeat ngầm mỗi 30 giây và Watcher giám sát hủy mỗi 1 giây
         using var backgroundCts = new CancellationTokenSource();
         var heartbeatTask = RunHeartbeatLoopAsync(job.Id, job.CorrelationId, leaseToken, jobCts, backgroundCts.Token);
         var cancellationWatcherTask = RunCancellationWatcherAsync(job.Id, job.CorrelationId, jobCts, backgroundCts.Token);
 
-        // 4. Tạo JobExecutionContext và hàm callback báo cáo tiến độ
-        var jobRequest = JobRequest.Create(
-            job.Type,
-            job.PayloadReference,
-            job.CreatedBy,
-            job.Scope,
-            job.IdempotencyKey,
-            job.CorrelationId);
+        // 5. Tạo JobExecutionContext và hàm callback báo cáo tiến độ
 
         var context = new JobExecutionContext
         {

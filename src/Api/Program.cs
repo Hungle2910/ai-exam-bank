@@ -21,11 +21,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-var configuredStorePath = builder.Configuration["Jobs:StorePath"];
-if (string.IsNullOrWhiteSpace(configuredStorePath) || !Path.IsPathFullyQualified(configuredStorePath))
-{
-    throw new InvalidOperationException("Jobs:StorePath must be configured as a fully qualified absolute path.");
-}
+var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
 
 builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
 builder.Services.AddSingleton<JobRegistry>();

@@ -8,11 +8,7 @@ using Microsoft.Extensions.Hosting;
 var builder = Host.CreateApplicationBuilder(args);
 
 // Cấu hình kho lưu trữ Job bền vững và danh mục Handler
-var configuredStorePath = builder.Configuration["Jobs:StorePath"];
-if (string.IsNullOrWhiteSpace(configuredStorePath) || !Path.IsPathFullyQualified(configuredStorePath))
-{
-    throw new InvalidOperationException("Jobs:StorePath must be configured as a fully qualified absolute path.");
-}
+var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
 
 builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
 builder.Services.AddSingleton<JobRegistry>();

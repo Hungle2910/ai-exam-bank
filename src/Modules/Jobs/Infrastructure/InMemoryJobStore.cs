@@ -458,7 +458,7 @@ public sealed class InMemoryJobStore : IJobStore
     }
 
     private static string BuildIdempotencyKey(JobRequest request) =>
-        $"{request.Scope.Kind}:{request.Scope.ResourceId.ToUpperInvariant()}:{request.RequesterId}:{request.JobType}:{request.IdempotencyKey}";
+        JobIdempotency.BuildIdempotencyKey(request);
 
     private static BackgroundJob CloneJob(BackgroundJob job) => new()
     {
