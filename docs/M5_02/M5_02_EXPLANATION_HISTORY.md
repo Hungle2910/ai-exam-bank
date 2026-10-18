@@ -68,7 +68,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - Theo kiến trúc Multi-School của dự án ([ADR 0004](../../docs/adr/0004-multi-school-ministry-mvp.md)), dữ liệu đề thi và câu hỏi của trường học A tuyệt đối không được để lộ cho giáo viên trường học B.
     - Tại [JobService.cs](../../src/Modules/Jobs/Infrastructure/JobService.cs), mọi yêu cầu xem trạng thái (`GetJobStatusAsync`), danh sách hoặc hủy job đều đối chiếu `requesterScope` với `job.Scope` (cả `Kind` và `ResourceId`).
     - Nếu phát hiện truy cập chéo trường: Hệ thống ném ngoại lệ `UnauthorizedAccessException` và API trả về ngay mã lỗi HTTP **403 Forbidden** với mã mở rộng `SCOPED_ACCESS_DENIED` theo chuẩn **RFC 7807 Problem Details**.
-    - **Kiểm soát quyền sở hữu tác vụ (Ownership Enforcement):** Trong cùng một phạm vi trường học, chỉ chính chủ sở hữu (`job.CreatedBy == requesterId`) hoặc admin được ủy quyền mới được xem chi tiết, hủy hoặc liệt kê tác vụ của mình. Người dùng khác trong cùng trường không thể can thiệp hay đọc trộm job của nhau.
+    - **Kiểm soát quyền sở hữu tác vụ (Ownership Enforcement):** Trong cùng một phạm vi trường học, hệ thống áp dụng nguyên tắc cô lập nghiêm ngặt theo chủ sở hữu (Strict Owner Isolation): chỉ chính chủ sở hữu (`job.CreatedBy == requesterId`) mới được xem chi tiết, hủy hoặc liệt kê tác vụ của mình. Quyền admin bypass chưa được kích hoạt trong phạm vi M5-02; mọi truy cập từ tài khoản khác trong cùng trường đều bị từ chối truy cập.
     - Đồng thời, toàn bộ payload đề thi, đáp án, và stack trace nội bộ đều được ẩn (Log Redaction) và chỉ trả về thông báo lỗi an toàn `SafeErrorMessage`.
 
 ---
