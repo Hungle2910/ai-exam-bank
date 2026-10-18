@@ -602,26 +602,6 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
     private void CheckAndReloadFromDisk()
     {
-        if (!File.Exists(_filePath))
-        {
-            if (_jobs.Count > 0 || _idempotencyIndex.Count > 0 || _attempts.Count > 0)
-            {
-                _jobs.Clear();
-                _idempotencyIndex.Clear();
-                _attempts.Clear();
-                _lastFileWriteTime = DateTime.MinValue;
-                _lastFileLength = -1;
-            }
-            return;
-        }
-
-        var lastWrite = File.GetLastWriteTimeUtc(_filePath);
-        var length = new FileInfo(_filePath).Length;
-        if (lastWrite == _lastFileWriteTime && length == _lastFileLength)
-        {
-            return;
-        }
-
         LoadFromDisk();
     }
 

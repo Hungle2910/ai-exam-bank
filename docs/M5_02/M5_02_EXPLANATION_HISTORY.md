@@ -45,8 +45,8 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - Trong suốt quá trình thực thi tác vụ nặng, Worker định kỳ gửi một tín hiệu nhịp tim **Heartbeat mỗi 30 giây** để gia hạn thêm 2 phút cho `LeaseExpiresAt`.
     - Nếu Worker bị crash đột ngột (mất điện, kill process), nhịp tim sẽ dừng lại.
     - Một tiến trình quét ngầm (`RecoverExpiredLeasesAsync`) chạy mỗi 30 giây sẽ phát hiện các Job đang `Running` nhưng đã quá hạn `LeaseExpiresAt`:
-        - Nếu Job chưa chạy quá 3 lần: Thu hồi về trạng thái `Pending` để Worker khác nhận lại và chạy tiếp.
-        - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
+        - Nếu `AttemptCount < 3`: Thu hồi về trạng thái `Pending` (có backoff) để Worker khác nhận lại.
+        - Nếu `AttemptCount >= 3`: Đánh dấu `Failed` vĩnh viễn với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
     - 👉 _Đã kiểm chứng qua test `Stale_lease_recovery_reclaims_abandoned_job`._
 
 ---
@@ -142,7 +142,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
 
-- **Kiểm thử tự động Module Jobs:** 41 phương thức kiểm thử (43 test executions: 40 executions trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) và 3 executions trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs)) **PASSED 100%**:
+- **Kiểm thử tự động Module Jobs:** 43 phương thức kiểm thử (45 test executions: 42 executions trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) và 3 executions trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs)) **PASSED 100%**:
     - `Enqueue_returns_same_job_on_identical_fingerprint`: PASS
     - `Enqueue_throws_conflict_on_mismatched_fingerprint`: PASS
     - `Competing_workers_only_one_claims_job`: PASS
@@ -181,10 +181,12 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - `Cancellation_watcher_survives_transient_read_fault_and_propagates_cancellation`: PASS
     - `Heartbeat_kept_alive_during_terminal_write_prevents_lease_expiration_and_duplicate_execution`: PASS
     - `Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception`: PASS
+    - `FileJobStore_reloads_changes_across_instances_even_when_mtime_is_reset`: PASS
+    - `Progress_report_failure_does_not_fail_or_retry_job`: PASS
     - `Scope_requires_a_valid_kind_and_resource`: PASS
     - `Request_preserves_scope_and_correlation_id`: PASS
     - `Request_rejects_missing_idempotency_key`: PASS
-- **Chất lượng toàn Solution:** 52/52 test executions toàn hệ thống PASSED (43 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **Chất lượng toàn Solution:** 54/54 test executions toàn hệ thống PASSED (45 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
 - **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ files.
 - **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404, kiểm tra phạm vi 400/403, kiểm tra JobType và API Job Enqueue -> Worker Complete).
@@ -209,6 +211,6 @@ Khi chạy Worker độc lập ở terminal thứ hai, đặt `$env:Jobs__Disabl
 | **Chạy Web API & Dashboard** | `dotnet run --project src/Api --urls http://localhost:5000` | Mở trình duyệt vào `http://localhost:5000/jobs/` |
 | **Chạy Worker độc lập**     | `dotnet run --project src/Worker`             | Dùng cùng `Jobs__StorePath` như API               |
 | **Tắt Server**               | Bấm `Ctrl + C` trong Terminal                  | Hoặc gõ `Stop-Process -Name dotnet`              |
-| **Chạy toàn bộ 52 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
-| **Chạy riêng 43 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
+| **Chạy toàn bộ 54 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
+| **Chạy riêng 45 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
 | **Kiểm tra độ sạch Repo**    | `python tools/check_repository.py`             | Đảm bảo không dính secret key, link hỏng         |

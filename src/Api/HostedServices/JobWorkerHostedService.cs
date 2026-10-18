@@ -146,14 +146,21 @@ public sealed class JobWorkerHostedService : BackgroundService
             AttemptNumber = claim.Attempt.AttemptNumber,
             ReportProgressAsync = async percentage =>
             {
-                var currentJob = await _jobStore.GetByIdAsync(job.Id, hostStoppingToken);
-                if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                try
                 {
-                    jobCts.Cancel();
-                    throw new OperationCanceledException(jobCts.Token);
-                }
+                    var currentJob = await _jobStore.GetByIdAsync(job.Id, hostStoppingToken);
+                    if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                    {
+                        jobCts.Cancel();
+                        throw new OperationCanceledException(jobCts.Token);
+                    }
 
-                await _jobStore.UpdateProgressAsync(job.Id, leaseToken, percentage, hostStoppingToken);
+                    await _jobStore.UpdateProgressAsync(job.Id, leaseToken, percentage, hostStoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to report progress. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
+                }
             }
         };
 

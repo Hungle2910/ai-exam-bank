@@ -149,15 +149,22 @@ public sealed class JobWorkerService : BackgroundService
             AttemptNumber = claim.Attempt.AttemptNumber,
             ReportProgressAsync = async percentage =>
             {
-                // Kiểm tra xem job có bị yêu cầu hủy ở giữa chừng không
-                var currentJob = await _jobStore.GetByIdAsync(job.Id, hostStoppingToken);
-                if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                try
                 {
-                    jobCts.Cancel();
-                    throw new OperationCanceledException(jobCts.Token);
-                }
+                    // Kiểm tra xem job có bị yêu cầu hủy ở giữa chừng không
+                    var currentJob = await _jobStore.GetByIdAsync(job.Id, hostStoppingToken);
+                    if (currentJob?.CancellationRequestedAt != null || currentJob?.Status == JobStatus.Cancelled)
+                    {
+                        jobCts.Cancel();
+                        throw new OperationCanceledException(jobCts.Token);
+                    }
 
-                await _jobStore.UpdateProgressAsync(job.Id, leaseToken, percentage, hostStoppingToken);
+                    await _jobStore.UpdateProgressAsync(job.Id, leaseToken, percentage, hostStoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to report progress. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
+                }
             }
         };
 

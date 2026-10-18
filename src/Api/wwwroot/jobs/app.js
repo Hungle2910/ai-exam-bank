@@ -482,7 +482,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ${errorBannerHtml}
         `;
 
+        detailDrawer.removeAttribute('inert');
         detailDrawer.classList.add('active');
+        btnCloseDrawer.focus();
     };
 
     // -------------------------------------------------------------
@@ -596,9 +598,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Drawer close
-    btnCloseDrawer.addEventListener('click', () => detailDrawer.classList.remove('active'));
+    function closeDetailDrawer() {
+        detailDrawer.classList.remove('active');
+        detailDrawer.setAttribute('inert', '');
+    }
+
+    btnCloseDrawer.addEventListener('click', closeDetailDrawer);
     detailDrawer.addEventListener('click', (e) => {
-        if (e.target === detailDrawer) detailDrawer.classList.remove('active');
+        if (e.target === detailDrawer) closeDetailDrawer();
     });
 
     // Initial Load

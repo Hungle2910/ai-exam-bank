@@ -225,7 +225,7 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 38 phương thức kiểm thử (40 lượt chạy / test executions) trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs) = tổng cộng 41 phương thức kiểm thử, 43 lượt chạy tại Module Jobs) đều **PASSED 100%**:
+Tất cả 40 phương thức kiểm thử (42 lượt chạy / test executions) trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs) = tổng cộng 43 phương thức kiểm thử, 45 lượt chạy tại Module Jobs) đều **PASSED 100%**:
 
 | STT | Tên Test Case                                                                                         | Mục đích kiểm thử                                                                                                                      | Kết quả |
 | :-: | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | :-----: |
@@ -267,11 +267,13 @@ Tất cả 38 phương thức kiểm thử (40 lượt chạy / test executions)
 | 35  | `Job_status_and_list_preserve_job_type`                                                               | Kiểm tra giữ nguyên JobType trong GetJobStatus và ListJobs                                                                             | ✅ PASS |
 | 36  | `Same_scope_different_user_cannot_read_or_cancel_job`                                                  | Kiểm tra cô lập quyền sở hữu: người dùng khác trong cùng trường không thể đọc, hủy hay liệt kê job của người tạo                        | ✅ PASS |
 | 37  | `Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception`                 | Kiểm tra Worker ghi nhận lỗi transient và retry an toàn khi Complete bước cuối gặp lỗi bất thường                                       | ✅ PASS |
-| 38  | `JobContractTests: Scope and Request validation` (3 tests)                                            | Kiểm tra ràng buộc hợp đồng JobScope (loại/resource hợp lệ) và JobRequest (IdempotencyKey bắt buộc, bảo toàn CorrelationId)             | ✅ PASS |
+| 38  | `FileJobStore_reloads_changes_across_instances_even_when_mtime_is_reset`                               | Kiểm tra FileJobStore luôn nạp lại snapshot khi giữ Mutex, instance khác thấy thay đổi dù mtime bị trùng                                 | ✅ PASS |
+| 39  | `Progress_report_failure_does_not_fail_or_retry_job`                                                   | Kiểm tra lỗi tạm thời khi báo tiến độ (UpdateProgressAsync lỗi) không làm fail hoặc retry job                                           | ✅ PASS |
+| 40  | `JobContractTests: Scope and Request validation` (3 tests)                                            | Kiểm tra ràng buộc hợp đồng JobScope (loại/resource hợp lệ) và JobRequest (IdempotencyKey bắt buộc, bảo toàn CorrelationId)             | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
 
-- **`dotnet test AiExamBank.slnx`**: **52/52 test executions PASSED** (43 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **54/54 test executions PASSED** (45 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.

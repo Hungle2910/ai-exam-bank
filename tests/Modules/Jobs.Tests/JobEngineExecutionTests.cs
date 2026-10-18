@@ -1593,6 +1593,103 @@ public sealed class JobEngineExecutionTests
         worker.Dispose();
     }
 
+    /// <summary>
+    /// Kiểm tra FileJobStore luôn nạp lại snapshot khi đang giữ Mutex,
+    /// bảo đảm instance khác vẫn nhận được thay đổi ngay cả khi mtime bị đặt lại về giá trị cũ.
+    /// </summary>
+    [TestMethod]
+    public async Task FileJobStore_reloads_changes_across_instances_even_when_mtime_is_reset()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobstore-mtime-{Guid.NewGuid():N}.json");
+        try
+        {
+            using var storeA = new FileJobStore(tempFile);
+            using var storeB = new FileJobStore(tempFile);
+
+            var req1 = JobRequest.Create("ExamGen", "s3://ref1", "user-1", SchoolScope, "key-mtime-1", "corr-mtime-1");
+            var job1 = await storeA.EnqueueAsync(req1, "fp-mtime-1");
+
+            var initialMtime = File.GetLastWriteTimeUtc(tempFile);
+
+            // Instance B ghi thêm job mới
+            var req2 = JobRequest.Create("ExamGen", "s3://ref2", "user-1", SchoolScope, "key-mtime-2", "corr-mtime-2");
+            var job2 = await storeB.EnqueueAsync(req2, "fp-mtime-2");
+
+            // Cố tình đặt lại mtime của tệp về mtime ban đầu để mô phỏng mtime không đổi
+            File.SetLastWriteTimeUtc(tempFile, initialMtime);
+
+            // Instance A phải nạp lại và thấy được job2 của Instance B
+            var retrievedJob2 = await storeA.GetByIdAsync(job2.Id);
+            Assert.IsNotNull(retrievedJob2, "Instance A phải nhận được job2 mà Instance B đã ghi dù mtime bị trùng.");
+            Assert.AreEqual(job2.Id, retrievedJob2.Id);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra lỗi tạm thời khi báo tiến độ (UpdateProgressAsync ném ngoại lệ TimeoutException)
+    /// không làm job bị fail hay retry lại, handler vẫn hoàn thành và job đạt trạng thái Completed.
+    /// </summary>
+    [TestMethod]
+    public async Task Progress_report_failure_does_not_fail_or_retry_job()
+    {
+        var innerStore = new InMemoryJobStore();
+        var throwingProgressStore = new ThrowingProgressJobStore(innerStore);
+
+        var registry = new JobRegistry();
+        int handlerExecutionCount = 0;
+        registry.Register(new ProgressReportingJobHandler(
+            onExecute: () => Interlocked.Increment(ref handlerExecutionCount),
+            reportProgress: true));
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "throwing-progress-worker",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var request = JobRequest.Create("ProgressReportingJob", "s3://payload", "tester", SchoolScope, "key-throw-progress", "corr-throw-progress");
+        var job = await innerStore.EnqueueAsync(request, "fp-throw-progress");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(throwingProgressStore, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (Volatile.Read(ref handlerExecutionCount) < 1 && sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(25);
+        }
+
+        while (sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            var j = await innerStore.GetByIdAsync(job.Id);
+            if (j?.Status == JobStatus.Completed) break;
+            await Task.Delay(25);
+        }
+
+        var finalJob = await innerStore.GetByIdAsync(job.Id);
+        Assert.IsNotNull(finalJob);
+        Assert.AreEqual(JobStatus.Completed, finalJob.Status, "Job phải đạt Completed dù UpdateProgressAsync bị lỗi.");
+        Assert.AreEqual(1, Volatile.Read(ref handlerExecutionCount), "Handler chỉ được chạy đúng 1 lần.");
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+    }
+
     private sealed class ThrowingCompleteJobStore : IJobStore
     {
         private readonly IJobStore _inner;
@@ -1632,6 +1729,45 @@ public sealed class JobEngineExecutionTests
             _inner.RecoverExpiredLeasesAsync(cancellationToken);
     }
 
+    private sealed class ThrowingProgressJobStore : IJobStore
+    {
+        private readonly IJobStore _inner;
+
+        public ThrowingProgressJobStore(IJobStore inner) => _inner = inner;
+
+        public Task<BackgroundJob> EnqueueAsync(JobRequest request, string requestFingerprint, CancellationToken cancellationToken = default) =>
+            _inner.EnqueueAsync(request, requestFingerprint, cancellationToken);
+
+        public Task<JobClaimResult?> ClaimNextJobAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default) =>
+            _inner.ClaimNextJobAsync(workerId, leaseDuration, cancellationToken);
+
+        public Task<bool> HeartbeatAsync(Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) =>
+            _inner.HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
+
+        public Task<bool> UpdateProgressAsync(Guid jobId, Guid leaseToken, int progressPercentage, CancellationToken cancellationToken = default)
+        {
+            throw new TimeoutException("Simulated mutex lock timeout during UpdateProgressAsync.");
+        }
+
+        public Task<bool> CompleteJobAsync(Guid jobId, Guid leaseToken, string? resultId, CancellationToken cancellationToken = default) =>
+            _inner.CompleteJobAsync(jobId, leaseToken, resultId, cancellationToken);
+
+        public Task<bool> FailJobAsync(Guid jobId, Guid leaseToken, string errorCode, string safeErrorMessage, bool isTransient, CancellationToken cancellationToken = default) =>
+            _inner.FailJobAsync(jobId, leaseToken, errorCode, safeErrorMessage, isTransient, cancellationToken);
+
+        public Task<bool> RequestCancellationAsync(Guid jobId, string requestedBy, CancellationToken cancellationToken = default) =>
+            _inner.RequestCancellationAsync(jobId, requestedBy, cancellationToken);
+
+        public Task<BackgroundJob?> GetByIdAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetByIdAsync(jobId, cancellationToken);
+
+        public Task<IReadOnlyList<BackgroundJob>> ListByScopeAsync(JobScope scope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default) =>
+            _inner.ListByScopeAsync(scope, statusFilter, cancellationToken);
+
+        public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
+            _inner.RecoverExpiredLeasesAsync(cancellationToken);
+    }
+
     private sealed class CountingSuccessfulJobHandler : IJobHandler
     {
         private readonly Action _onExecute;
@@ -1643,6 +1779,29 @@ public sealed class JobEngineExecutionTests
         {
             _onExecute();
             return Task.FromResult(JobExecutionResult.Success("res-success"));
+        }
+    }
+
+    private sealed class ProgressReportingJobHandler : IJobHandler
+    {
+        private readonly Action _onExecute;
+        private readonly bool _reportProgress;
+        public string JobType => "ProgressReportingJob";
+
+        public ProgressReportingJobHandler(Action onExecute, bool reportProgress)
+        {
+            _onExecute = onExecute;
+            _reportProgress = reportProgress;
+        }
+
+        public async Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            _onExecute();
+            if (_reportProgress && context.ReportProgressAsync is not null)
+            {
+                await context.ReportProgressAsync(50);
+            }
+            return JobExecutionResult.Success("res-progress-success");
         }
     }
 }
