@@ -10,7 +10,7 @@ secret=/run/aieb/db-bootstrap-password
 [[ -f "$secret" && "$(stat -c %a "$secret")" == 600 && "$(stat -c %u "$secret")" == 0 ]] || {
   echo 'A root-owned mode-0600 bootstrap secret file is required.' >&2; exit 1;
 }
-[[ -r /etc/aieb/sql/server.crt && -r /etc/aieb/sql/server.key ]] || { echo 'Install the internal SQL TLS certificate and restricted key first.' >&2; exit 1; }
+[[ -f /etc/aieb/sql/server.crt && -f /etc/aieb/sql/server.key ]] && sudo -u mssql test -r /etc/aieb/sql/server.crt && sudo -u mssql test -r /etc/aieb/sql/server.key || { echo 'Install the internal SQL TLS certificate and restricted key first.' >&2; exit 1; }
 chown mssql:mssql /var/opt/mssql
 export ACCEPT_EULA=Y MSSQL_PID=Developer
 MSSQL_SA_PASSWORD="$(cat "$secret")"
