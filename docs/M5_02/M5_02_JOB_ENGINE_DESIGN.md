@@ -225,7 +225,7 @@ dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 
 ## 8. Báo Cáo Kiểm Thử Tự Động (Test Report & Evidence)
 
-Tất cả 33 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs)) đều **PASSED 100%**:
+Tất cả 38 phương thức kiểm thử (40 lượt chạy / test executions) trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) (cùng 3 bài kiểm thử trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs) = tổng cộng 41 phương thức kiểm thử, 43 lượt chạy tại Module Jobs) đều **PASSED 100%**:
 
 | STT | Tên Test Case                                                                                         | Mục đích kiểm thử                                                                                                                      | Kết quả |
 | :-: | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | :-----: |
