@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Exam Bank — Background Job Status Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glow-bg"></div>
+
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                </svg>
+            </div>
+            <div>
+                <h1>AI Exam Bank</h1>
+                <span class="badge-role">M5-02 Durable Job Engine & Status UI</span>
+            </div>
+        </div>
+
+        <div class="scope-controls">
+            <div class="control-group">
+                <label for="scopeKindSelect">Phạm vi:</label>
+                <select id="scopeKindSelect">
+                    <option value="School" selected>Trường học (School)</option>
+                    <option value="MinistryExam">Kỳ thi Bộ (Ministry)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="scopeIdInput">Mã phạm vi:</label>
+                <input type="text" id="scopeIdInput" value="school-hn-01" placeholder="Nhập mã trường/bộ...">
+            </div>
+            <div class="control-group">
+                <label for="tokenInput">Bearer Token:</label>
+                <input type="password" id="tokenInput" placeholder="Tự động hoặc nhập token..." title="Token xác thực Bearer">
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <div class="live-indicator" id="liveIndicator">
+                <span class="dot pulse"></span>
+                <span class="label">Auto-Polling (2s)</span>
+            </div>
+            <button id="btnCreateJobModal" class="btn btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Tạo Tác Vụ Mẫu
+            </button>
+            <button id="btnRefresh" class="btn btn-secondary" title="Làm mới ngay">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6"></path>
+                    <path d="M1 20v-6h6"></path>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- Stats Overview Cards -->
+        <section class="stats-grid">
+            <div class="stat-card" data-status="All">
+                <div class="stat-icon icon-all">Σ</div>
+                <div class="stat-info">
+                    <span class="stat-label">Tổng Tác Vụ</span>
+                    <span class="stat-value" id="statTotal">0</span>
+                </div>
+            </div>
+            <div class="stat-card" data-status="Running">
+                <div class="stat-icon icon-running">
+                    <span class="spinner-mini"></span>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-label">Đang Chạy (Running)</span>
+                    <span class="stat-value text-cyan" id="statRunning">0</span>
+                </div>
+            </div>
+            <div class="stat-card" data-status="Pending">
+                <div class="stat-icon icon-pending">⏳</div>
+                <div class="stat-info">
+                    <span class="stat-label">Đang Chờ (Pending)</span>
+                    <span class="stat-value text-amber" id="statPending">0</span>
+                </div>
+            </div>
+            <div class="stat-card" data-status="Completed">
+                <div class="stat-icon icon-completed">✓</div>
+                <div class="stat-info">
+                    <span class="stat-label">Hoàn Thành (Completed)</span>
+                    <span class="stat-value text-emerald" id="statCompleted">0</span>
+                </div>
+            </div>
+            <div class="stat-card" data-status="Failed">
+                <div class="stat-icon icon-failed">✕</div>
+                <div class="stat-info">
+                    <span class="stat-label">Thất Bại (Failed)</span>
+                    <span class="stat-value text-rose" id="statFailed">0</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Panel Table -->
+        <section class="panel-card">
+            <div class="panel-header">
+                <div class="filter-tabs" id="filterTabs">
+                    <button class="tab active" data-filter="All">Tất cả</button>
+                    <button class="tab" data-filter="Running">Đang chạy</button>
+                    <button class="tab" data-filter="Pending">Đang chờ</button>
+                    <button class="tab" data-filter="Completed">Hoàn thành</button>
+                    <button class="tab" data-filter="Failed">Lỗi</button>
+                    <button class="tab" data-filter="Cancelled">Đã hủy</button>
+                </div>
+                <div class="search-box">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="Tìm theo ID, loại tác vụ...">
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="jobs-table">
+                    <thead>
+                        <tr>
+                            <th>MÃ TÁC VỤ (JOB ID)</th>
+                            <th>LOẠI TÁC VỤ</th>
+                            <th>TRẠNG THÁI</th>
+                            <th>TIẾN ĐỘ THỰC TẾ</th>
+                            <th>KẾT QUẢ / THÔNG BÁO LỖI</th>
+                            <th class="text-right">THAO TÁC</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobsTableBody">
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                <div class="empty-content">
+                                    <span class="empty-icon">📂</span>
+                                    <p>Chưa có tác vụ nào trong phạm vi này.</p>
+                                    <button class="btn btn-sm btn-primary" onclick="document.getElementById('btnCreateJobModal').click()">Tạo tác vụ thử nghiệm ngay</button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Tạo Tác Vụ Mới -->
+    <div class="modal-overlay" id="createJobModal" inert>
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3>Khởi tạo Tác Vụ Nền Mới</h3>
+                <button class="btn-close" id="btnCloseCreateModal">&times;</button>
+            </div>
+            <form id="createJobForm">
+                <div class="form-group">
+                    <label for="modalJobType">Loại tác vụ (Job Type):</label>
+                    <select id="modalJobType" required>
+                        <option value="SampleJob">SampleJob (Mô phỏng 4 chặng có tiến độ)</option>
+                        <option value="ExamGeneration">ExamGeneration (Sinh đề thi AI)</option>
+                        <option value="CsvImport">CsvImport (Nhập dữ liệu câu hỏi CSV)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="modalPayloadRef">Tham chiếu dữ liệu (Payload Reference):</label>
+                    <input type="text" id="modalPayloadRef" value="s3://ai-exam-bank/blueprints/blueprint-math-12.json" required>
+                    <small class="form-hint">Dùng "simulate-transient-error" để thử nghiệm retry sau 1 phút; "simulate-permanent-error" để kiểm tra lỗi nghiệp vụ.</small>
+                </div>
+                <div class="form-group">
+                    <label for="modalIdempotencyKey">Khóa chống trùng lặp (Idempotency Key):</label>
+                    <div class="input-with-action">
+                        <input type="text" id="modalIdempotencyKey" required>
+                        <button type="button" class="btn btn-xs btn-secondary" id="btnGenKey">Sinh ngẫu nhiên</button>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="btnCancelCreateModal">Đóng</button>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitCreateJob">Đưa vào hàng đợi (Enqueue)</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Drawer Chi Tiết Tác Vụ / Lỗi -->
+    <div class="drawer-overlay" id="detailDrawer" inert>
+        <div class="drawer-content glass-card">
+            <div class="drawer-header">
+                <h3 id="drawerTitle">Chi tiết tác vụ</h3>
+                <button class="btn-close" id="btnCloseDrawer">&times;</button>
+            </div>
+            <div class="drawer-body" id="drawerBody">
+                <!-- Nội dung động -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

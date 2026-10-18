@@ -25,6 +25,9 @@
   <Folder Name="/src/Modules/Review/">
     <Project Path="src/Modules/Review/AiExamBank.Modules.Review.csproj" />
   </Folder>
+  <Folder Name="/src/Worker/">
+    <Project Path="src/Worker/AiExamBank.Worker.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Architecture.Tests/">
     <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
