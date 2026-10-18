@@ -35,7 +35,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - **Atomic Claim (Chiếm quyền nguyên tử):** Khi 2 Worker cùng quét hàng đợi cùng một tích tắc, hệ thống sử dụng cơ chế khóa nguyên tử (trong SQL là `UPDATE jobs ... WHERE status = 'Pending' ... FOR UPDATE SKIP LOCKED` hoặc `lock` trong Store). Chỉ duy nhất **1 Worker** chiếm được Job và được cấp một chuỗi ngẫu nhiên gọi là `LeaseToken`. Worker còn lại nhận kết quả rỗng và nhường quyền.
     - **Lease Fencing (Hàng rào chặn Worker cũ):** Thời hạn chiếm quyền (`LeaseDuration`) là 2 phút. Nếu Worker A bị lag mạng hoặc treo máy quá 2 phút, hệ thống sẽ thu hồi quyền và cấp Job cho Worker B với một `LeaseToken` mới. Khi Worker A tỉnh dậy và cố ghi đè kết quả, hệ thống kiểm tra token của Worker A không khớp với token hiện hành $\rightarrow$ Thao tác cập nhật trạng thái/kết quả job trong Job Store bị chặn đứng ngay lập tức (`Fenced`), ngăn ngừa lỗi **Split-Brain** và không làm sai lệch dữ liệu trạng thái job.
     - *Lưu ý quan trọng:* Lease fencing bảo vệ trạng thái của Job trong kho lưu trữ dữ liệu (Store), nhưng không thể ngăn chặn tiến trình Handler cũ tiếp tục chạy hoặc tạo side effect ra môi trường bên ngoài (ví dụ gọi Bedrock hoặc bên thứ ba). Do đó, các Handler nghiệp vụ thực tế bắt buộc phải hiện thực tính lũy quyền (idempotency) hoặc dựa vào cơ chế downstream deduplication.
-    - 👉 _Đã kiểm chứng thành công qua Unit test `Competing_workers_only_one_claims_job` và `UpdateProgress_stale_token_fails`._
+    - 👉 _Đã kiểm chứng thành công qua Unit test `Competing_workers_only_one_claims_job`, `Heartbeat_renews_for_active_lease_and_fences_stale_tokens` và `Fencing_prevents_stale_worker_from_completing_job`._
 
 ---
 
@@ -47,7 +47,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - Một tiến trình quét ngầm (`RecoverExpiredLeasesAsync`) chạy mỗi 30 giây sẽ phát hiện các Job đang `Running` nhưng đã quá hạn `LeaseExpiresAt`:
         - Nếu Job chưa chạy quá 3 lần: Thu hồi về trạng thái `Pending` để Worker khác nhận lại và chạy tiếp.
         - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
-    - 👉 _Đã kiểm chứng qua test `RecoverExpiredLeases_reclaims_timed_out_jobs`._
+    - 👉 _Đã kiểm chứng qua test `Stale_lease_recovery_reclaims_abandoned_job`._
 
 ---
 
@@ -142,17 +142,17 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
 
-- **Kiểm thử tự động:** 36 phương thức kiểm thử (41 test executions) tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
+- **Kiểm thử tự động Module Jobs:** 41 phương thức kiểm thử (43 test executions: 40 executions trong [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) và 3 executions trong [JobContractTests.cs](../../tests/Modules/Jobs.Tests/JobContractTests.cs)) **PASSED 100%**:
     - `Enqueue_returns_same_job_on_identical_fingerprint`: PASS
     - `Enqueue_throws_conflict_on_mismatched_fingerprint`: PASS
     - `Competing_workers_only_one_claims_job`: PASS
-    - `Heartbeat_valid_token_extends_lease`: PASS
-    - `UpdateProgress_stale_token_fails`: PASS
-    - `FailJob_transient_error_schedules_retry`: PASS
-    - `FailJob_permanent_error_or_exhausted_retries_fails`: PASS
+    - `Heartbeat_renews_for_active_lease_and_fences_stale_tokens`: PASS
+    - `Fencing_prevents_stale_worker_from_completing_job`: PASS
+    - `Transient_failure_schedules_bounded_retries_and_exhausts_at_attempt_3`: PASS
+    - `Successful_retry_clears_job_errors_and_preserves_attempt_history` (2 DataRows): PASS
+    - `Job_status_and_list_preserve_job_type` (2 DataRows): PASS
     - `Cancellation_marks_pending_job_cancelled_immediately`: PASS
-    - `Cancel_running_job_signals_cancellation`: PASS
-    - `RecoverExpiredLeases_reclaims_timed_out_jobs`: PASS
+    - `Stale_lease_recovery_reclaims_abandoned_job`: PASS
     - `Job_service_enqueue_and_tracker_list_respects_scope`: PASS
     - `Same_scope_different_user_cannot_read_or_cancel_job`: PASS
     - `Worker_service_executes_sample_handler_to_completion`: PASS
@@ -165,7 +165,6 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - `FileJobStore_commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery`: PASS
     - `FileJobStore_preserves_queued_jobs_across_restart_and_instances`: PASS
     - `Exam_generation_and_csv_import_handlers_are_registered_and_executable`: PASS
-    - `JobRegistry_registers_and_retrieves_handlers`: PASS
     - `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum`: PASS
     - `Job_service_list_cross_school_throws_unauthorized_access_exception`: PASS
     - `Legacy_snapshot_is_migrated_and_preserves_idempotency_via_job_service`: PASS
@@ -181,9 +180,11 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - `Cancellation_watcher_cancels_running_job_when_handler_does_not_report_progress`: PASS
     - `Cancellation_watcher_survives_transient_read_fault_and_propagates_cancellation`: PASS
     - `Heartbeat_kept_alive_during_terminal_write_prevents_lease_expiration_and_duplicate_execution`: PASS
-    - `Successful_retry_clears_job_errors_and_preserves_attempt_history` (2 DataRows): PASS
-    - `Job_status_and_list_preserve_job_type` (2 DataRows): PASS
-- **Chất lượng toàn Solution:** 50/50 test executions toàn hệ thống PASSED (41 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+    - `Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception`: PASS
+    - `Scope_requires_a_valid_kind_and_resource`: PASS
+    - `Request_preserves_scope_and_correlation_id`: PASS
+    - `Request_rejects_missing_idempotency_key`: PASS
+- **Chất lượng toàn Solution:** 52/52 test executions toàn hệ thống PASSED (43 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
 - **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ files.
 - **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404, kiểm tra phạm vi 400/403, kiểm tra JobType và API Job Enqueue -> Worker Complete).
@@ -208,6 +209,6 @@ Khi chạy Worker độc lập ở terminal thứ hai, đặt `$env:Jobs__Disabl
 | **Chạy Web API & Dashboard** | `dotnet run --project src/Api --urls http://localhost:5000` | Mở trình duyệt vào `http://localhost:5000/jobs/` |
 | **Chạy Worker độc lập**     | `dotnet run --project src/Worker`             | Dùng cùng `Jobs__StorePath` như API               |
 | **Tắt Server**               | Bấm `Ctrl + C` trong Terminal                  | Hoặc gõ `Stop-Process -Name dotnet`              |
-| **Chạy toàn bộ 50 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
-| **Chạy riêng 41 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
+| **Chạy toàn bộ 52 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
+| **Chạy riêng 43 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
 | **Kiểm tra độ sạch Repo**    | `python tools/check_repository.py`             | Đảm bảo không dính secret key, link hỏng         |

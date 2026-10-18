@@ -266,10 +266,12 @@ Tất cả 33 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 34  | `Successful_retry_clears_job_errors_and_preserves_attempt_history`                                   | Kiểm tra xóa ErrorCode/SafeErrorMessage khi retry thành công trên cả InMemory và File store                                             | ✅ PASS |
 | 35  | `Job_status_and_list_preserve_job_type`                                                               | Kiểm tra giữ nguyên JobType trong GetJobStatus và ListJobs                                                                             | ✅ PASS |
 | 36  | `Same_scope_different_user_cannot_read_or_cancel_job`                                                  | Kiểm tra cô lập quyền sở hữu: người dùng khác trong cùng trường không thể đọc, hủy hay liệt kê job của người tạo                        | ✅ PASS |
+| 37  | `Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception`                 | Kiểm tra Worker ghi nhận lỗi transient và retry an toàn khi Complete bước cuối gặp lỗi bất thường                                       | ✅ PASS |
+| 38  | `JobContractTests: Scope and Request validation` (3 tests)                                            | Kiểm tra ràng buộc hợp đồng JobScope (loại/resource hợp lệ) và JobRequest (IdempotencyKey bắt buộc, bảo toàn CorrelationId)             | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
 
-- **`dotnet test AiExamBank.slnx`**: **50/50 test executions PASSED** (41 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **52/52 test executions PASSED** (43 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.
