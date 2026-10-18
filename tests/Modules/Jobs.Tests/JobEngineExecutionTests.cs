@@ -289,10 +289,57 @@ public sealed class JobEngineExecutionTests
         await service.EnqueueAsync(reqOtherSchool);
 
         var schoolList = await service.ListJobsAsync(SchoolScope, "teacher-1", requesterScope: SchoolScope);
-        Assert.HasCount(2, schoolList);
+        Assert.HasCount(1, schoolList);
+        Assert.AreEqual(jobRef1.Value, schoolList[0].Job.Value);
+
+        var teacher2List = await service.ListJobsAsync(SchoolScope, "teacher-2", requesterScope: SchoolScope);
+        Assert.HasCount(1, teacher2List);
+        Assert.AreEqual(jobRef2.Value, teacher2List[0].Job.Value);
 
         var status1 = await service.GetJobStatusAsync(jobRef1, "teacher-1", requesterScope: SchoolScope);
         Assert.AreEqual(JobStatus.Pending, status1.Status);
+    }
+
+    [TestMethod]
+    public async Task Same_scope_different_user_cannot_read_or_cancel_job()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var request = JobRequest.Create("ExamGen", "s3://ref-ownership", "teacher-owner", SchoolScope, "idem-owner", "corr-owner");
+        var jobRef = await service.EnqueueAsync(request);
+
+        // 1. Chủ sở hữu (teacher-owner) đọc và hủy thành công
+        var ownerStatus = await service.GetJobStatusAsync(jobRef, "teacher-owner", SchoolScope);
+        Assert.IsNotNull(ownerStatus);
+        Assert.AreEqual(JobStatus.Pending, ownerStatus.Status);
+
+        // 2. Người dùng khác trong cùng trường (teacher-other) cố đọc: Ném UnauthorizedAccessException
+        var exRead = await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.GetJobStatusAsync(jobRef, "teacher-other", SchoolScope);
+        });
+        Assert.AreEqual("Requester is not authorized to access this job.", exRead.Message);
+
+        // 3. Người dùng khác trong cùng trường (teacher-other) cố hủy: Ném UnauthorizedAccessException
+        var exCancel = await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
+        {
+            await service.CancelJobAsync(jobRef, "teacher-other", SchoolScope);
+        });
+        Assert.AreEqual("Requester is not authorized to cancel this job.", exCancel.Message);
+
+        // 4. Danh sách của teacher-other không chứa job của teacher-owner
+        var otherList = await service.ListJobsAsync(SchoolScope, "teacher-other", SchoolScope);
+        Assert.HasCount(0, otherList);
+
+        // 5. Danh sách của teacher-owner chứa đúng job của mình
+        var ownerList = await service.ListJobsAsync(SchoolScope, "teacher-owner", SchoolScope);
+        Assert.HasCount(1, ownerList);
+        Assert.AreEqual(jobRef.Value, ownerList[0].Job.Value);
+
+        // 6. Chủ sở hữu hủy job thành công
+        var cancelSuccess = await service.CancelJobAsync(jobRef, "teacher-owner", SchoolScope);
+        Assert.IsTrue(cancelSuccess);
     }
 
     [TestMethod]

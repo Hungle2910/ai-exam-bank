@@ -58,6 +58,12 @@ public sealed class JobService : IJobPublisher, IJobTracker
             throw new UnauthorizedAccessException("Requester is not authorized to access this job.");
         }
 
+        // Kiểm tra quyền sở hữu tác vụ: Chỉ chủ sở hữu mới được truy cập
+        if (!string.Equals(job.CreatedBy, requesterId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("Requester is not authorized to access this job.");
+        }
+
         return MapToDto(job);
     }
 
@@ -80,6 +86,12 @@ public sealed class JobService : IJobPublisher, IJobTracker
         // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép hủy tác vụ chéo phạm vi (cả Kind và ResourceId)
         if (requesterScope.Kind != job.Scope.Kind ||
             !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Requester is not authorized to cancel this job.");
+        }
+
+        // Kiểm tra quyền sở hữu tác vụ: Chỉ chủ sở hữu mới được hủy tác vụ
+        if (!string.Equals(job.CreatedBy, requesterId, StringComparison.Ordinal))
         {
             throw new UnauthorizedAccessException("Requester is not authorized to cancel this job.");
         }
@@ -108,7 +120,10 @@ public sealed class JobService : IJobPublisher, IJobTracker
         }
 
         var jobs = await _store.ListByScopeAsync(scope, statusFilter, cancellationToken);
-        return jobs.Select(MapToDto).ToList();
+        return jobs
+            .Where(job => string.Equals(job.CreatedBy, requesterId, StringComparison.Ordinal))
+            .Select(MapToDto)
+            .ToList();
     }
 
     private static JobStatusDto MapToDto(BackgroundJob job) =>

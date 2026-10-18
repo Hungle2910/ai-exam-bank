@@ -33,8 +33,9 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 - **Trả lời:**
     - **Atomic Claim (Chiếm quyền nguyên tử):** Khi 2 Worker cùng quét hàng đợi cùng một tích tắc, hệ thống sử dụng cơ chế khóa nguyên tử (trong SQL là `UPDATE jobs ... WHERE status = 'Pending' ... FOR UPDATE SKIP LOCKED` hoặc `lock` trong Store). Chỉ duy nhất **1 Worker** chiếm được Job và được cấp một chuỗi ngẫu nhiên gọi là `LeaseToken`. Worker còn lại nhận kết quả rỗng và nhường quyền.
-    - **Lease Fencing (Hàng rào chặn Worker cũ):** Thời hạn chiếm quyền (`LeaseDuration`) là 2 phút. Nếu Worker A bị lag mạng hoặc treo máy quá 2 phút, hệ thống sẽ thu hồi quyền và cấp Job cho Worker B với một `LeaseToken` mới. Khi Worker A tỉnh dậy và cố ghi đè kết quả, hệ thống kiểm tra token của Worker A không khớp với token hiện hành $\rightarrow$ Thao tác bị chặn đứng ngay lập tức (`Fenced`), ngăn ngừa lỗi **Split-Brain** và không làm sai lệch dữ liệu.
-    - 👉 _Đã kiểm chứng thành công qua Unit test `Claim_CompetingWorkers_OnlyOneClaimsSuccessfully` và `UpdateProgress_StaleToken_ReturnsFalse`._
+    - **Lease Fencing (Hàng rào chặn Worker cũ):** Thời hạn chiếm quyền (`LeaseDuration`) là 2 phút. Nếu Worker A bị lag mạng hoặc treo máy quá 2 phút, hệ thống sẽ thu hồi quyền và cấp Job cho Worker B với một `LeaseToken` mới. Khi Worker A tỉnh dậy và cố ghi đè kết quả, hệ thống kiểm tra token của Worker A không khớp với token hiện hành $\rightarrow$ Thao tác cập nhật trạng thái/kết quả job trong Job Store bị chặn đứng ngay lập tức (`Fenced`), ngăn ngừa lỗi **Split-Brain** và không làm sai lệch dữ liệu trạng thái job.
+    - *Lưu ý quan trọng:* Lease fencing bảo vệ trạng thái của Job trong kho lưu trữ dữ liệu (Store), nhưng không thể ngăn chặn tiến trình Handler cũ tiếp tục chạy hoặc tạo side effect ra môi trường bên ngoài (ví dụ gọi Bedrock hoặc bên thứ ba). Do đó, các Handler nghiệp vụ thực tế bắt buộc phải hiện thực tính lũy quyền (idempotency) hoặc dựa vào cơ chế downstream deduplication.
+    - 👉 _Đã kiểm chứng thành công qua Unit test `Competing_workers_only_one_claims_job` và `UpdateProgress_stale_token_fails`._
 
 ---
 
@@ -46,7 +47,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - Một tiến trình quét ngầm (`RecoverExpiredLeasesAsync`) chạy mỗi 30 giây sẽ phát hiện các Job đang `Running` nhưng đã quá hạn `LeaseExpiresAt`:
         - Nếu Job chưa chạy quá 3 lần: Thu hồi về trạng thái `Pending` để Worker khác nhận lại và chạy tiếp.
         - Nếu Job đã chạy quá 3 lần: Đánh dấu `Failed` vĩnh viễn với mã lỗi `RETRY_BUDGET_EXHAUSTED`.
-    - 👉 _Đã kiểm chứng qua test `RecoverExpiredLeases_ReclaimsOrFailsTimedOutJobs`._
+    - 👉 _Đã kiểm chứng qua test `RecoverExpiredLeases_reclaims_timed_out_jobs`._
 
 ---
 
@@ -61,12 +62,13 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ---
 
-### Câu 5: Hệ thống bảo vệ tính cô lập dữ liệu giữa các trường học (Scoped Authorization) ra sao?
+### Câu 5: Hệ thống bảo vệ tính cô lập dữ liệu giữa các trường học (Scoped Authorization) và kiểm soát chủ sở hữu (Ownership) ra sao?
 
 - **Trả lời:**
     - Theo kiến trúc Multi-School của dự án ([ADR 0004](../../docs/adr/0004-multi-school-ministry-mvp.md)), dữ liệu đề thi và câu hỏi của trường học A tuyệt đối không được để lộ cho giáo viên trường học B.
-    - Tại [JobService.cs](../../src/Modules/Jobs/Infrastructure/JobService.cs), mọi yêu cầu xem trạng thái (`GetJobStatusAsync`), danh sách hoặc hủy job đều đối chiếu `requesterScopeId` với `job.Scope.ResourceId`.
+    - Tại [JobService.cs](../../src/Modules/Jobs/Infrastructure/JobService.cs), mọi yêu cầu xem trạng thái (`GetJobStatusAsync`), danh sách hoặc hủy job đều đối chiếu `requesterScope` với `job.Scope` (cả `Kind` và `ResourceId`).
     - Nếu phát hiện truy cập chéo trường: Hệ thống ném ngoại lệ `UnauthorizedAccessException` và API trả về ngay mã lỗi HTTP **403 Forbidden** với mã mở rộng `SCOPED_ACCESS_DENIED` theo chuẩn **RFC 7807 Problem Details**.
+    - **Kiểm soát quyền sở hữu tác vụ (Ownership Enforcement):** Trong cùng một phạm vi trường học, chỉ chính chủ sở hữu (`job.CreatedBy == requesterId`) hoặc admin được ủy quyền mới được xem chi tiết, hủy hoặc liệt kê tác vụ của mình. Người dùng khác trong cùng trường không thể can thiệp hay đọc trộm job của nhau.
     - Đồng thời, toàn bộ payload đề thi, đáp án, và stack trace nội bộ đều được ẩn (Log Redaction) và chỉ trả về thông báo lỗi an toàn `SafeErrorMessage`.
 
 ---
@@ -110,6 +112,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
         - Các yêu cầu không có thông tin xác thực hoặc chỉ gửi header giả mạo từ client lập tức bị từ chối với HTTP **401 Unauthorized**.
         - Ràng buộc tạo và truy cập tác vụ với danh tính đã xác thực (`ResolveAuthenticatedScope`): Trích xuất đầy đủ cặp phạm vi (`JobScopeKind ScopeKind`, `string ResourceId`) từ Claims (`scope_kind`, `scope_id`, `school_id`, `scope`, `tenant_id`) của `ClaimsPrincipal`, loại bỏ hoàn toàn việc tin cậy các header do client tự khai báo (`X-Scope-Id`, `X-User-Scope-Id`).
         - Truyền trực tiếp `JobScope` vào các phương thức `GetJobStatusAsync`, `CancelJobAsync`, `ListJobsAsync` của `IJobTracker` và `JobService`: Bắt buộc kiểm tra đồng thời cả hai trường `Scope.Kind` và `Scope.ResourceId`, triệt tiêu lỗ hổng bypass IDOR khi caller chỉ khớp ResourceId nhưng thuộc loại phạm vi khác (ví dụ: token của trường học không thể tạo, đọc, hủy hoặc liệt kê job thuộc kỳ thi cấp Bộ `MinistryExam`).
+        - Bắt buộc kiểm soát quyền sở hữu: Trong cùng một scope, chỉ người tạo (`job.CreatedBy == requesterId`) mới có quyền tra cứu chi tiết, hủy và liệt kê job.
         - Bắt buộc truyền tham số `JobScope requesterScope` (loại bỏ giá trị mặc định `= null`) trong hợp đồng `IJobTracker` và `JobService` để trình biên dịch phát hiện ngay lập tức các lời gọi thiếu phạm vi.
         - Tại `POST /api/v1/jobs`: Từ chối ngay với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`) nếu người gọi thiếu scope xác thực hoặc cố tình tạo job với `scopeKind` hoặc `scopeResourceId` không thuộc quyền của mình.
     3. **Hàng rào Fencing dựa trên Lease Token & Trạng thái Attempt:**
@@ -139,7 +142,7 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ## 3. Tổng Hợp Bằng Chứng Kiểm Thử Tự Động (Test Verification Evidence)
 
-- **Kiểm thử tự động:** 20/20 tests tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
+- **Kiểm thử tự động:** 36 phương thức kiểm thử (41 test executions) tại [JobEngineExecutionTests.cs](../../tests/Modules/Jobs.Tests/JobEngineExecutionTests.cs) **PASSED 100%**:
     - `Enqueue_returns_same_job_on_identical_fingerprint`: PASS
     - `Enqueue_throws_conflict_on_mismatched_fingerprint`: PASS
     - `Competing_workers_only_one_claims_job`: PASS
@@ -147,13 +150,17 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - `UpdateProgress_stale_token_fails`: PASS
     - `FailJob_transient_error_schedules_retry`: PASS
     - `FailJob_permanent_error_or_exhausted_retries_fails`: PASS
-    - `Cancel_pending_job_cancels_immediately`: PASS
+    - `Cancellation_marks_pending_job_cancelled_immediately`: PASS
     - `Cancel_running_job_signals_cancellation`: PASS
     - `RecoverExpiredLeases_reclaims_timed_out_jobs`: PASS
     - `Job_service_enqueue_and_tracker_list_respects_scope`: PASS
+    - `Same_scope_different_user_cannot_read_or_cancel_job`: PASS
     - `Worker_service_executes_sample_handler_to_completion`: PASS
     - `Cross_school_read_is_denied_with_unauthorized_access_exception`: PASS
-    - `Missing_scope_id_on_read_or_cancel_or_list_throws_unauthorized_access_exception`: PASS
+    - `Missing_scope_on_read_or_cancel_or_list_throws_unauthorized_access_exception`: PASS
+    - `Cross_scope_kind_access_with_matching_resource_id_is_rejected`: PASS
+    - `Case_insensitive_resource_id_in_store_list_returns_matching_jobs`: PASS
+    - `Case_insensitive_resource_id_creates_same_idempotency_and_fingerprint`: PASS
     - `Commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery`: PASS
     - `FileJobStore_commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery`: PASS
     - `FileJobStore_preserves_queued_jobs_across_restart_and_instances`: PASS
@@ -161,10 +168,25 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
     - `JobRegistry_registers_and_retrieves_handlers`: PASS
     - `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum`: PASS
     - `Job_service_list_cross_school_throws_unauthorized_access_exception`: PASS
-- **Chất lượng toàn Solution:** 29/29 tests toàn hệ thống PASSED.
+    - `Legacy_snapshot_is_migrated_and_preserves_idempotency_via_job_service`: PASS
+    - `Postgres_migration_script_enforces_case_insensitive_unique_idempotency_index_and_scope_index`: PASS
+    - `Legacy_handler_overload_is_invoked_and_returns_success_through_default_interface_implementation`: PASS
+    - `Worker_commits_job_as_completed_even_when_host_token_is_cancelled_immediately_after_handler_success`: PASS
+    - `FileJobStore_claim_on_expired_lease_applies_backoff_cooldown`: PASS
+    - `Handler_without_overrides_fails_and_does_not_report_completed`: PASS
+    - `TaskCanceledException_when_job_token_not_cancelled_fails_as_transient`: PASS
+    - `Worker_fails_job_as_permanent_failure_even_when_host_token_is_cancelled`: PASS
+    - `CancelJobAsync_throws_key_not_found_exception_when_job_does_not_exist`: PASS
+    - `Worker_id_is_unique_and_preserves_guid_even_with_long_machine_name`: PASS
+    - `Cancellation_watcher_cancels_running_job_when_handler_does_not_report_progress`: PASS
+    - `Cancellation_watcher_survives_transient_read_fault_and_propagates_cancellation`: PASS
+    - `Heartbeat_kept_alive_during_terminal_write_prevents_lease_expiration_and_duplicate_execution`: PASS
+    - `Successful_retry_clears_job_errors_and_preserves_attempt_history` (2 DataRows): PASS
+    - `Job_status_and_list_preserve_job_type` (2 DataRows): PASS
+- **Chất lượng toàn Solution:** 50/50 test executions toàn hệ thống PASSED (41 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **Biên dịch nghiêm ngặt:** `dotnet build AiExamBank.slnx --warnaserror` đạt 0 Warning, 0 Error.
-- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ 302 files.
-- **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404, kiểm tra phạm vi 400/403 và API Job Enqueue -> Worker Complete).
+- **Vệ sinh Repository:** `python tools/check_repository.py` đạt 0 Issues trên toàn bộ files.
+- **Tích hợp API & Worker Smoke Test:** `python tests/smoke/test_api_health.py` PASSED (bao gồm liveness, Problem Details 404, kiểm tra phạm vi 400/403, kiểm tra JobType và API Job Enqueue -> Worker Complete).
 
 ---
 
@@ -186,6 +208,6 @@ Khi chạy Worker độc lập ở terminal thứ hai, đặt `$env:Jobs__Disabl
 | **Chạy Web API & Dashboard** | `dotnet run --project src/Api --urls http://localhost:5000` | Mở trình duyệt vào `http://localhost:5000/jobs/` |
 | **Chạy Worker độc lập**     | `dotnet run --project src/Worker`             | Dùng cùng `Jobs__StorePath` như API               |
 | **Tắt Server**               | Bấm `Ctrl + C` trong Terminal                  | Hoặc gõ `Stop-Process -Name dotnet`              |
-| **Chạy toàn bộ 29 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
-| **Chạy riêng 20 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
+| **Chạy toàn bộ 50 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
+| **Chạy riêng 41 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |
 | **Kiểm tra độ sạch Repo**    | `python tools/check_repository.py`             | Đảm bảo không dính secret key, link hỏng         |

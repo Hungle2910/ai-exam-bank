@@ -123,10 +123,10 @@ Quản lý tập trung các Handler dưới dạng Thread-safe Dictionary:
 - Cùng bộ khóa + cùng `RequestFingerprint` (SHA-256): Trả về kết quả Job hiện hữu (`Idempotent Return`).
 - Cùng bộ khóa + khác `RequestFingerprint`: Ném ngoại lệ `JobConflictException` $\rightarrow$ API phản hồi HTTP **409 Conflict** (`IDEMPOTENCY_CONFLICT`).
 
-### 4.2. Phân quyền theo phạm vi trường học (Scoped Authorization)
+### 4.2. Phân quyền theo phạm vi trường học và kiểm soát chủ sở hữu (Scoped Authorization & Ownership Enforcement)
 
-- Mọi truy vấn và thao tác (`GET /api/v1/jobs/{id}`, danh sách, hủy job) đều bắt buộc đối chiếu người gửi yêu cầu với phạm vi trường học (`School`) hoặc kỳ thi Bộ (`MinistryExam`).
-- Cấm tuyệt đối truy cập chéo trường: Người dùng từ `school-1` truy vấn job của `school-2` sẽ nhận mã lỗi HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
+- **Cô lập phạm vi trường học (Scope Fencing):** Mọi truy vấn và thao tác (`GET /api/v1/jobs/{id}`, danh sách, hủy job) đều bắt buộc đối chiếu người gửi yêu cầu với phạm vi trường học (`School`) hoặc kỳ thi Bộ (`MinistryExam`). Cấm tuyệt đối truy cập chéo trường: Người dùng từ `school-1` truy vấn job của `school-2` sẽ nhận mã lỗi HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`).
+- **Kiểm soát quyền sở hữu tác vụ (Ownership Enforcement):** Trong cùng một phạm vi trường học, chỉ chủ sở hữu (`job.CreatedBy == requesterId`) hoặc admin được ủy quyền mới được phép đọc chi tiết (`GetJobStatusAsync`), hủy (`CancelJobAsync`) và liệt kê (`ListJobsAsync`) tác vụ của mình. Người dùng khác trong cùng trường học khi truy cập tác vụ của người khác sẽ bị từ chối với HTTP **403 Forbidden** và không thể xem job trong danh sách.
 - **Log Redaction:** Tuyệt đối không để lộ payload thô, đề thi, đáp án hoặc thông tin định danh cá nhân (PII) trong log và status DTO.
 
 ---
@@ -180,7 +180,7 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 
 | Tham số              | Giá trị mặc định       | Mô tả                                                     |
 | -------------------- | ---------------------- | --------------------------------------------------------- |
-| `WorkerId`           | `worker-{Guid:N[..8]}` | Định danh duy nhất của Worker instance                    |
+| `WorkerId`           | `worker-{MachineName[..12]}-{Guid:N}`        | Định danh duy nhất của Worker instance kết hợp tên máy và GUID                            |
 | `PollingInterval`    | `1 giây`               | Khoảng thời gian cơ sở giữa các lần quét hàng đợi         |
 | `MaxPollingInterval` | `5 giây`               | Thời gian giãn cách tối đa khi hàng đợi trống             |
 | `HeartbeatInterval`  | `30 giây`              | Chu kỳ gửi nhịp tim gia hạn thời gian chiếm quyền (Lease) |
@@ -263,10 +263,13 @@ Tất cả 33 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 31  | `Cancellation_watcher_cancels_running_job_when_handler_does_not_report_progress`                      | Kiểm tra Cancellation Watcher ngắt ngay job đang chạy khi bị hủy mà không cần đợi heartbeat 30s                                        | ✅ PASS |
 | 32  | `Cancellation_watcher_survives_transient_read_fault_and_propagates_cancellation`                      | Kiểm tra Watcher không bị chết khi gặp lỗi đọc tạm thời và truyền tín hiệu hủy thành công                                              | ✅ PASS |
 | 33  | `Heartbeat_kept_alive_during_terminal_write_prevents_lease_expiration_and_duplicate_execution`        | Kiểm tra duy trì heartbeat trong lúc ghi terminal state khi có tranh chấp lock/mutex, ngăn lease bị hết hạn nhầm và không chạy lại job | ✅ PASS |
+| 34  | `Successful_retry_clears_job_errors_and_preserves_attempt_history`                                   | Kiểm tra xóa ErrorCode/SafeErrorMessage khi retry thành công trên cả InMemory và File store                                             | ✅ PASS |
+| 35  | `Job_status_and_list_preserve_job_type`                                                               | Kiểm tra giữ nguyên JobType trong GetJobStatus và ListJobs                                                                             | ✅ PASS |
+| 36  | `Same_scope_different_user_cannot_read_or_cancel_job`                                                  | Kiểm tra cô lập quyền sở hữu: người dùng khác trong cùng trường không thể đọc, hủy hay liệt kê job của người tạo                        | ✅ PASS |
 
 ### Tổng hợp Chất lượng Solution:
 
-- **`dotnet test AiExamBank.slnx`**: **45/45 tests PASSED** (36 Jobs + 3 Questions + 3 Exams + 3 Architecture).
+- **`dotnet test AiExamBank.slnx`**: **50/50 test executions PASSED** (41 Jobs + 3 Questions + 3 Exams + 3 Architecture).
 - **`dotnet build --warnaserror`**: **0 Warnings, 0 Errors** trong cấu hình Release.
 - **`python tests/smoke/test_api_health.py`**: **PASSED 100%** (Liveness probe, Zero-Trust authentication, Worker integration và Problem Details RFC 7807 hoạt động hoàn hảo).
 - **`python tools/check_repository.py`**: **0 issues** trên toàn bộ files được theo dõi.
