@@ -360,11 +360,15 @@ body {
 
 .filter-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
     background: rgba(15, 23, 42, 0.8);
     padding: 0.3rem;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-glass);
+    overflow-x: auto;
+    max-width: 100%;
+    scrollbar-width: thin;
 }
 
 .tab {

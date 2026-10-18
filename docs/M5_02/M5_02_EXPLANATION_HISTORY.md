@@ -104,8 +104,8 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
      - Truyền trực tiếp `JobScope` vào các phương thức `GetJobStatusAsync`, `CancelJobAsync`, `ListJobsAsync` của `IJobTracker` và `JobService`: Bắt buộc kiểm tra đồng thời cả hai trường `Scope.Kind` và `Scope.ResourceId`, triệt tiêu lỗ hổng bypass IDOR khi caller chỉ khớp ResourceId nhưng thuộc loại phạm vi khác (ví dụ: token của trường học không thể tạo, đọc, hủy hoặc liệt kê job thuộc kỳ thi cấp Bộ `MinistryExam`).
      - Bắt buộc truyền tham số `JobScope requesterScope` (loại bỏ giá trị mặc định `= null`) trong hợp đồng `IJobTracker` và `JobService` để trình biên dịch phát hiện ngay lập tức các lời gọi thiếu phạm vi.
      - Tại `POST /api/v1/jobs`: Từ chối ngay với HTTP **403 Forbidden** (`SCOPED_ACCESS_DENIED`) nếu người gọi thiếu scope xác thực hoặc cố tình tạo job với `scopeKind` hoặc `scopeResourceId` không thuộc quyền của mình.
-  3. **Hàng rào Fencing chặn đứng Lease quá hạn:**
-     - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` đều kiểm tra `LeaseExpiresAt < UtcNow`. Nếu Worker bị trễ quá 2 phút, mọi thao tác cập nhật đều bị chặn đứng ngay cả khi Recovery chưa chạy.
+  3. **Hàng rào Fencing dựa trên Lease Token & Trạng thái Attempt:**
+     - Các phương thức `HeartbeatAsync`, `UpdateProgressAsync`, `CompleteJobAsync`, `FailJobAsync` kiểm tra tính hợp lệ của `LeaseToken` và trạng thái `AttemptStatus.Started`. Trước khi recovery chạy, commit của worker vẫn được hoàn tất; sau khi recovery đánh dấu `Abandoned` và cấp phát lại lượt thử mới, token cũ lập tức bị fencing từ chối hoàn toàn.
   4. **Đồng bộ đa tiến trình an toàn & Ghi đĩa nguyên tử:**
      - `FileJobStore.ExecuteWithLock` ném `TimeoutException` nếu không lấy được mutex sau 5s, ngăn ngừa chạy trùng và mất mát dữ liệu snapshot.
      - Dưới khóa Mutex, luôn gọi `LoadFromDisk()` để tránh bỏ sót các lần ghi cùng tick. Lan truyền ngoại lệ rõ ràng khi đọc hoặc deserialize snapshot thất bại, ngăn chặn `SaveToDisk()` ghi đè phá hủy dữ liệu hiện có.

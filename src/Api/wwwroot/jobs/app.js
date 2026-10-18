@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pollTimer = null;
     let pollIntervalMs = 2000; // 2s mặc định khi có job chạy
     let isPollingActive = true;
+    let currentFetchJobsSequence = 0;
 
     // DOM Elements
     const scopeKindSelect = document.getElementById('scopeKindSelect');
@@ -135,11 +136,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // API Fetching & Adaptive Polling
     // -------------------------------------------------------------
     async function fetchJobs() {
+        const fetchSequence = ++currentFetchJobsSequence;
         const scopeKind = scopeKindSelect.value;
         const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
 
         try {
             const token = await getAuthorizedToken(scopeKind, scopeId);
+            if (fetchSequence !== currentFetchJobsSequence) {
+                return; // Ngăn chặn request cũ ghi đè token hoặc trạng thái khi scope đã thay đổi
+            }
+
             const headers = {
                 'Accept': 'application/json',
                 'X-Scope-Id': scopeId
@@ -151,11 +157,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = `/api/v1/jobs?scopeKind=${encodeURIComponent(scopeKind)}&scopeResourceId=${encodeURIComponent(scopeId)}`;
             const response = await fetch(url, { headers });
 
+            if (fetchSequence !== currentFetchJobsSequence) {
+                return; // Bỏ qua phản hồi đã lỗi thời nếu scope đã thay đổi trong lúc chờ mạng
+            }
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: Lỗi tải danh sách tác vụ.`);
             }
 
             const data = await response.json();
+            if (fetchSequence !== currentFetchJobsSequence) {
+                return;
+            }
+
             jobsList = Array.isArray(data) ? data : [];
             updateStats();
             renderTable();
@@ -164,6 +178,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasActiveJobs = jobsList.some(j => j.status === 'Running' || j.status === 'Pending');
             adjustPollingInterval(hasActiveJobs ? 2000 : 5000);
         } catch (err) {
+            if (fetchSequence !== currentFetchJobsSequence) {
+                return; // Không ghi đè lỗi của request cũ lên scope mới
+            }
             console.error('Fetch jobs error:', err);
             // Làm sạch danh sách và cập nhật UI khi gặp lỗi API
             jobsList = [];
@@ -456,14 +473,23 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTable();
     });
 
-    // Modal
-    btnOpenCreateModal.addEventListener('click', () => {
+    // Modal Accessibility & Toggling
+    function openCreateModal() {
         modalIdempotencyKey.value = generateIdempotencyKey();
+        createModal.removeAttribute('inert');
         createModal.classList.add('active');
-    });
+        modalJobType.focus();
+    }
 
-    btnCloseCreateModal.addEventListener('click', () => createModal.classList.remove('active'));
-    btnCancelCreateModal.addEventListener('click', () => createModal.classList.remove('active'));
+    function closeCreateModal() {
+        createModal.classList.remove('active');
+        createModal.setAttribute('inert', '');
+        btnOpenCreateModal.focus();
+    }
+
+    btnOpenCreateModal.addEventListener('click', openCreateModal);
+    btnCloseCreateModal.addEventListener('click', closeCreateModal);
+    btnCancelCreateModal.addEventListener('click', closeCreateModal);
     btnGenKey.addEventListener('click', () => modalIdempotencyKey.value = generateIdempotencyKey());
 
     // Submit Enqueue Job
@@ -501,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.status === 202 || response.status === 200 || response.status === 201) {
                 const resData = await response.json();
                 showToast(`Đã tạo tác vụ thành công! ID: #${resData.jobId.substring(0, 8)}...`, 'success');
-                createModal.classList.remove('active');
+                closeCreateModal();
                 fetchJobs();
             } else if (response.status === 409) {
                 const errData = await response.json();

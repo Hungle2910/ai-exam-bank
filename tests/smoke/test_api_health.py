@@ -132,6 +132,43 @@ def test_invalid_scope_returns_400(port):
     print("Scope validation tests passed: whitespace resource ID and invalid enum return HTTP 400.")
 
 
+def test_empty_guid_returns_400(port):
+    """Verify that calling GET or POST cancel with Guid.Empty (00000000-0000-0000-0000-000000000000) returns HTTP 400 Problem Details."""
+    empty_guid = "00000000-0000-0000-0000-000000000000"
+    headers = {
+        "Accept": "application/json",
+        "Authorization": "Bearer dev-teacher-hn-token"
+    }
+
+    # 1. GET /api/v1/jobs/{id} with empty GUID
+    get_url = f"http://127.0.0.1:{port}/api/v1/jobs/{empty_guid}"
+    get_req = urllib.request.Request(get_url, headers=headers)
+    try:
+        urllib.request.urlopen(get_req, timeout=5)
+        raise RuntimeError("GET with empty GUID should have returned HTTP 400")
+    except urllib.error.HTTPError as err:
+        if err.code != 400:
+            raise RuntimeError(f"Expected HTTP 400 for GET empty GUID, got {err.code}")
+        payload = json.load(err)
+        if payload.get("code") != "INVALID_JOB_ID":
+            raise RuntimeError(f"Expected code 'INVALID_JOB_ID' for empty GUID, got {payload.get('code')}")
+
+    # 2. POST /api/v1/jobs/{id}/cancel with empty GUID
+    cancel_url = f"http://127.0.0.1:{port}/api/v1/jobs/{empty_guid}/cancel"
+    cancel_req = urllib.request.Request(cancel_url, headers=headers, method="POST")
+    try:
+        urllib.request.urlopen(cancel_req, timeout=5)
+        raise RuntimeError("POST cancel with empty GUID should have returned HTTP 400")
+    except urllib.error.HTTPError as err:
+        if err.code != 400:
+            raise RuntimeError(f"Expected HTTP 400 for cancel empty GUID, got {err.code}")
+        payload = json.load(err)
+        if payload.get("code") != "INVALID_JOB_ID":
+            raise RuntimeError(f"Expected code 'INVALID_JOB_ID' for cancel empty GUID, got {payload.get('code')}")
+
+    print("Empty GUID validation test passed: GET and cancel with empty GUID return HTTP 400 INVALID_JOB_ID.")
+
+
 def test_cross_school_listing_returns_403(port):
     """Verify that listing jobs across different schools is rejected with HTTP 403 SCOPED_ACCESS_DENIED."""
     url = f"http://127.0.0.1:{port}/api/v1/jobs?scopeKind=School&scopeResourceId=school-sg-02"
@@ -853,6 +890,7 @@ def main():
         test_job_create_cross_school_returns_403(port)
         test_job_create_cross_scope_kind_returns_403(port)
         test_invalid_scope_returns_400(port)
+        test_empty_guid_returns_400(port)
         test_cross_school_listing_returns_403(port)
         test_cross_scope_kind_listing_returns_403(port)
         test_status_ui_assets_load_without_errors(port)

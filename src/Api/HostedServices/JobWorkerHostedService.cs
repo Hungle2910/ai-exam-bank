@@ -163,8 +163,20 @@ public sealed class JobWorkerHostedService : BackgroundService
 
             if (result.Succeeded)
             {
-                using var completionCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                var completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, completionCts.Token);
+                bool completed = false;
+                try
+                {
+                    using var completionCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    completed = await _jobStore.CompleteJobAsync(job.Id, leaseToken, result.ResultId, completionCts.Token);
+                }
+                catch (Exception commitEx)
+                {
+                    // Lỗi ghi nhận hoàn tất vào store không được xem là lỗi của handler,
+                    // tránh gọi FailJobAsync gây chạy lại side effect đã thực thi thành công.
+                    _logger.LogError(commitEx, "Failed to persist job completion to store. JobId: {JobId}, CorrelationId: {CorrelationId}", job.Id, job.CorrelationId);
+                    return;
+                }
+
                 if (completed)
                 {
                     _logger.LogInformation("Job {JobId} completed successfully. CorrelationId: {CorrelationId}, ResultId: {ResultId}", job.Id, job.CorrelationId, result.ResultId);

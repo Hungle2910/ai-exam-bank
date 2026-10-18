@@ -172,6 +172,19 @@ public static class JobEndpoints
                     });
             }
 
+            if (id == Guid.Empty)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Bad Request",
+                    detail: "Job ID cannot be empty GUID.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_JOB_ID",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
             var jobRef = JobRef.Create(id);
 
             try
@@ -345,6 +358,19 @@ public static class JobEndpoints
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
+            if (id == Guid.Empty)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Bad Request",
+                    detail: "Job ID cannot be empty GUID.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "INVALID_JOB_ID",
                         ["traceId"] = httpContext.TraceIdentifier
                     });
             }

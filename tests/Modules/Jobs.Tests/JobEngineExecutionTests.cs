@@ -962,7 +962,7 @@ public sealed class JobEngineExecutionTests
         {
             await Task.Delay(50);
             var current = await store.GetByIdAsync(job.Id);
-            if (current != null && current.Status != JobStatus.Running)
+            if (current != null && current.Status != JobStatus.Running && current.AttemptCount >= 1 && current.ErrorCode != null)
             {
                 updatedJob = current;
                 break;
@@ -1011,7 +1011,7 @@ public sealed class JobEngineExecutionTests
         {
             await Task.Delay(50);
             var current = await store.GetByIdAsync(job.Id);
-            if (current != null && current.Status != JobStatus.Running)
+            if (current != null && current.Status != JobStatus.Running && current.AttemptCount >= 1 && current.ErrorCode != null)
             {
                 updatedJob = current;
                 break;
@@ -1426,5 +1426,101 @@ public sealed class JobEngineExecutionTests
         {
         }
         worker.Dispose();
+    }
+
+    [TestMethod]
+    public async Task Worker_does_not_fail_job_as_unhandled_exception_when_complete_step_throws_exception()
+    {
+        var innerStore = new InMemoryJobStore();
+        var throwingStore = new ThrowingCompleteJobStore(innerStore);
+        var registry = new JobRegistry();
+        int handlerExecutionCount = 0;
+        registry.Register(new CountingSuccessfulJobHandler(() => Interlocked.Increment(ref handlerExecutionCount)));
+
+        var options = Options.Create(new JobWorkerOptions
+        {
+            WorkerId = "throwing-complete-worker",
+            PollingInterval = TimeSpan.FromMilliseconds(50),
+            LeaseDuration = TimeSpan.FromSeconds(5)
+        });
+
+        var request = JobRequest.Create("CountingSuccessfulJob", "s3://payload", "tester", SchoolScope, "key-throw-complete", "corr-throw-complete");
+        var job = await innerStore.EnqueueAsync(request, "fp-throw-complete");
+
+        using var hostCts = new CancellationTokenSource();
+        var worker = new JobWorkerService(throwingStore, registry, options, NullLogger<JobWorkerService>.Instance);
+        await worker.StartAsync(hostCts.Token);
+
+        // Chờ worker claim và thực thi handler
+        await Task.Delay(TimeSpan.FromMilliseconds(300));
+
+        var currentJob = await innerStore.GetByIdAsync(job.Id);
+        Assert.IsNotNull(currentJob);
+        // Handler đã chạy thành công 1 lần
+        Assert.AreEqual(1, handlerExecutionCount, "Handler phải được thực thi đúng 1 lần.");
+        // Job không bị đưa về Pending với UNHANDLED_EXCEPTION
+        Assert.AreNotEqual("UNHANDLED_EXCEPTION", currentJob.ErrorCode, "Lỗi commit CompleteJobAsync không được coi là UNHANDLED_EXCEPTION của handler.");
+
+        try
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        worker.Dispose();
+    }
+
+    private sealed class ThrowingCompleteJobStore : IJobStore
+    {
+        private readonly IJobStore _inner;
+
+        public ThrowingCompleteJobStore(IJobStore inner) => _inner = inner;
+
+        public Task<BackgroundJob> EnqueueAsync(JobRequest request, string requestFingerprint, CancellationToken cancellationToken = default) =>
+            _inner.EnqueueAsync(request, requestFingerprint, cancellationToken);
+
+        public Task<JobClaimResult?> ClaimNextJobAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default) =>
+            _inner.ClaimNextJobAsync(workerId, leaseDuration, cancellationToken);
+
+        public Task<bool> HeartbeatAsync(Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) =>
+            _inner.HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
+
+        public Task<bool> UpdateProgressAsync(Guid jobId, Guid leaseToken, int progressPercentage, CancellationToken cancellationToken = default) =>
+            _inner.UpdateProgressAsync(jobId, leaseToken, progressPercentage, cancellationToken);
+
+        public Task<bool> CompleteJobAsync(Guid jobId, Guid leaseToken, string? resultId, CancellationToken cancellationToken = default)
+        {
+            throw new TimeoutException("Simulated mutex lock timeout during CompleteJobAsync.");
+        }
+
+        public Task<bool> FailJobAsync(Guid jobId, Guid leaseToken, string errorCode, string safeErrorMessage, bool isTransient, CancellationToken cancellationToken = default) =>
+            _inner.FailJobAsync(jobId, leaseToken, errorCode, safeErrorMessage, isTransient, cancellationToken);
+
+        public Task<bool> RequestCancellationAsync(Guid jobId, string requestedBy, CancellationToken cancellationToken = default) =>
+            _inner.RequestCancellationAsync(jobId, requestedBy, cancellationToken);
+
+        public Task<BackgroundJob?> GetByIdAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetByIdAsync(jobId, cancellationToken);
+
+        public Task<IReadOnlyList<BackgroundJob>> ListByScopeAsync(JobScope scope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default) =>
+            _inner.ListByScopeAsync(scope, statusFilter, cancellationToken);
+
+        public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
+            _inner.RecoverExpiredLeasesAsync(cancellationToken);
+    }
+
+    private sealed class CountingSuccessfulJobHandler : IJobHandler
+    {
+        private readonly Action _onExecute;
+        public string JobType => "CountingSuccessfulJob";
+
+        public CountingSuccessfulJobHandler(Action onExecute) => _onExecute = onExecute;
+
+        public Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
+        {
+            _onExecute();
+            return Task.FromResult(JobExecutionResult.Success("res-success"));
+        }
     }
 }

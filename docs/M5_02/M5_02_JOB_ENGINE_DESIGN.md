@@ -68,6 +68,10 @@ stateDiagram-v2
 5. **Hủy an toàn (Cancellation & Fencing)**:
    - Khi `RequestCancellationAsync` được gọi, trạng thái tác vụ chuyển sang `Cancelled` ngay lập tức trong Store (`CancellationRequestedAt` được ghi nhận) và phát tín hiệu tới `CancellationToken` của Worker.
    - Khi một tác vụ đã ở trạng thái `Cancelled` hoặc đã có yêu cầu hủy, `CompleteJobAsync` sẽ bị từ chối (trả về `false`) để ngăn chặn việc ghi nhận hoàn tất sau khi đã hủy.
+6. **Cơ chế Fencing & Cửa sổ Recovery**:
+   - Store thực hiện fencing dựa trên `LeaseToken` và trạng thái `AttemptStatus.Started` của lượt thử hiện tại.
+   - Trong khoảng thời gian sau khi lease hết hạn nhưng `RecoverExpiredLeasesAsync` (hoặc luồng claim mới) chưa chạy, lượt thử vẫn giữ trạng thái `Started`, do đó các thao tác commit kết quả (`CompleteJobAsync`), cập nhật tiến độ (`UpdateProgressAsync`), hoặc nhịp tim (`HeartbeatAsync`) từ worker cũ vẫn được chấp nhận thành công.
+   - Ngay khi quá trình recovery chạy và đánh dấu attempt cũ là `Abandoned` (hoặc worker khác claim thành công với lease token mới), token cũ lập tức bị fencing từ chối hoàn toàn.
 
 ---
 
@@ -218,7 +222,8 @@ Tất cả 33 bài kiểm thử chuyên sâu trong [JobEngineExecutionTests.cs](
 | 13 | `Cross_scope_kind_access_with_matching_resource_id_is_rejected` | Kiểm tra bảo mật từ chối truy cập chéo loại scope (School vs MinistryExam) | ✅ PASS |
 | 14 | `Case_insensitive_resource_id_in_store_list_returns_matching_jobs` | Kiểm tra tra cứu danh sách job không phân biệt hoa thường theo ResourceId | ✅ PASS |
 | 15 | `Case_insensitive_resource_id_creates_same_idempotency_and_fingerprint` | Kiểm tra chuẩn hóa ToUpperInvariant tạo cùng khóa idempotency và fingerprint | ✅ PASS |
-| 16 | `UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token` | Kiểm tra quá hạn lease từ chối báo tiến độ hoặc complete | ✅ PASS |
+| 16 | `Commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery` | Lease quá hạn vẫn cho commit trước khi recovery chạy; sau recovery, token cũ bị fencing | ✅ PASS |
+| 16b | `FileJobStore_commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery` | Hành vi tương tự cho FileJobStore | ✅ PASS |
 | 17 | `FileJobStore_preserves_queued_jobs_across_restart_and_instances` | Kiểm tra tính bền vững của FileJobStore qua các lần khởi động lại | ✅ PASS |
 | 18 | `Exam_generation_and_csv_import_handlers_are_registered_and_executable` | Kiểm tra đăng ký và thực thi handler sinh đề thi AI và import CSV | ✅ PASS |
 | 19 | `Job_scope_create_throws_argument_exception_on_whitespace_or_undefined_enum` | Kiểm tra validate enum và resourceId không được là khoảng trắng | ✅ PASS |
