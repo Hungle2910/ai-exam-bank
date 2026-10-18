@@ -576,8 +576,17 @@ public sealed class FileJobStore : IJobStore, IDisposable
                 // Luôn đồng bộ dữ liệu mới nhất nếu tệp trên đĩa vừa bị process khác ghi đè
                 CheckAndReloadFromDisk();
 
-                var result = action();
-                return Task.FromResult(result);
+                try
+                {
+                    var result = action();
+                    return Task.FromResult(result);
+                }
+                catch
+                {
+                    _lastFileWriteTime = DateTime.MinValue;
+                    _lastFileLength = -1;
+                    throw;
+                }
             }
             finally
             {
@@ -591,7 +600,18 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
     private void CheckAndReloadFromDisk()
     {
-        if (!File.Exists(_filePath)) return;
+        if (!File.Exists(_filePath))
+        {
+            if (_jobs.Count > 0 || _idempotencyIndex.Count > 0 || _attempts.Count > 0)
+            {
+                _jobs.Clear();
+                _idempotencyIndex.Clear();
+                _attempts.Clear();
+                _lastFileWriteTime = DateTime.MinValue;
+                _lastFileLength = -1;
+            }
+            return;
+        }
 
         var lastWrite = File.GetLastWriteTimeUtc(_filePath);
         var length = new FileInfo(_filePath).Length;
@@ -605,7 +625,15 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
     private void LoadFromDisk()
     {
-        if (!File.Exists(_filePath)) return;
+        if (!File.Exists(_filePath))
+        {
+            _jobs.Clear();
+            _idempotencyIndex.Clear();
+            _attempts.Clear();
+            _lastFileWriteTime = DateTime.MinValue;
+            _lastFileLength = -1;
+            return;
+        }
 
         try
         {
@@ -755,10 +783,28 @@ public sealed class FileJobStore : IJobStore, IDisposable
         }
 
         var tempPath = _filePath + $".{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _filePath, overwrite: true);
-        _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
-        _lastFileLength = new FileInfo(_filePath).Length;
+        try
+        {
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _filePath, overwrite: true);
+            _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
+            _lastFileLength = new FileInfo(_filePath).Length;
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch
+                {
+                    // Nuốt lỗi khi dọn file tạm
+                }
+            }
+            throw;
+        }
     }
 
     internal static string ComputeRequestFingerprint(string jobType, string payloadReference, JobScopeKind scopeKind, string scopeResourceId)

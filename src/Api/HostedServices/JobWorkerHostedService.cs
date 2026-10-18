@@ -241,12 +241,41 @@ public sealed class JobWorkerHostedService : BackgroundService
         CancellationToken heartbeatStopToken)
     {
         using var timer = new PeriodicTimer(HeartbeatInterval);
+        var lastSuccessfulRenewal = DateTimeOffset.UtcNow;
 
-        try
+        while (!heartbeatStopToken.IsCancellationRequested)
         {
-            while (!heartbeatStopToken.IsCancellationRequested && await timer.WaitForNextTickAsync(heartbeatStopToken))
+            try
             {
-                var renewed = await _jobStore.HeartbeatAsync(jobId, leaseToken, leaseDuration, heartbeatStopToken);
+                if (!await timer.WaitForNextTickAsync(heartbeatStopToken))
+                {
+                    break;
+                }
+
+                bool renewed;
+                try
+                {
+                    renewed = await _jobStore.HeartbeatAsync(jobId, leaseToken, leaseDuration, heartbeatStopToken);
+                }
+                catch (OperationCanceledException) when (heartbeatStopToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Transient error renewing heartbeat in API worker for JobId: {JobId}, CorrelationId: {CorrelationId}. Retrying at next tick.", jobId, correlationId);
+
+                    var timeSinceLastRenewal = DateTimeOffset.UtcNow - lastSuccessfulRenewal;
+                    if (timeSinceLastRenewal >= leaseDuration - HeartbeatInterval)
+                    {
+                        _logger.LogError("Lease near expiration without successful renewal ({ElapsedSeconds}s elapsed). Cancelling JobId: {JobId}", timeSinceLastRenewal.TotalSeconds, jobId);
+                        jobCts.Cancel();
+                        break;
+                    }
+
+                    continue;
+                }
+
                 if (!renewed)
                 {
                     var currentJob = await _jobStore.GetByIdAsync(jobId, heartbeatStopToken);
@@ -260,16 +289,19 @@ public sealed class JobWorkerHostedService : BackgroundService
                     break;
                 }
 
+                lastSuccessfulRenewal = DateTimeOffset.UtcNow;
                 _logger.LogDebug("Heartbeat extended successfully in API worker. JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
             }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error in API worker heartbeat loop for JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
-            jobCts.Cancel();
+            catch (OperationCanceledException) when (heartbeatStopToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in API worker heartbeat loop for JobId: {JobId}, CorrelationId: {CorrelationId}", jobId, correlationId);
+                jobCts.Cancel();
+                break;
+            }
         }
     }
 

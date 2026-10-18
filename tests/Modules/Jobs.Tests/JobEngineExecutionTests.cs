@@ -1451,13 +1451,21 @@ public sealed class JobEngineExecutionTests
         var worker = new JobWorkerService(throwingStore, registry, options, NullLogger<JobWorkerService>.Instance);
         await worker.StartAsync(hostCts.Token);
 
-        // Chờ worker claim và thực thi handler
-        await Task.Delay(TimeSpan.FromMilliseconds(300));
+        // Chờ worker claim và thực thi handler thông qua vòng thăm dò có timeout thay vì fixed delay
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (Volatile.Read(ref handlerExecutionCount) < 1 && sw.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(25);
+        }
+
+        // Chờ thêm một khoảng ngắn để worker xử lý xong khối catch từ CompleteJobAsync
+        await Task.Delay(100);
 
         var currentJob = await innerStore.GetByIdAsync(job.Id);
         Assert.IsNotNull(currentJob);
-        // Handler đã chạy thành công 1 lần
-        Assert.AreEqual(1, handlerExecutionCount, "Handler phải được thực thi đúng 1 lần.");
+        // Handler đã chạy thành công 1 lần và job đã được worker claim với đúng 1 lượt chạy
+        Assert.AreEqual(1, Volatile.Read(ref handlerExecutionCount), "Handler phải được thực thi đúng 1 lần.");
+        Assert.AreEqual(1, currentJob.AttemptCount, "Job phải được worker claim và ghi nhận đúng 1 lượt chạy.");
         // Job không bị đưa về Pending với UNHANDLED_EXCEPTION
         Assert.AreNotEqual("UNHANDLED_EXCEPTION", currentJob.ErrorCode, "Lỗi commit CompleteJobAsync không được coi là UNHANDLED_EXCEPTION của handler.");
 

@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let pollIntervalMs = 2000; // 2s mặc định khi có job chạy
     let isPollingActive = true;
     let currentFetchJobsSequence = 0;
+    let isFetchingJobs = false;
+    let lastFetchError = null;
 
     // DOM Elements
     const scopeKindSelect = document.getElementById('scopeKindSelect');
@@ -135,8 +137,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // API Fetching & Adaptive Polling
     // -------------------------------------------------------------
-    async function fetchJobs() {
-        const fetchSequence = ++currentFetchJobsSequence;
+    async function fetchJobs(isExplicitScopeChange = false) {
+        if (isExplicitScopeChange) {
+            currentFetchJobsSequence++;
+            lastFetchError = null;
+        }
+
+        // Bỏ qua nếu đã có request đang chờ và đây chỉ là một tick polling tự động ngầm
+        if (isFetchingJobs && !isExplicitScopeChange) {
+            return;
+        }
+
+        const fetchSequence = currentFetchJobsSequence;
+        isFetchingJobs = true;
         const scopeKind = scopeKindSelect.value;
         const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
 
@@ -162,6 +175,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    lastFetchError = {
+                        status: response.status,
+                        message: response.status === 401
+                            ? 'Không được phép truy cập (401 Unauthorized): Token xác thực không hợp lệ hoặc đã hết hạn.'
+                            : 'Từ chối quyền truy cập (403 Forbidden): Bạn không có quyền xem hoặc thao tác trên phạm vi (Scope) này.'
+                    };
+                    jobsList = [];
+                    updateStats();
+                    renderTable();
+                    adjustPollingInterval(8000);
+                    return;
+                }
                 throw new Error(`HTTP ${response.status}: Lỗi tải danh sách tác vụ.`);
             }
 
@@ -170,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            lastFetchError = null;
             jobsList = Array.isArray(data) ? data : [];
             updateStats();
             renderTable();
@@ -182,12 +209,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return; // Không ghi đè lỗi của request cũ lên scope mới
             }
             console.error('Fetch jobs error:', err);
-            // Làm sạch danh sách và cập nhật UI khi gặp lỗi API
+            if (!lastFetchError) {
+                lastFetchError = {
+                    status: 0,
+                    message: err.message || 'Lỗi kết nối khi tải danh sách tác vụ.'
+                };
+            }
             jobsList = [];
             updateStats();
             renderTable();
             // Giãn cách polling khi gặp lỗi mạng
             adjustPollingInterval(8000);
+        } finally {
+            isFetchingJobs = false;
         }
     }
 
@@ -245,6 +279,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderTable() {
+        if (lastFetchError) {
+            const isAuthError = lastFetchError.status === 401 || lastFetchError.status === 403;
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="empty-state">
+                        <div class="empty-content">
+                            <span class="empty-icon">${isAuthError ? '🔒' : '⚠️'}</span>
+                            <p style="font-weight: 600; color: #ef4444;">${escapeHtml(lastFetchError.message)}</p>
+                            <p class="text-muted" style="font-size: 0.85rem; margin-top: 4px;">Vui lòng kiểm tra lại cấu hình Scope hoặc Token xác thực.</p>
+                            <button class="btn btn-sm btn-secondary" style="margin-top: 8px;" onclick="document.getElementById('tokenInput').focus()">Cấu hình lại Token</button>
+                        </div>
+                    </td>
+                </tr>`;
+            return;
+        }
+
         const query = searchQuery.toLowerCase();
         const filtered = jobsList.filter(job => {
             const matchesFilter = currentFilter === 'All' || job.status === currentFilter;
@@ -439,13 +489,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     btnRefresh.addEventListener('click', () => {
         showToast('Đang làm mới danh sách...', 'info');
-        fetchJobs();
+        fetchJobs(true);
     });
 
-    scopeKindSelect.addEventListener('change', fetchJobs);
-    scopeIdInput.addEventListener('change', fetchJobs);
+    scopeKindSelect.addEventListener('change', () => fetchJobs(true));
+    scopeIdInput.addEventListener('change', () => fetchJobs(true));
     if (tokenInput) {
-        tokenInput.addEventListener('change', fetchJobs);
+        tokenInput.addEventListener('change', () => fetchJobs(true));
     }
 
     // Tab Filter
@@ -528,7 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resData = await response.json();
                 showToast(`Đã tạo tác vụ thành công! ID: #${resData.jobId.substring(0, 8)}...`, 'success');
                 closeCreateModal();
-                fetchJobs();
+                fetchJobs(true);
             } else if (response.status === 409) {
                 const errData = await response.json();
                 showToast(`Xung đột Idempotency (409): ${errData.detail || 'Khóa trùng nhưng nội dung khác nhau.'}`, 'error');
@@ -551,6 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial Load
-    fetchJobs();
+    fetchJobs(true);
     pollTimer = setInterval(fetchJobs, pollIntervalMs);
 });
