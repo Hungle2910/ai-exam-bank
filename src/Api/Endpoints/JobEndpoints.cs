@@ -26,6 +26,7 @@ public sealed record CreateJobApiRequest(
 /// DTO phản hồi trạng thái an toàn của tác vụ ngầm cho Client và Status UI.
 /// </summary>
 /// <param name="JobId">Mã định danh duy nhất của tác vụ.</param>
+/// <param name="JobType">Loại tác vụ được lưu trong kho job.</param>
 /// <param name="Status">Trạng thái vòng đời hiện tại của tác vụ.</param>
 /// <param name="ProgressPercentage">Tiến độ thực tế (0 - 100%) hoặc null nếu không đo lường được.</param>
 /// <param name="ResultId">Mã kết quả sinh ra nếu tác vụ thành công.</param>
@@ -33,6 +34,7 @@ public sealed record CreateJobApiRequest(
 /// <param name="SafeMessage">Thông báo an toàn hiển thị cho người dùng.</param>
 public sealed record JobApiResponse(
     Guid JobId,
+    string JobType,
     string Status,
     int? ProgressPercentage,
     string? ResultId,
@@ -193,6 +195,7 @@ public static class JobEndpoints
 
                 return Results.Ok(new JobApiResponse(
                     status.Job.Value,
+                    status.JobType,
                     status.Status.ToString(),
                     status.ProgressPercentage,
                     status.ResultId,
@@ -305,6 +308,7 @@ public static class JobEndpoints
 
                 var response = jobs.Select(j => new JobApiResponse(
                     j.Job.Value,
+                    j.JobType,
                     j.Status.ToString(),
                     j.ProgressPercentage,
                     j.ResultId,

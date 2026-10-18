@@ -300,6 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const matchesFilter = currentFilter === 'All' || job.status === currentFilter;
             const matchesSearch = !query || 
                 job.jobId.toLowerCase().includes(query) ||
+                (job.jobType && job.jobType.toLowerCase().includes(query)) ||
                 (job.status && job.status.toLowerCase().includes(query)) ||
                 (job.errorCode && job.errorCode.toLowerCase().includes(query)) ||
                 (job.resultId && job.resultId.toLowerCase().includes(query));
@@ -383,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </td>
                     <td>
-                        <span class="job-type-badge">⚙️ Tác vụ ngầm</span>
+                        <span class="job-type-badge">⚙️ ${escapeHtml(job.jobType)}</span>
                     </td>
                     <td>
                         <span class="status-badge ${job.status}">
@@ -601,6 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial Load
-    fetchJobs(true);
-    pollTimer = setInterval(fetchJobs, pollIntervalMs);
+    if (!document.hidden) {
+        fetchJobs(true);
+        pollTimer = setInterval(fetchJobs, pollIntervalMs);
+    }
 });

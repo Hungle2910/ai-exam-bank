@@ -114,6 +114,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
     private static JobStatusDto MapToDto(BackgroundJob job) =>
         new(
             JobRef.Create(job.Id),
+            job.Type,
             job.Status,
             job.ProgressPercentage,
             job.ResultId,

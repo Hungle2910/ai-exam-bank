@@ -95,6 +95,43 @@ def test_job_enqueue_and_completion(port):
     raise RuntimeError(f"Job {job_id} did not reach Completed state within 15 seconds.")
 
 
+def test_job_types_in_status_and_list(port):
+    """The safe detail and list responses retain each job's registered type."""
+    base_url = f"http://127.0.0.1:{port}/api/v1/jobs"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": "Bearer smoke-test-token-hn",
+    }
+    created = {}
+    for job_type in ("ExamGeneration", "CsvImport"):
+        payload = json.dumps({
+            "jobType": job_type,
+            "payloadReference": "smoke-job-type",
+            "scopeKind": "School",
+            "scopeResourceId": "school-hn-01",
+            "idempotencyKey": f"smoke-type-{job_type}-{time.time_ns()}",
+        }).encode("utf-8")
+        request = urllib.request.Request(base_url, data=payload, headers=headers, method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            job_id = json.load(response)["jobId"]
+        created[job_id] = job_type
+        request = urllib.request.Request(f"{base_url}/{job_id}", headers=headers)
+        with urllib.request.urlopen(request, timeout=5) as response:
+            detail = json.load(response)
+        if detail.get("jobType") != job_type:
+            raise RuntimeError(f"Job detail lost type {job_type}: {detail}")
+
+    request = urllib.request.Request(
+        f"{base_url}?scopeKind=School&scopeResourceId=school-hn-01", headers=headers)
+    with urllib.request.urlopen(request, timeout=5) as response:
+        listed = {job["jobId"]: job.get("jobType") for job in json.load(response)}
+    for job_id, job_type in created.items():
+        if listed.get(job_id) != job_type:
+            raise RuntimeError(f"Job list lost type {job_type} for {job_id}")
+    print("Job type response tests passed for ExamGeneration and CsvImport.")
+
+
 def test_invalid_scope_returns_400(port):
     """Verify that whitespace resource ID and invalid scope kind enum return HTTP 400 Bad Request."""
     # 1. Whitespace scopeResourceId using valid credentials
@@ -895,6 +932,7 @@ def main():
         test_cross_scope_kind_listing_returns_403(port)
         test_status_ui_assets_load_without_errors(port)
         test_job_enqueue_and_completion(port)
+        test_job_types_in_status_and_list(port)
 
         worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"
         worker_store.parent.mkdir(parents=True, exist_ok=True)

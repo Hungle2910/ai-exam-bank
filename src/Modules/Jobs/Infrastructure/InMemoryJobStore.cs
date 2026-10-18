@@ -290,6 +290,8 @@ public sealed class InMemoryJobStore : IJobStore
             currentAttempt.FinishedAt = now;
 
             job.Status = JobStatus.Completed;
+            job.ErrorCode = null;
+            job.SafeErrorMessage = null;
             job.ResultId = resultId;
             job.ProgressPercentage = 100;
             job.UpdatedAt = now;

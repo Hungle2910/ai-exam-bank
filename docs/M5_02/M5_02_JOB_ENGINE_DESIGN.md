@@ -140,8 +140,8 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 | Phương thức | Đường dẫn                  | Headers / Tham số                                                                                                                                                                                                               | Phản hồi chuẩn                                                                          | Mã lỗi có thể gặp                                                                                        | Mô tả                                          |
 | ----------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `POST`      | `/api/v1/jobs`             | Header: `Authorization: Bearer <token>` (giải quyết danh tính và scope qua `ResolveAuthenticatedScope`), `X-Correlation-Id` (tùy chọn)<br>Body: `jobType`, `payloadReference`, `scopeKind`, `scopeResourceId`, `idempotencyKey` | **202 Accepted**<br>`{ jobId, status: "Pending", correlationId }`                       | 400 (Validation)<br>401 (Unauthorized)<br>403 (Cross-scope)<br>409 (`IDEMPOTENCY_CONFLICT`)              | Đưa tác vụ vào hàng đợi an toàn                |
-| `GET`       | `/api/v1/jobs/{id}`        | Path: `id`<br>Header: `Authorization: Bearer <token>`                                                                                                                                                                           | **200 OK**<br>`{ jobId, status, progressPercentage, resultId, errorCode, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`)                              | Lấy trạng thái an toàn của tác vụ              |
-| `GET`       | `/api/v1/jobs`             | Query: `scopeKind`, `scopeResourceId`, `status` (tùy chọn)<br>Header: `Authorization: Bearer <token>`                                                                                                                           | **200 OK**<br>`[ { jobId, status, ... } ]`                                              | 400 (`Invalid Scope Kind`)<br>401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)                         | Lọc danh sách tác vụ trong phạm vi đã xác thực |
+| `GET`       | `/api/v1/jobs/{id}`        | Path: `id`<br>Header: `Authorization: Bearer <token>`                                                                                                                                                                           | **200 OK**<br>`{ jobId, jobType, status, progressPercentage, resultId, errorCode, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`)                              | Lấy trạng thái an toàn của tác vụ              |
+| `GET`       | `/api/v1/jobs`             | Query: `scopeKind`, `scopeResourceId`, `status` (tùy chọn)<br>Header: `Authorization: Bearer <token>`                                                                                                                           | **200 OK**<br>`[ { jobId, jobType, status, ... } ]`                                              | 400 (`Invalid Scope Kind`)<br>401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)                         | Lọc danh sách tác vụ trong phạm vi đã xác thực |
 | `POST`      | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `Authorization: Bearer <token>`                                                                                                                                                                           | **200 OK**<br>`{ success, message }`                                                    | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn                     |
 
 ### 5.2. Cấu trúc Lỗi Chuẩn RFC 7807 Problem Details
@@ -151,7 +151,7 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
     "type": "https://tools.ietf.org/html/rfc7807",
     "title": "Access Denied",
     "status": 403,
-    "detail": "Requester from scope 'School:school-1' is not authorized to access the requested job.",
+    "detail": "Requester is not authorized to access this job.",
     "code": "SCOPED_ACCESS_DENIED",
     "traceId": "00-5e324ed4992ba8573ba2e90267f765be-759fc475d2f1e472-00"
 }
@@ -189,9 +189,16 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 
 ### 7.2. Runbook Vận hành (Operator Runbook)
 
+Chạy mỗi khối lệnh trong một terminal riêng, bắt đầu từ thư mục gốc repository. Cả hai host phải dùng cùng đường dẫn tuyệt đối `Jobs__StorePath`.
+
 #### 1. Khởi chạy API Host
 
 ```powershell
+$repoRoot = (Get-Location).Path
+$env:Jobs__StorePath = Join-Path $repoRoot "bin/jobs-store.json"
+$env:Jobs__DisableEmbeddedWorker = "true"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:DOTNET_ENVIRONMENT = "Development"
 cd src/Api
 dotnet bin/Release/net10.0/AiExamBank.Api.dll --urls "http://localhost:5000"
 ```
@@ -201,6 +208,9 @@ Truy cập giao diện UI tại: `http://localhost:5000/jobs/`.
 #### 2. Khởi chạy Worker Host độc lập
 
 ```powershell
+$repoRoot = (Get-Location).Path
+$env:Jobs__StorePath = Join-Path $repoRoot "bin/jobs-store.json"
+$env:DOTNET_ENVIRONMENT = "Development"
 cd src/Worker
 dotnet bin/Release/net10.0/AiExamBank.Worker.dll
 ```

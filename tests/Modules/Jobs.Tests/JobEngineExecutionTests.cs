@@ -154,6 +154,73 @@ public sealed class JobEngineExecutionTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Successful_retry_clears_job_errors_and_preserves_attempt_history(bool useFileStore)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobs-retry-{Guid.NewGuid():N}.json");
+        using var fileStore = useFileStore ? new FileJobStore(tempFile, () => now) : null;
+        IJobStore store = fileStore is not null ? fileStore : new InMemoryJobStore(() => now);
+        try
+        {
+            var service = new JobService(store);
+            var request = JobRequest.Create("SampleJob", "payload", "user-1", SchoolScope, "retry-success", "corr-retry");
+            var job = await service.EnqueueAsync(request);
+            var first = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(first);
+            Assert.IsTrue(await store.FailJobAsync(job.Value, first.LeaseToken, "TIMEOUT", "Please retry.", isTransient: true));
+            var failed = await service.GetJobStatusAsync(job, "user-1", SchoolScope);
+            Assert.AreEqual("TIMEOUT", failed.ErrorCode);
+            Assert.AreEqual("Please retry.", failed.SafeMessage);
+
+            now = now.AddMinutes(1);
+            var retry = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(retry);
+            Assert.IsTrue(await store.CompleteJobAsync(job.Value, retry.LeaseToken, "result-1"));
+
+            // A fresh file-store instance verifies that clearing errors was persisted.
+            using var reopened = useFileStore ? new FileJobStore(tempFile, () => now) : null;
+            var reader = reopened is not null ? new JobService(reopened) : service;
+            var completed = await reader.GetJobStatusAsync(job, "user-1", SchoolScope);
+            Assert.AreEqual(JobStatus.Completed, completed.Status);
+            Assert.AreEqual(100, completed.ProgressPercentage);
+            Assert.AreEqual("result-1", completed.ResultId);
+            Assert.IsNull(completed.ErrorCode);
+            Assert.IsNull(completed.SafeMessage);
+
+            var attempts = reopened is not null
+                ? reopened.GetAttempts(job.Value)
+                : ((InMemoryJobStore)store).GetAttempts(job.Value);
+            Assert.HasCount(2, attempts);
+            Assert.AreEqual(AttemptStatus.Failed, attempts[0].Status);
+            Assert.AreEqual("TIMEOUT", attempts[0].ErrorCode);
+            Assert.AreEqual(AttemptStatus.Completed, attempts[1].Status);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [TestMethod]
+    [DataRow("ExamGeneration")]
+    [DataRow("CsvImport")]
+    public async Task Job_status_and_list_preserve_job_type(string jobType)
+    {
+        var service = new JobService(new InMemoryJobStore());
+        var request = JobRequest.Create(jobType, "payload", "user-1", SchoolScope, "type-test", "corr-type");
+        var job = await service.EnqueueAsync(request);
+
+        var status = await service.GetJobStatusAsync(job, "user-1", SchoolScope);
+        var list = await service.ListJobsAsync(SchoolScope, "user-1", SchoolScope);
+
+        Assert.AreEqual(jobType, status.JobType);
+        Assert.HasCount(1, list);
+        Assert.AreEqual(jobType, list[0].JobType);
+    }
+
+    [TestMethod]
     public async Task Cancellation_marks_pending_job_cancelled_immediately()
     {
         var store = new InMemoryJobStore();

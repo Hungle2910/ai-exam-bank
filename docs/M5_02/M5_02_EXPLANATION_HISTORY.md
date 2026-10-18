@@ -170,9 +170,21 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
 
 ## 4. Hướng Dẫn Vận Hành & Lệnh Thực Thi Nhanh
 
+Trong mỗi terminal PowerShell, bắt đầu từ thư mục gốc repository và đặt cùng đường dẫn tuyệt đối trước khi chạy host hoặc chuyển thư mục:
+
+```powershell
+$repoRoot = (Get-Location).Path
+$env:Jobs__StorePath = Join-Path $repoRoot "bin/jobs-store.json"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:DOTNET_ENVIRONMENT = "Development"
+```
+
+Khi chạy Worker độc lập ở terminal thứ hai, đặt `$env:Jobs__DisableEmbeddedWorker = "true"` trong terminal API trước khi chạy API.
+
 | Mục đích                     | Lệnh thực thi từ thư mục gốc                   | Ghi chú                                          |
 | ---------------------------- | ---------------------------------------------- | ------------------------------------------------ |
-| **Chạy Web API & Dashboard** | `dotnet run --project src/Api` (hoặc bấm `F5`) | Mở trình duyệt vào `http://localhost:5000/jobs/` |
+| **Chạy Web API & Dashboard** | `dotnet run --project src/Api --urls http://localhost:5000` | Mở trình duyệt vào `http://localhost:5000/jobs/` |
+| **Chạy Worker độc lập**     | `dotnet run --project src/Worker`             | Dùng cùng `Jobs__StorePath` như API               |
 | **Tắt Server**               | Bấm `Ctrl + C` trong Terminal                  | Hoặc gõ `Stop-Process -Name dotnet`              |
 | **Chạy toàn bộ 29 Tests**    | `dotnet test AiExamBank.slnx`                  | Kiểm tra tất cả module của cả nhóm               |
 | **Chạy riêng 20 Tests Jobs** | `dotnet test tests/Modules/Jobs.Tests`         | Kiểm tra riêng tính năng Background Jobs         |

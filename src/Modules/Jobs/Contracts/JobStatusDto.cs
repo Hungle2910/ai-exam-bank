@@ -5,6 +5,7 @@ namespace AiExamBank.Modules.Jobs.Contracts;
 /// Tiến độ đo lường bằng null nếu Handler không đo lường được (không sinh tiến độ giả).
 /// </summary>
 /// <param name="Job">Tham chiếu định danh bất biến của tác vụ.</param>
+/// <param name="JobType">Loại tác vụ được lưu trong kho job.</param>
 /// <param name="Status">Trạng thái vòng đời hiện tại của tác vụ.</param>
 /// <param name="ProgressPercentage">Phần trăm tiến độ thực tế (0 - 100%) hoặc null nếu không đo lường được.</param>
 /// <param name="ResultId">Mã định danh kết quả sinh ra nếu tác vụ thành công.</param>
@@ -12,6 +13,7 @@ namespace AiExamBank.Modules.Jobs.Contracts;
 /// <param name="SafeMessage">Thông điệp an toàn cho người dùng (đã loại bỏ thông tin nhạy cảm và PII).</param>
 public sealed record JobStatusDto(
     JobRef Job,
+    string JobType,
     JobStatus Status,
     int? ProgressPercentage,
     string? ResultId,
