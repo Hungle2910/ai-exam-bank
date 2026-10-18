@@ -32,6 +32,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
     private readonly Func<DateTimeOffset> _clock;
     private readonly Mutex _processMutex;
     private DateTime _lastFileWriteTime = DateTime.MinValue;
+    private long _lastFileLength = -1;
 
     private Dictionary<Guid, BackgroundJob> _jobs = new();
     private Dictionary<string, Guid> _idempotencyIndex = new();
@@ -322,10 +323,6 @@ public sealed class FileJobStore : IJobStore, IDisposable
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
                 return false;
 
-            // Hàng rào Fencing: Lease đã quá hạn thì không được gia hạn tiếp
-            if (currentAttempt.LeaseExpiresAt < now)
-                return false;
-
             currentAttempt.HeartbeatAt = now;
             currentAttempt.LeaseExpiresAt = now.Add(leaseDuration);
             job.UpdatedAt = now;
@@ -353,10 +350,6 @@ public sealed class FileJobStore : IJobStore, IDisposable
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
                 return false;
 
-            // Hàng rào Fencing: Lease đã quá hạn thì không được cập nhật tiến độ
-            if (currentAttempt.LeaseExpiresAt < now)
-                return false;
-
             job.ProgressPercentage = Math.Clamp(progressPercentage, 0, 100);
             job.UpdatedAt = now;
 
@@ -381,10 +374,6 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
             var currentAttempt = attempts.LastOrDefault();
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
-                return false;
-
-            // Hàng rào Fencing: Worker đã hết hạn lease thì không được commit kết quả hoàn tất
-            if (currentAttempt.LeaseExpiresAt < now)
                 return false;
 
             currentAttempt.Status = AttemptStatus.Completed;
@@ -416,10 +405,6 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
             var currentAttempt = attempts.LastOrDefault();
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
-                return false;
-
-            // Hàng rào Fencing: Worker đã hết hạn lease thì không được thay đổi trạng thái
-            if (currentAttempt.LeaseExpiresAt < now)
                 return false;
 
             currentAttempt.Status = AttemptStatus.Failed;
@@ -608,6 +593,13 @@ public sealed class FileJobStore : IJobStore, IDisposable
     {
         if (!File.Exists(_filePath)) return;
 
+        var lastWrite = File.GetLastWriteTimeUtc(_filePath);
+        var length = new FileInfo(_filePath).Length;
+        if (lastWrite == _lastFileWriteTime && length == _lastFileLength)
+        {
+            return;
+        }
+
         LoadFromDisk();
     }
 
@@ -671,6 +663,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
                     }).ToList());
 
             _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
+            _lastFileLength = new FileInfo(_filePath).Length;
 
             if (migrated)
             {
@@ -765,6 +758,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, _filePath, overwrite: true);
         _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
+        _lastFileLength = new FileInfo(_filePath).Length;
     }
 
     internal static string ComputeRequestFingerprint(string jobType, string payloadReference, JobScopeKind scopeKind, string scopeResourceId)

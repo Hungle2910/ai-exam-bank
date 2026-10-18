@@ -3,7 +3,7 @@ language: vi-VN
 reviews:
   profile: chill
   request_changes_workflow: true
-  allow_author_approval: true
+  allow_author_approval: false
   fail_commit_status: true
   auto_review:
     enabled: true

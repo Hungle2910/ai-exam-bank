@@ -414,6 +414,33 @@ def test_parent_env_isolation(assembly):
             os.environ.pop("DOTNET_ENVIRONMENT", None)
 
 
+def wait_for_job_completion(worker_proc, status_url, timeout=15):
+    """Wait for a job to reach a terminal status while verifying worker process liveness."""
+    deadline = time.monotonic() + timeout
+    final_status = None
+    while time.monotonic() < deadline:
+        if worker_proc.poll() is not None:
+            raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode} before job completed.")
+        query_req = urllib.request.Request(
+            status_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer dev-teacher-hn-token"
+            }
+        )
+        with urllib.request.urlopen(query_req, timeout=5) as resp:
+            job_data = json.load(resp)
+            final_status = job_data.get("status")
+            if final_status in ("Completed", "Failed"):
+                break
+        time.sleep(0.3)
+
+    if worker_proc.poll() is not None:
+        raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode}.")
+
+    return final_status
+
+
 def test_independent_worker_processes_job(worker_assembly, shared_store_path):
     """Verify that an independent Worker process using the shared Jobs:StorePath processes jobs enqueued by API,
     with API's embedded JobWorkerHostedService explicitly disabled."""
@@ -489,27 +516,7 @@ def test_independent_worker_processes_job(worker_assembly, shared_store_path):
             job_id = data["jobId"]
 
         status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
-        deadline = time.monotonic() + 15
-        final_status = None
-        while time.monotonic() < deadline:
-            if worker_proc.poll() is not None:
-                raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode} before job completed.")
-            query_req = urllib.request.Request(
-                status_url,
-                headers={
-                    "Accept": "application/json",
-                    "Authorization": "Bearer dev-teacher-hn-token"
-                }
-            )
-            with urllib.request.urlopen(query_req, timeout=5) as resp:
-                job_data = json.load(resp)
-                final_status = job_data.get("status")
-                if final_status in ("Completed", "Failed"):
-                    break
-            time.sleep(0.3)
-
-        if worker_proc.poll() is not None:
-            raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode}.")
+        final_status = wait_for_job_completion(worker_proc, status_url, timeout=15)
 
         if final_status != "Completed":
             raise RuntimeError(f"Expected standalone Worker to complete job, but status was: {final_status}")
@@ -629,15 +636,12 @@ def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
             }
         )
 
-        raised_error = False
         try:
-            if worker_proc.poll() is not None:
-                raise RuntimeError(f"Standalone worker process exited prematurely with code {worker_proc.returncode} before job completed.")
-        except RuntimeError:
-            raised_error = True
-
-        if not raised_error:
-            raise RuntimeError("Expected RuntimeError when worker process exited prematurely")
+            wait_for_job_completion(worker_proc, status_url, timeout=5)
+            raise RuntimeError("Expected wait_for_job_completion to raise RuntimeError when worker process exited prematurely")
+        except RuntimeError as err:
+            if "exited prematurely" not in str(err):
+                raise
 
         # Verify job remains Pending and is never marked Completed
         time.sleep(0.5)
@@ -719,11 +723,18 @@ def test_ultra_fast_worker_simulation_regression(shared_store_path):
             data = json.load(resp)
             job_id = data["jobId"]
 
-        # Verify that checking worker liveness raises RuntimeError without race condition
+        # Verify that checking worker liveness raises RuntimeError via wait_for_job_completion
         if simulated_fast_worker.poll() is None:
             raise RuntimeError("Simulated worker should already be terminated")
 
         status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
+        try:
+            wait_for_job_completion(simulated_fast_worker, status_url, timeout=5)
+            raise RuntimeError("Expected wait_for_job_completion to raise RuntimeError when simulated fast worker process exited prematurely")
+        except RuntimeError as err:
+            if "exited prematurely" not in str(err):
+                raise
+
         query_req = urllib.request.Request(
             status_url,
             headers={

@@ -413,7 +413,7 @@ public sealed class JobEngineExecutionTests
     }
 
     [TestMethod]
-    public async Task UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token()
+    public async Task Commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery()
     {
         var currentTime = DateTimeOffset.UtcNow;
         var store = new InMemoryJobStore(() => currentTime);
@@ -424,18 +424,85 @@ public sealed class JobEngineExecutionTests
         var claim = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
         Assert.IsNotNull(claim);
 
-        // Giả lập thời gian trôi qua 3 phút (> 2 phút lease)
+        // Giả lập thời gian trôi qua 3 phút (> 2 phút lease), nhưng RecoverExpiredLeasesAsync CHƯA CHẠY
         currentTime = currentTime.AddMinutes(3);
 
-        // Worker cũ cố cập nhật tiến độ hoặc hoàn thành -> Bị Fencing chặn đứng
+        // Worker commit kết quả hoặc cập nhật tiến độ trước khi recovery chạy vẫn thành công để tránh lãng phí công sức hợp lệ
         var progressUpdated = await store.UpdateProgressAsync(job.Id, claim.LeaseToken, 50);
-        Assert.IsFalse(progressUpdated, "UpdateProgress with expired lease should fail.");
+        Assert.IsTrue(progressUpdated, "UpdateProgress with expired lease before recovery should succeed.");
 
         var heartbeatSucceeded = await store.HeartbeatAsync(job.Id, claim.LeaseToken, TimeSpan.FromMinutes(2));
-        Assert.IsFalse(heartbeatSucceeded, "Heartbeat with expired lease should fail.");
+        Assert.IsTrue(heartbeatSucceeded, "Heartbeat with expired lease before recovery should succeed.");
 
         var completed = await store.CompleteJobAsync(job.Id, claim.LeaseToken, "res-1");
-        Assert.IsFalse(completed, "Complete with expired lease should fail.");
+        Assert.IsTrue(completed, "Complete with expired lease before recovery should succeed.");
+
+        // Tạo job thứ hai để kiểm tra khi Recovery chạy trước
+        var request2 = JobRequest.Create("ExamGen", "s3://ref-2", "teacher-hn", SchoolScope, "idem-lease-2", "corr-lease-2");
+        var job2 = await store.EnqueueAsync(request2, "fp-lease-2");
+        var claim2 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim2);
+
+        // Quá hạn lease và Recovery chạy trước
+        currentTime = currentTime.AddMinutes(3);
+        var recovered = await store.RecoverExpiredLeasesAsync();
+        Assert.AreEqual(1, recovered);
+
+        // Worker cũ cố commit sau khi recovery đã chạy -> Bị Fencing chặn đứng do Attempt đã bị đánh dấu Abandoned
+        var progressAfterRecovery = await store.UpdateProgressAsync(job2.Id, claim2.LeaseToken, 50);
+        Assert.IsFalse(progressAfterRecovery, "UpdateProgress after recovery must fail.");
+
+        var heartbeatAfterRecovery = await store.HeartbeatAsync(job2.Id, claim2.LeaseToken, TimeSpan.FromMinutes(2));
+        Assert.IsFalse(heartbeatAfterRecovery, "Heartbeat after recovery must fail.");
+
+        var completeAfterRecovery = await store.CompleteJobAsync(job2.Id, claim2.LeaseToken, "res-2");
+        Assert.IsFalse(completeAfterRecovery, "Complete after recovery must fail.");
+
+        var failAfterRecovery = await store.FailJobAsync(job2.Id, claim2.LeaseToken, "ERR", "Err", false);
+        Assert.IsFalse(failAfterRecovery, "Fail after recovery must fail.");
+    }
+
+    [TestMethod]
+    public async Task FileJobStore_commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"jobstore_lease_fence_{Guid.NewGuid():N}.json");
+        try
+        {
+            var currentTime = DateTimeOffset.UtcNow;
+            using var store = new FileJobStore(tempFile, () => currentTime);
+
+            var request = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", SchoolScope, "idem-file-lease-1", "corr-file-lease");
+            var job = await store.EnqueueAsync(request, "fp-file-lease");
+
+            var claim = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(claim);
+
+            // Giả lập thời gian trôi qua 3 phút (> 2 phút lease), nhưng RecoverExpiredLeasesAsync chưa chạy
+            currentTime = currentTime.AddMinutes(3);
+
+            var completed = await store.CompleteJobAsync(job.Id, claim.LeaseToken, "res-file-1");
+            Assert.IsTrue(completed, "FileJobStore complete with expired lease before recovery should succeed.");
+
+            // Job thứ hai kiểm tra sau khi recovery chạy
+            var request2 = JobRequest.Create("ExamGen", "s3://ref-2", "teacher-hn", SchoolScope, "idem-file-lease-2", "corr-file-lease-2");
+            var job2 = await store.EnqueueAsync(request2, "fp-file-lease-2");
+            var claim2 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+            Assert.IsNotNull(claim2);
+
+            currentTime = currentTime.AddMinutes(3);
+            var recovered = await store.RecoverExpiredLeasesAsync();
+            Assert.AreEqual(1, recovered);
+
+            var completeAfterRecovery = await store.CompleteJobAsync(job2.Id, claim2.LeaseToken, "res-file-2");
+            Assert.IsFalse(completeAfterRecovery, "FileJobStore complete after recovery must fail.");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
     }
 
     [TestMethod]

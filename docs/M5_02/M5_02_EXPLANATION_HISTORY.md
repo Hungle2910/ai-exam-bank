@@ -146,7 +146,8 @@ Tài liệu giúp Gia Bảo giải thích gãy gọn, tự tin và chuẩn xác 
   - `Worker_service_executes_sample_handler_to_completion`: PASS
   - `Cross_school_read_is_denied_with_unauthorized_access_exception`: PASS
   - `Missing_scope_id_on_read_or_cancel_or_list_throws_unauthorized_access_exception`: PASS
-  - `UpdateProgress_or_complete_with_expired_lease_fails_even_with_valid_token`: PASS
+  - `Commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery`: PASS
+  - `FileJobStore_commit_with_expired_lease_succeeds_before_recovery_and_fences_after_recovery`: PASS
   - `FileJobStore_preserves_queued_jobs_across_restart_and_instances`: PASS
   - `Exam_generation_and_csv_import_handlers_are_registered_and_executable`: PASS
   - `JobRegistry_registers_and_retrieves_handlers`: PASS

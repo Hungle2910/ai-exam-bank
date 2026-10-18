@@ -234,10 +234,6 @@ public sealed class InMemoryJobStore : IJobStore
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
                 return Task.FromResult(false);
 
-            // Hàng rào Fencing: Lease đã quá hạn thì không được gia hạn tiếp
-            if (currentAttempt.LeaseExpiresAt < now)
-                return Task.FromResult(false);
-
             // Gia hạn Lease
             currentAttempt.HeartbeatAt = now;
             currentAttempt.LeaseExpiresAt = now.Add(leaseDuration);
@@ -265,10 +261,6 @@ public sealed class InMemoryJobStore : IJobStore
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
                 return Task.FromResult(false);
 
-            // Hàng rào Fencing: Lease đã quá hạn thì không được cập nhật tiến độ
-            if (currentAttempt.LeaseExpiresAt < now)
-                return Task.FromResult(false);
-
             job.ProgressPercentage = Math.Clamp(progressPercentage, 0, 100);
             job.UpdatedAt = now;
 
@@ -292,10 +284,6 @@ public sealed class InMemoryJobStore : IJobStore
 
             var currentAttempt = attempts.LastOrDefault();
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
-                return Task.FromResult(false);
-
-            // Hàng rào Fencing: Worker đã hết hạn lease thì không được commit kết quả hoàn tất
-            if (currentAttempt.LeaseExpiresAt < now)
                 return Task.FromResult(false);
 
             currentAttempt.Status = AttemptStatus.Completed;
@@ -326,10 +314,6 @@ public sealed class InMemoryJobStore : IJobStore
 
             var currentAttempt = attempts.LastOrDefault();
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
-                return Task.FromResult(false);
-
-            // Hàng rào Fencing: Worker đã hết hạn lease thì không được thay đổi trạng thái
-            if (currentAttempt.LeaseExpiresAt < now)
                 return Task.FromResult(false);
 
             currentAttempt.Status = AttemptStatus.Failed;

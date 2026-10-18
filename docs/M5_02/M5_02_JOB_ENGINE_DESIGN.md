@@ -131,7 +131,7 @@ Hệ thống tuân thủ nghiêm ngặt chuẩn **RFC 7807 Problem Details** cho
 | `POST` | `/api/v1/jobs` | Header: `Authorization: Bearer <token>` (giải quyết danh tính và scope qua `ResolveAuthenticatedScope`), `X-Correlation-Id` (tùy chọn)<br>Body: `jobType`, `payloadReference`, `scopeKind`, `scopeResourceId`, `idempotencyKey` | **202 Accepted**<br>`{ jobId, status: "Pending", correlationId }` | 400 (Validation)<br>401 (Unauthorized)<br>403 (Cross-scope)<br>409 (`IDEMPOTENCY_CONFLICT`) | Đưa tác vụ vào hàng đợi an toàn |
 | `GET` | `/api/v1/jobs/{id}` | Path: `id`<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`{ jobId, status, progressPercentage, resultId, errorCode, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (`Job Not Found`) | Lấy trạng thái an toàn của tác vụ |
 | `GET` | `/api/v1/jobs` | Query: `scopeKind`, `scopeResourceId`, `status` (tùy chọn)<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`[ { jobId, status, ... } ]` | 400 (`Invalid Scope Kind`)<br>401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`) | Lọc danh sách tác vụ trong phạm vi đã xác thực |
-| `POST` | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`{ jobId, status, safeMessage }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn |
+| `POST` | `/api/v1/jobs/{id}/cancel` | Path: `id`<br>Header: `Authorization: Bearer <token>` | **200 OK**<br>`{ success, message }` | 401 (Unauthorized)<br>403 (`SCOPED_ACCESS_DENIED`)<br>404 (Not Found)<br>409 (`JOB_CANNOT_BE_CANCELLED`) | Yêu cầu hủy tác vụ an toàn |
 
 ### 5.2. Cấu trúc Lỗi Chuẩn RFC 7807 Problem Details
 ```json
