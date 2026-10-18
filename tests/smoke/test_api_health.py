@@ -638,10 +638,11 @@ def test_premature_worker_exit_regression(worker_assembly, shared_store_path):
 
         try:
             wait_for_job_completion(worker_proc, status_url, timeout=5)
-            raise RuntimeError("Expected wait_for_job_completion to raise RuntimeError when worker process exited prematurely")
         except RuntimeError as err:
             if "exited prematurely" not in str(err):
                 raise
+        else:
+            raise AssertionError("wait_for_job_completion should have raised RuntimeError due to premature worker exit, but returned normally.")
 
         # Verify job remains Pending and is never marked Completed
         time.sleep(0.5)
@@ -730,10 +731,11 @@ def test_ultra_fast_worker_simulation_regression(shared_store_path):
         status_url = f"http://127.0.0.1:{api_port}/api/v1/jobs/{job_id}"
         try:
             wait_for_job_completion(simulated_fast_worker, status_url, timeout=5)
-            raise RuntimeError("Expected wait_for_job_completion to raise RuntimeError when simulated fast worker process exited prematurely")
         except RuntimeError as err:
             if "exited prematurely" not in str(err):
                 raise
+        else:
+            raise AssertionError("wait_for_job_completion should have raised RuntimeError due to simulated fast worker premature exit, but returned normally.")
 
         query_req = urllib.request.Request(
             status_url,
@@ -750,6 +752,34 @@ def test_ultra_fast_worker_simulation_regression(shared_store_path):
         print("Ultra-fast worker simulation regression test passed: Race condition avoided; dead worker correctly detected and job remains Pending.")
     finally:
         stop_api(api_proc, api_port)
+
+
+def test_wait_for_job_completion_assertion_when_normal_return():
+    """Verify that if wait_for_job_completion returns normally instead of raising,
+    the regression test assertion fails loudly with AssertionError and is not swallowed."""
+    def dummy_wait_normal(proc, url, timeout=5):
+        return "Completed"
+
+    # Verify that the try...except...else pattern triggers AssertionError when wait_for_job_completion returns normally
+    assertion_triggered = False
+    try:
+        try:
+            dummy_wait_normal(None, "http://127.0.0.1:0/api/v1/jobs/dummy", timeout=5)
+        except RuntimeError as err:
+            if "exited prematurely" not in str(err):
+                raise
+        else:
+            raise AssertionError("wait_for_job_completion should have raised RuntimeError due to premature worker exit, but returned normally.")
+    except AssertionError as err:
+        if "returned normally" in str(err):
+            assertion_triggered = True
+        else:
+            raise
+
+    if not assertion_triggered:
+        raise RuntimeError("wait_for_job_completion normal return assertion test failed: did not raise AssertionError")
+
+    print("wait_for_job_completion normal return assertion test passed: correctly raised AssertionError when helper returned normally.")
 
 
 def main():
@@ -848,6 +878,7 @@ def main():
             fast_store.unlink()
 
         test_ultra_fast_worker_simulation_regression(str(fast_store.resolve()))
+        test_wait_for_job_completion_assertion_when_normal_return()
         test_dev_tokens_rejected_in_production(ASSEMBLY)
         test_parent_env_isolation(ASSEMBLY)
         return 0
