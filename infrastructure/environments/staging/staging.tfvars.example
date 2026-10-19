@@ -1,0 +1,11 @@
+# Examples only. These identifiers do not identify an existing deployment.
+account_id        = "000000000000"
+availability_zone = "ap-southeast-1a"
+ubuntu_ami_id     = "ami-00000000000000000"
+instance_profiles = {
+  entry = "aieb-staging-entry-profile"
+  app   = "aieb-staging-app-profile"
+  db    = "aieb-staging-db-profile"
+}
+public_domain         = null
+deployment_authorized = false

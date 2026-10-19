@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Exam Bank API
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/aieb/api/current/AiExamBank.Api.dll
+
+[Service]
+Type=simple
+User=aieb
+Group=aieb
+WorkingDirectory=/opt/aieb/api/current
+ExecStart=/usr/bin/dotnet /opt/aieb/api/current/AiExamBank.Api.dll
+Environment=ASPNETCORE_ENVIRONMENT=Staging
+Environment=ASPNETCORE_URLS=http://0.0.0.0:8080
+Environment=M2__EnableLocalPreview=false
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

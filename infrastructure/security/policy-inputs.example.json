@@ -1,0 +1,14 @@
+{
+  "account_id": "000000000000",
+  "deployment_principal_arn": "arn:aws:iam::000000000000:role/ExampleTemporaryOperator",
+  "key_admin_arn": "arn:aws:iam::000000000000:role/ExampleKeyAdministrator",
+  "app_custodian_arn": "arn:aws:iam::000000000000:role/ExampleAppSecretCustodian",
+  "db_custodian_arn": "arn:aws:iam::000000000000:role/ExampleDbSecretCustodian",
+  "operator_session_prefix": "EXAMPLE_OPERATOR_SESSION_PREFIX",
+  "dba_session_prefix": "EXAMPLE_DBA_SESSION_PREFIX",
+  "entry_instance_id": "i-00000000000000001",
+  "app_instance_id": "i-00000000000000002",
+  "db_instance_id": "i-00000000000000003",
+  "app_kms_key_id": "00000000-0000-0000-0000-000000000001",
+  "db_kms_key_id": "00000000-0000-0000-0000-000000000002"
+}

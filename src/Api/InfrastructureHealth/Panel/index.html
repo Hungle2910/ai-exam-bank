@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Infrastructure Health | AI Exam Bank</title>
+  <link rel="stylesheet" href="/infrastructure-panel.css">
+  <script src="/infrastructure-panel.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">AI EXAM BANK / OPERATIONS</p>
+    <h1>Infrastructure health</h1>
+    <p class="intro">Deployment information and component checks for the shared staging environment.</p>
+    <aside id="preview" hidden>Local preview only. No AWS connection or database check has been performed.</aside>
+    <section class="summary" aria-label="Environment summary">
+      <div><span>Environment</span><strong id="environment">--</strong></div>
+      <div><span>Overall status</span><strong id="overall">Not loaded</strong></div>
+      <div><span>Last verified</span><strong id="checked-at">--</strong></div>
+    </section>
+    <div class="toolbar"><h2>Components</h2><button id="refresh" type="button">Refresh</button></div>
+    <p id="message" role="status" aria-live="polite">Loading health information...</p>
+    <section id="components" class="components" aria-label="Component status"></section>
+    <section class="deployment"><h2>Latest deployment</h2><p id="deployment">No deployment information is loaded.</p></section>
+    <p class="footnote">UNKNOWN means no verified result is available. Process liveness alone does not prove infrastructure readiness.</p>
+  </main>
+</body>
+</html>
