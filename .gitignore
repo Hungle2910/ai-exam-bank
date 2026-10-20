@@ -10,7 +10,7 @@
 credentials
 appsettings.Local.json
 appsettings.*.Local.json
-src/Api/appsettings.json
+Backend/Api/appsettings.json
 # Generated artifacts / tool caches
 bin/
 obj/
