@@ -9,3 +9,22 @@ Planned behavior tests cover domain constraints/approved-only selection, immutab
 `tests/auth-expiry-smoke.ps1` kiểm tra cookie hết hạn thật: chạy API thử nghiệm với `Auth__SessionLifetimeSeconds=2`, rồi chạy script với cùng biến mật khẩu và `-WaitSeconds 4`. Script đòi `/auth/me` trả `200` ngay sau login và `401` sau khi hết hạn. Chỉ dùng thời hạn 2 giây ở môi trường thử nghiệm; mặc định ứng dụng là 30 phút. Bài test này cần chạy riêng vì nó thay đổi cấu hình thời hạn phiên của API đang chạy.
 
 M3-02 đã được thử thủ công trên một database riêng cho các trường hợp tạo trường/bộ môn/tài khoản, phân quyền cùng trường, cấm truy cập khác trường, cấm nâng quyền, thu hồi role có hiệu lực trong phiên cũ, và audit. `ResourceAccessPolicyTests` kiểm tra quyền Question/Blueprint/Job theo chủ sở hữu và trường/bộ môn, gồm self-review và thiếu role. Các API Question/Blueprint/Jobs chưa có trong repository nên chưa thể kiểm thử quyền trên tài nguyên thật; các module sở hữu API cần gọi `ResourceAuthorizationService` sau khi tải scope từ bản ghi thật, rồi bổ sung direct-API IDOR tests.
+
+## Jobs dashboard browser regressions
+
+Start the API in Development with an absolute `Jobs__StorePath` as described in the
+[M5-02 runbook](../docs/M5_02/M5_02_JOB_ENGINE_DESIGN.md). The browser tests intercept
+job requests with synthetic responses; real HTTP response contracts are covered by
+`python tests/smoke/test_api_health.py`.
+
+Install the test browser dependency outside the checkout and run from the repository root:
+
+```bash
+npm install --prefix /tmp/ai-exam-bank-ui-tests --no-save --package-lock=false playwright@1.55.0
+NODE_PATH=/tmp/ai-exam-bank-ui-tests/node_modules /tmp/ai-exam-bank-ui-tests/node_modules/.bin/playwright install chromium
+NODE_PATH=/tmp/ai-exam-bank-ui-tests/node_modules JOBS_UI_BASE_URL=http://localhost:5000 node --test Backend/tests/smoke/jobs_ui.test.cjs
+```
+
+When using an existing Chromium session, set `PLAYWRIGHT_CDP_URL` to its CDP endpoint.
+The tests cover job type badges/search, an initially hidden page with no polling,
+and creation/submission at short, narrow and full-height viewports.

@@ -31,6 +31,10 @@ Thumbs.db
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+backend.local.hcl
 *.tfvars
 !*.tfvars.example
 *.tfvars.json

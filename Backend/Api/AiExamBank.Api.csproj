@@ -3,6 +3,9 @@
     <UserSecretsId>64d9977f-932f-4cbc-867c-71b822835105</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="InfrastructureHealth\Panel\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Modules\Identity\AiExamBank.Modules.Identity.csproj" />
     <ProjectReference Include="..\Modules\Questions\AiExamBank.Modules.Questions.csproj" />
     <ProjectReference Include="..\Modules\Review\AiExamBank.Modules.Review.csproj" />

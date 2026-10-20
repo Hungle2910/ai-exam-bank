@@ -5,6 +5,14 @@ using AiExamBank.Api;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
+using AiExamBank.Api.Authentication;
+using AiExamBank.Api.Endpoints;
+using AiExamBank.Api.HostedServices;
+using AiExamBank.Api.InfrastructureHealth;
+using AiExamBank.Modules.Jobs.Contracts;
+using AiExamBank.Modules.Jobs.Domain;
+using AiExamBank.Modules.Jobs.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 
 var bootstrapMinistryAdmin = args.Length == 1 && args[0] == "--bootstrap-ministry-admin";
 if (bootstrapMinistryAdmin &&
@@ -25,9 +33,13 @@ if (sessionLifetimeSeconds is < 1 or > 86400)
 builder.Services.AddDbContext<AiExamBankDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<ResourceAuthorizationService>();
+builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
     .AddIdentityCookies();
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, JobEngineAuthenticationHandler>(
+        JobEngineAuthenticationHandler.SchemeName, _ => { });
 
 builder.Services.AddIdentityCore<AppUser>() //đăng ký quản lý người dùng Identity với database
     .AddSignInManager() //sẽ dùng để xử lý đăng nhập và đăng xuất
@@ -79,6 +91,24 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddProblemDetails();
+var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
+builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
+builder.Services.AddSingleton<JobRegistry>();
+builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
+builder.Services.AddSingleton<IJobHandler, ExamGenerationJobHandler>();
+builder.Services.AddSingleton<IJobHandler, CsvImportJobHandler>();
+builder.Services.AddSingleton<IJobRegistry>(sp =>
+{
+    var registry = sp.GetRequiredService<JobRegistry>();
+    foreach (var handler in sp.GetServices<IJobHandler>())
+        registry.Register(handler);
+    return registry;
+});
+builder.Services.AddSingleton<JobService>();
+builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
+builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
+if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))
+    builder.Services.AddHostedService<JobWorkerHostedService>();
 
 var app = builder.Build();
 
@@ -97,9 +127,13 @@ app.UseRateLimiter();
 app.UseAuthentication();//API đọc cookie đăng nhập
 app.UseAuthorization();//chặn API khi người dùng không có quyền
 app.UseAntiforgery();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 // A liveness probe only: it must not imply database, worker or AWS readiness.
 app.MapGet("/health/live", () => Results.Ok(new { status = "alive" }));
+app.MapInfrastructureHealth();
+app.MapJobEndpoints();
 
 if (app.Environment.IsDevelopment())
 {

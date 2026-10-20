@@ -28,6 +28,9 @@
   <Folder Name="/Backend/Persistence/">
     <Project Path="Persistence/AiExamBank.Persistence/AiExamBank.Persistence.csproj" Id="566313b4-9386-42c9-8c9f-968f6ff6fde0" />
   </Folder>
+  <Folder Name="/Backend/Worker/">
+    <Project Path="Worker/AiExamBank.Worker.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Architecture.Tests/">
     <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
