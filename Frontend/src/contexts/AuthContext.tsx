@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 
 /* ============================================================
    TYPES
@@ -24,9 +24,11 @@ export interface AuthContextType {
   user: AuthUser | null;
   csrfToken: string | null;
   loading: boolean;
+  sessionExpired: boolean;
   login: (userName: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
+  apiFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   primaryRole: AppRole | null;
 }
 
@@ -50,10 +52,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const authenticated = useRef(false);
 
   const fetchCsrf = useCallback(async () => {
     try {
-      const res = await fetch('/auth/csrf', { credentials: 'include' });
+      const res = await fetch('/auth/csrf', { credentials: 'include', cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setCsrfToken(data.token);
@@ -67,16 +71,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(async () => {
     try {
-      const res = await fetch('/auth/me', { credentials: 'include' });
+      const res = await fetch('/auth/me', { credentials: 'include', cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
+        authenticated.current = true;
         setUser(data);
-      } else {
+      } else if (res.status === 401) {
+        if (authenticated.current) setSessionExpired(true);
+        authenticated.current = false;
         setUser(null);
       }
     } catch {
+      // Keep the current screen during a temporary connection failure.
+    }
+  }, []);
+
+  const apiFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await fetch(input, { credentials: 'include', cache: 'no-store', ...init });
+    if (res.status === 401 && authenticated.current) {
+      authenticated.current = false;
+      setSessionExpired(true);
       setUser(null);
     }
+    return res;
   }, []);
 
   const refetch = useCallback(async () => {
@@ -90,6 +107,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     init();
   }, [fetchMe, fetchCsrf]);
+
+  useEffect(() => {
+    const checkOnReturn = () => {
+      if (authenticated.current && document.visibilityState === 'visible') void fetchMe();
+    };
+    window.addEventListener('focus', checkOnReturn);
+    document.addEventListener('visibilitychange', checkOnReturn);
+    return () => {
+      window.removeEventListener('focus', checkOnReturn);
+      document.removeEventListener('visibilitychange', checkOnReturn);
+    };
+  }, [fetchMe]);
 
   const login = useCallback(async (userName: string, password: string) => {
     const token = csrfToken ?? await fetchCsrf();
@@ -111,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     await fetchMe();
     await fetchCsrf(); // rotate token
+    setSessionExpired(false);
   }, [csrfToken, fetchCsrf, fetchMe]);
 
   const logout = useCallback(async () => {
@@ -122,7 +152,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { 'X-CSRF-TOKEN': csrfToken },
       });
     } finally {
+      authenticated.current = false;
       setUser(null);
+      setSessionExpired(false);
       await fetchCsrf();
     }
   }, [csrfToken, fetchCsrf]);
@@ -134,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
-    <AuthContext.Provider value={{ user, csrfToken, loading, login, logout, refetch, primaryRole }}>
+    <AuthContext.Provider value={{ user, csrfToken, loading, sessionExpired, login, logout, refetch, apiFetch, primaryRole }}>
       {children}
     </AuthContext.Provider>
   );
