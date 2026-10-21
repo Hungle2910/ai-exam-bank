@@ -1,5 +1,0 @@
-# Application implementation boundary
-
-The .NET 10 API host lives in `Api/`. From the repository root, run `dotnet run --project src/Api/AiExamBank.Api.csproj`; `GET /health/live` returns a liveness response. JSON clients receive RFC Problem Details for unknown routes and unhandled failures, including a trace ID. `Directory.Build.props` applies shared compiler settings to every .NET project. Liveness proves only that the process is running. It does not prove database, worker, AWS or business readiness.
-
-The seven module projects under `Modules/<Module>/` currently expose small contracts/value objects only. New business code belongs with its owner; follow [Modules/README.md](Modules/README.md). `Persistence/` and `Worker/` explain their pending decisions; neither is a deployable project yet. Add them with the first stored workflow/job handler and tests. See [Visual Studio setup](../docs/VISUAL_STUDIO_SETUP.md), [solution design](../docs/DOTNET_SOLUTION_DESIGN.md) and [architecture](../docs/ARCHITECTURE.md).

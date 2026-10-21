@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Modules\Identity\AiExamBank.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\Modules\Questions\AiExamBank.Modules.Questions.csproj" />
+    <ProjectReference Include="..\..\Modules\Review\AiExamBank.Modules.Review.csproj" />
+    <ProjectReference Include="..\..\Modules\Exams\AiExamBank.Modules.Exams.csproj" />
+    <ProjectReference Include="..\..\Modules\Import\AiExamBank.Modules.Import.csproj" />
+    <ProjectReference Include="..\..\Modules\Knowledge\AiExamBank.Modules.Knowledge.csproj" />
+    <ProjectReference Include="..\..\Modules\Jobs\AiExamBank.Modules.Jobs.csproj" />
+  </ItemGroup>
+
+</Project>

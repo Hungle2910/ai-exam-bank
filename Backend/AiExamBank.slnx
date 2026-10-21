@@ -1,0 +1,51 @@
+<Solution>
+  <Folder Name="/Backend/" />
+  <Folder Name="/Backend/Api/">
+    <Project Path="Api/AiExamBank.Api.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/" />
+  <Folder Name="/Backend/Modules/Exams/">
+    <Project Path="Modules/Exams/AiExamBank.Modules.Exams.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Identity/">
+    <Project Path="Modules/Identity/AiExamBank.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Import/">
+    <Project Path="Modules/Import/AiExamBank.Modules.Import.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Jobs/">
+    <Project Path="Modules/Jobs/AiExamBank.Modules.Jobs.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Knowledge/">
+    <Project Path="Modules/Knowledge/AiExamBank.Modules.Knowledge.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Questions/">
+    <Project Path="Modules/Questions/AiExamBank.Modules.Questions.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Modules/Review/">
+    <Project Path="Modules/Review/AiExamBank.Modules.Review.csproj" />
+  </Folder>
+  <Folder Name="/Backend/Persistence/">
+    <Project Path="Persistence/AiExamBank.Persistence/AiExamBank.Persistence.csproj" Id="566313b4-9386-42c9-8c9f-968f6ff6fde0" />
+  </Folder>
+  <Folder Name="/Backend/Worker/">
+    <Project Path="Worker/AiExamBank.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Architecture.Tests/">
+    <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/" />
+  <Folder Name="/tests/Modules/Exams.Tests/">
+    <Project Path="tests/Modules/Exams.Tests/AiExamBank.Modules.Exams.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/Identity.Tests/">
+    <Project Path="tests/Modules/AiExamBank.Modules.Identity.Tests/AiExamBank.Modules.Identity.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/Jobs.Tests/">
+    <Project Path="tests/Modules/Jobs.Tests/AiExamBank.Modules.Jobs.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/Questions.Tests/">
+    <Project Path="tests/Modules/Questions.Tests/AiExamBank.Modules.Questions.Tests.csproj" />
+  </Folder>
+</Solution>
