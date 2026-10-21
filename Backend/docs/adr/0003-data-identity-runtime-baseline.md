@@ -4,17 +4,17 @@
 
 ## Status
 
-Proposed for M1–M5 review. No DB engine, identity provider or frontend framework has been implemented or accepted by this document.
+Proposed for M1–M5 review. This document has not been accepted. Since the original proposal, the team selected SQL Server and M3 implemented EF Core SQL Server persistence and ASP.NET Core Identity cookie authentication; see [M3-02 schema handoff](../M3-02_identity_schema_handoff.md) and [ADR 0005](0005-identity-session-and-authorization.md). M1 must reconcile the baseline below with the implementation before acceptance.
 
 ## Context
 
-The MVP includes multiple schools and Ministry-level exams, as accepted in [ADR 0004](0004-multi-school-ministry-mvp.md). Five contributors have an initial ten-week plan whose estimates require revision. Approval and audit, question revision state, import commit and exam finalization need consistent relational writes. The current repository has one .NET API host and no database, identity, Web or Worker implementation. Region, demo budget, hosting and final frontend framework remain open. This ADR proposes technology defaults so the first vertical slices can be built without incompatible storage or authentication.
+The MVP includes multiple schools and Ministry-level exams, as accepted in [ADR 0004](0004-multi-school-ministry-mvp.md). Five contributors have an initial ten-week plan whose estimates require revision. Approval and audit, question revision state, import commit and exam finalization need consistent relational writes. This ADR originally proposed technology defaults before implementation; its baseline now needs review against the SQL Server/Identity code and Web/Worker work that followed. Region, demo budget and hosting remain separate decisions.
 
 ## Options considered and trade-offs
 
 | Concern | Proposed default | Alternative | Accepted cost / revisit trigger |
 |---|---|---|---|
-| Relational persistence | PostgreSQL with EF Core, one DbContext and migration stream | SQL Server or separate stores per module | Shared migration coordination; revisit if actual hosting, team expertise or transaction tests favor another engine |
+| Relational persistence | PostgreSQL with EF Core, one DbContext and migration stream (original proposal; superseded in code by SQL Server, pending M1 ADR update) | SQL Server or separate stores per module | Shared migration coordination; M1 must record the team's SQL Server choice and migration ownership before accepting this ADR |
 | User authentication | ASP.NET Core Identity, secure same-origin server session cookie | External OIDC/Cognito or self-managed bearer tokens | Requires CSRF protection and session lifecycle; compare federation/provisioning needs for multiple schools before accepting |
 | Frontend | One TypeScript Web app served through the same HTTPS origin as API; React proposed | Server-rendered UI or another team-approved framework | Frontend build pipeline and contract tests; framework is not accepted until M1/M3 review |
 | Background execution | DB-backed Job/Attempt + separate .NET Worker host | Inline HTTP tasks or a managed queue | Must implement leases, retries and monitoring; move to a managed queue only if throughput/operations evidence justifies it |
