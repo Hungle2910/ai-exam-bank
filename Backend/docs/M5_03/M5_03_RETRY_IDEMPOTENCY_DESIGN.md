@@ -4,7 +4,7 @@
 **Scope:** MUST · **Priority:** P0 · **Week:** W03  
 **Status:** Implemented & Verified in `feat/M5-03-retry-idempotency`  
 **Engine Version:** `v1.1.0-rc1`  
-**Related Documents:** [M5_02_JOB_ENGINE_DESIGN.md](../M5_02/M5_02_JOB_ENGINE_DESIGN.md), [M5_01_RELIABILITY_DESIGN.md](../M5_01/M5_01_RELIABILITY_DESIGN.md), [DOTNET_SOLUTION_DESIGN.md](../DOTNET_SOLUTION_DESIGN.md).
+**Related Documents:** [M5_02_JOB_ENGINE_DESIGN.md](../M5_02/M5_02_JOB_ENGINE_DESIGN.md), [M5_01_RELIABILITY_DESIGN.md](../M5_01/M5_01_RELIABILITY_DESIGN.md), [DOTNET_SOLUTION_DESIGN.md](../DOTNET_SOLUTION_DESIGN.md), [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md).
 
 ---
 
