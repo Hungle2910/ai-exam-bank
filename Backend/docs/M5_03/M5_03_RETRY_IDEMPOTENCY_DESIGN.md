@@ -164,6 +164,99 @@ Trả về ResultId thành công (Tránh tạo 2 đề thi trùng lặp)
 ]
 ```
 
+### 6.3 Đặc tả OpenAPI 3.0 (OpenAPI Contract Snippet)
+
+```yaml
+openapi: 3.0.3
+info:
+  title: AI Exam Bank Background Jobs API
+  version: 1.1.0-rc1
+paths:
+  /api/v1/jobs/{id}/retry:
+    post:
+      summary: Retry a failed or cancelled background job within authorized scope
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Scope-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            example: school-hn-01
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  example: Manual retry after transient outage
+      responses:
+        '200':
+          description: Job successfully reset to Pending for execution
+        '400':
+          description: Job already completed; manual retry not permitted
+        '403':
+          description: Cross-scope retry attempt rejected
+        '404':
+          description: Job ID not found
+        '409':
+          description: Job is currently active (Running or Pending)
+
+  /api/v1/jobs/{id}/attempts:
+    get:
+      summary: Retrieve chronological execution attempts history for a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Scope-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of execution attempts
+        '403':
+          description: Forbidden; caller does not own the job scope
+        '404':
+          description: Job ID not found
+```
+
+---
+
+### 6.4 Sổ tay Vận hành Xử lý Sự cố (Operator Runbook)
+
+| Tình huống Sự cố | Triệu chứng & Mã lỗi | Nguyên nhân gốc rễ (RCA) | Hành động Khắc phục (Resolution Steps) |
+|---|---|---|---|
+| **Cạn ngân sách Retry tự động** | Status `Failed`, ErrorCode `RETRY_BUDGET_EXHAUSTED` | Lỗi mạng hoặc Bedrock timeout liên tục qua 3 lượt chạy tự động (30s, 60s, 120s). | 1. Kiểm tra CloudWatch Logs tìm W3C `CorrelationId` của Job.<br>2. Kiểm tra AWS Bedrock Service Quotas & Throttling.<br>3. Khi hạ tầng ổn định, vào Status UI (`/jobs/`) bấm **[🔄 Thử lại]** hoặc gọi `POST /api/v1/jobs/{id}/retry`. |
+| **Lỗi Dữ liệu Nghiệp vụ (Permanent)** | Status `Failed`, ErrorCode `ROW_VALIDATION_ERROR` hoặc `INVALID_CSV_SCHEMA` | File CSV nguồn sai cấu trúc, thiếu cột bắt buộc, hoặc điểm câu hỏi không hợp lệ. | 1. Không thử lại tự động (hệ thống cố tình dừng ngay để tránh lãng phí compute).<br>2. Xem SafeErrorMessage đã redact trên UI để biết dòng bị lỗi.<br>3. Giáo viên cập nhật lại file CSV chuẩn rồi kích hoạt thử lại. |
+| **Worker Crash & Treo Lease** | Status `Running` quá thời gian `LeaseExpiresAt` (>2 phút) | Tiến trình Worker EC2 bị OOM, shutdown đột ngột hoặc mất kết nối mạng. | 1. Hệ thống tự động kích hoạt lease recovery: chuyển attempt cũ sang `Abandoned`, đưa job về `Pending` kèm cooldown 1 phút.<br>2. Một worker khác còn sống sẽ tự động claim lại job ở attempt kế tiếp. |
+
+---
+
+### 6.5 Quản lý Phiên bản & Bảo vệ Dữ liệu Nhạy cảm (Redacted Evidence & Release Versioning)
+
+- **Release Version:** `v1.1.0-rc1` (Week W03 Milestone)
+- **Engine Source Module:** `Backend/Modules/Jobs/` (.NET 10 Modular Monolith)
+- **Job Protocol Version:** `v1` (Base URL: `/api/v1/jobs`)
+- **Chính sách Lọc Dữ liệu (PII & Secret Redaction Policy):**
+  - Mọi trường `SafeErrorMessage` hiển thị trên UI và trả về qua API tuyệt đối **không chứa**:
+    1. Thông tin định danh cá nhân (PII: họ tên, email, CCCD học sinh/giáo viên).
+    2. Đề thi thô, câu hỏi gốc hoặc đáp án bài kiểm tra (chỉ dùng `ResultId` hoặc `PayloadReference` S3 URI có phân quyền).
+    3. AWS Secret Access Keys, Session Tokens, hoặc Internal Stack Trace từ runtime .NET.
+
 ---
 
 ## 7. Bằng chứng Kiểm thử & Xác thực (Validation Evidence Matrix)
