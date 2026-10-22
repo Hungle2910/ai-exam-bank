@@ -97,6 +97,21 @@ public sealed class BackgroundJob
     public string? SafeErrorMessage { get; set; }
 
     /// <summary>
+    /// Lý do thử lại tác vụ gần nhất (do hệ thống tự động hoặc Admin/User chỉ định).
+    /// </summary>
+    public string? RetryReason { get; set; }
+
+    /// <summary>
+    /// Người dùng yêu cầu thử lại thủ công (nếu có).
+    /// </summary>
+    public string? LastRetryRequestedBy { get; set; }
+
+    /// <summary>
+    /// Thời điểm yêu cầu thử lại thủ công gần nhất (UTC).
+    /// </summary>
+    public DateTimeOffset? LastRetryRequestedAt { get; set; }
+
+    /// <summary>
     /// Thời điểm tạo bản ghi (UTC).
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

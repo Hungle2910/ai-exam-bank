@@ -24,6 +24,29 @@ public sealed record CreateJobApiRequest(
     string IdempotencyKey);
 
 /// <summary>
+/// DTO tiếp nhận yêu cầu thử lại (Retry) tác vụ ngầm.
+/// </summary>
+/// <param name="Reason">Lý do thử lại (tùy chọn).</param>
+public sealed record RetryJobApiRequest(string? Reason = null);
+
+/// <summary>
+/// DTO phản hồi chi tiết lượt chạy (Attempt) của tác vụ cho Status UI.
+/// </summary>
+public sealed record JobAttemptApiResponse(
+    Guid Id,
+    Guid JobId,
+    int AttemptNumber,
+    string Status,
+    string WorkerId,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    long? ExecutionDurationMs,
+    string? ErrorCode,
+    string? SafeErrorMessage,
+    string? RetryReason,
+    bool IsManualRetry);
+
+/// <summary>
 /// DTO phản hồi trạng thái an toàn của tác vụ ngầm cho Client và Status UI.
 /// </summary>
 /// <param name="JobId">Mã định danh duy nhất của tác vụ.</param>
@@ -434,7 +457,161 @@ public static class JobEndpoints
             }
         });
 
-        // 5. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
+        // 5. POST /api/v1/jobs/{id}/retry - Yêu cầu thử lại tác vụ an toàn với kiểm tra Scoped Zero-Trust
+        group.MapPost("/{id:guid}/retry", async (
+            [FromRoute] Guid id,
+            [FromBody] RetryJobApiRequest? request,
+            [FromServices] IJobTracker tracker,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
+
+            if (authenticatedScope is null)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: "Authenticated scope claim is required to retry scoped jobs.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
+            try
+            {
+                var retriedStatus = await tracker.RetryJobAsync(
+                    JobRef.Create(id),
+                    requesterId,
+                    authenticatedScope,
+                    request?.Reason,
+                    cancellationToken);
+
+                return Results.Ok(new JobApiResponse(
+                    retriedStatus.Job.Value,
+                    retriedStatus.JobType,
+                    retriedStatus.Status.ToString(),
+                    retriedStatus.ProgressPercentage,
+                    retriedStatus.ResultId,
+                    retriedStatus.ErrorCode,
+                    retriedStatus.SafeMessage));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Job Not Found",
+                    detail: $"Background job with ID '{id}' was not found.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "JOB_NOT_FOUND",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+            catch (UnauthorizedAccessException authEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: authEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+            catch (InvalidOperationException opEx)
+            {
+                var isCompleted = opEx.Message.Contains("completed", StringComparison.OrdinalIgnoreCase);
+                return Results.Problem(
+                    statusCode: isCompleted ? StatusCodes.Status400BadRequest : StatusCodes.Status409Conflict,
+                    title: isCompleted ? "Job Already Completed" : "Job Already Active",
+                    detail: opEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = isCompleted ? "JOB_ALREADY_COMPLETED" : "JOB_ALREADY_ACTIVE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+        });
+
+        // 6. GET /api/v1/jobs/{id}/attempts - Lấy toàn bộ lịch sử các lượt chạy (Attempts History) của tác vụ
+        group.MapGet("/{id:guid}/attempts", async (
+            [FromRoute] Guid id,
+            [FromServices] IJobTracker tracker,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-user";
+            var authenticatedScope = ResolveAuthenticatedScope(httpContext);
+
+            if (authenticatedScope is null)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: "Authenticated scope claim is required to view scoped job attempts.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+
+            try
+            {
+                var attempts = await tracker.GetJobAttemptsAsync(
+                    JobRef.Create(id),
+                    requesterId,
+                    authenticatedScope,
+                    cancellationToken);
+
+                var response = attempts.Select(a => new JobAttemptApiResponse(
+                    a.Id,
+                    a.JobId,
+                    a.AttemptNumber,
+                    a.Status.ToString(),
+                    a.WorkerId,
+                    a.StartedAt,
+                    a.FinishedAt,
+                    a.ExecutionDurationMs,
+                    a.ErrorCode,
+                    a.SafeErrorMessage,
+                    a.RetryReason,
+                    a.IsManualRetry)).ToList();
+
+                return Results.Ok(response);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Job Not Found",
+                    detail: $"Background job with ID '{id}' was not found.",
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "JOB_NOT_FOUND",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+            catch (UnauthorizedAccessException authEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Access Denied",
+                    detail: authEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+        });
+
+        // 7. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
         routes.MapGet("/api/v1/jobs/dev-token", (
             [FromQuery] string? scopeId,
             [FromQuery] string? scopeKind,
