@@ -115,7 +115,7 @@ const navSections: NavSection[] = [
         label: 'Trường học',
         icon: <Building2 size={16} />,
         href: '/admin/schools',
-        roles: ['MinistryAdmin'],
+        roles: ['SchoolAdmin', 'MinistryAdmin'],
       },
       {
         id: 'users',
