@@ -82,4 +82,19 @@ public sealed class JobAttempt
     /// Thông điệp lỗi an toàn (đã redact dữ liệu nhạy cảm) của lượt chạy này.
     /// </summary>
     public string? SafeErrorMessage { get; set; }
+
+    /// <summary>
+    /// Thời gian thực thi thực tế tính bằng mili-giây (Execution Duration in Ms).
+    /// </summary>
+    public long? ExecutionDurationMs { get; set; }
+
+    /// <summary>
+    /// Lý do thử lại (nếu lượt chạy này được kích hoạt lại bởi hệ thống hoặc người dùng).
+    /// </summary>
+    public string? RetryReason { get; set; }
+
+    /// <summary>
+    /// Đánh dấu lượt chạy này do người dùng/Admin bấm thử lại thủ công (Manual Retry) hay do hệ thống tự động.
+    /// </summary>
+    public bool IsManualRetry { get; set; }
 }

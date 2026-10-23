@@ -178,7 +178,9 @@ public sealed class InMemoryJobStore : IJobStore
             }
 
             // Tiến hành Claim tác vụ
-            var attemptNumber = eligibleJob.AttemptCount + 1;
+            var attemptNumber = _attempts.TryGetValue(eligibleJob.Id, out var existingAttempts)
+                ? existingAttempts.Count + 1
+                : eligibleJob.AttemptCount + 1;
             var leaseToken = Guid.NewGuid();
             var leaseExpiresAt = now.Add(leaseDuration);
 
@@ -195,11 +197,14 @@ public sealed class InMemoryJobStore : IJobStore
                 LeaseExpiresAt = leaseExpiresAt,
                 FinishedAt = null,
                 ErrorCode = null,
-                SafeErrorMessage = null
+                SafeErrorMessage = null,
+                ExecutionDurationMs = null,
+                RetryReason = eligibleJob.RetryReason,
+                IsManualRetry = eligibleJob.LastRetryRequestedAt.HasValue
             };
 
             eligibleJob.Status = JobStatus.Running;
-            eligibleJob.AttemptCount = attemptNumber;
+            eligibleJob.AttemptCount = eligibleJob.AttemptCount + 1;
             eligibleJob.UpdatedAt = now;
 
             if (!_attempts.TryGetValue(eligibleJob.Id, out var list))
@@ -288,6 +293,7 @@ public sealed class InMemoryJobStore : IJobStore
 
             currentAttempt.Status = AttemptStatus.Completed;
             currentAttempt.FinishedAt = now;
+            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
 
             job.Status = JobStatus.Completed;
             job.ErrorCode = null;
@@ -322,17 +328,18 @@ public sealed class InMemoryJobStore : IJobStore
             currentAttempt.ErrorCode = errorCode;
             currentAttempt.SafeErrorMessage = safeErrorMessage;
             currentAttempt.FinishedAt = now;
+            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
 
-            // Chính sách Retry M5-01:
-            // Tối đa 3 lần chạy.
-            // Lần 1 thất bại => retry sau 1 phút
-            // Lần 2 thất bại => retry sau 5 phút
-            // Lần 3 thất bại => Failed vĩnh viễn
-            if (isTransient && job.AttemptCount < 3)
+            // Phân loại lỗi và áp dụng Bounded Exponential Backoff + Jitter
+            var category = ErrorClassifier.Classify(errorCode);
+            var isTerminal = category == ErrorCategory.Terminal;
+            var isExplicitPermanent = ErrorClassifier.IsKnownPermanent(errorCode);
+            var shouldRetry = !isTerminal && !isExplicitPermanent && (isTransient || category == ErrorCategory.Transient);
+
+            if (shouldRetry && job.AttemptCount < BackoffJitterCalculator.DefaultMaxAttempts)
             {
-                var retryDelayMinutes = job.AttemptCount == 1 ? 1 : 5;
                 job.Status = JobStatus.Pending;
-                job.AvailableAt = now.AddMinutes(retryDelayMinutes);
+                job.AvailableAt = BackoffJitterCalculator.CalculateAvailableAt(job.AttemptCount, now);
                 job.ErrorCode = errorCode;
                 job.SafeErrorMessage = safeErrorMessage;
                 job.UpdatedAt = now;
@@ -340,7 +347,9 @@ public sealed class InMemoryJobStore : IJobStore
             else
             {
                 job.Status = JobStatus.Failed;
-                job.ErrorCode = isTransient && job.AttemptCount >= 3 ? "RETRY_BUDGET_EXHAUSTED" : errorCode;
+                job.ErrorCode = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts
+                    ? "RETRY_BUDGET_EXHAUSTED"
+                    : errorCode;
                 job.SafeErrorMessage = safeErrorMessage;
                 job.UpdatedAt = now;
             }
@@ -420,7 +429,9 @@ public sealed class InMemoryJobStore : IJobStore
                     lastAttempt.FinishedAt = now;
                     recoveredCount++;
 
-                    if (job.AttemptCount >= 3)
+                    lastAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - lastAttempt.StartedAt).TotalMilliseconds);
+
+                    if (job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts)
                     {
                         job.Status = JobStatus.Failed;
                         job.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
@@ -439,6 +450,59 @@ public sealed class InMemoryJobStore : IJobStore
         }
 
         return Task.FromResult(recoveredCount);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            if (_attempts.TryGetValue(jobId, out var list))
+            {
+                return Task.FromResult<IReadOnlyList<JobAttempt>>(list.Select(CloneAttempt).ToList());
+            }
+
+            return Task.FromResult<IReadOnlyList<JobAttempt>>(Array.Empty<JobAttempt>());
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requesterId, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _clock();
+
+        lock (_syncRoot)
+        {
+            if (!_jobs.TryGetValue(jobId, out var job))
+            {
+                throw new KeyNotFoundException($"Job with ID '{jobId}' was not found.");
+            }
+
+            if (job.Status == JobStatus.Running || job.Status == JobStatus.Pending)
+            {
+                throw new InvalidOperationException($"Cannot retry a job that is currently {job.Status.ToString().ToLowerInvariant()}.");
+            }
+
+            if (job.Status == JobStatus.Completed)
+            {
+                throw new InvalidOperationException("Cannot retry a job that has already completed successfully.");
+            }
+
+            job.Status = JobStatus.Pending;
+            job.AvailableAt = now;
+            job.CancellationRequestedAt = null;
+            job.ErrorCode = null;
+            job.SafeErrorMessage = null;
+            job.RetryReason = reason ?? "Manual retry requested";
+            job.LastRetryRequestedBy = requesterId;
+            job.LastRetryRequestedAt = now;
+            job.UpdatedAt = now;
+            job.AttemptCount = 0;
+
+            return Task.FromResult(CloneJob(job));
+        }
     }
 
     /// <summary>
@@ -478,6 +542,9 @@ public sealed class InMemoryJobStore : IJobStore
         ProgressPercentage = job.ProgressPercentage,
         ErrorCode = job.ErrorCode,
         SafeErrorMessage = job.SafeErrorMessage,
+        RetryReason = job.RetryReason,
+        LastRetryRequestedBy = job.LastRetryRequestedBy,
+        LastRetryRequestedAt = job.LastRetryRequestedAt,
         CreatedAt = job.CreatedAt,
         UpdatedAt = job.UpdatedAt
     };
@@ -495,6 +562,9 @@ public sealed class InMemoryJobStore : IJobStore
         LeaseExpiresAt = attempt.LeaseExpiresAt,
         FinishedAt = attempt.FinishedAt,
         ErrorCode = attempt.ErrorCode,
-        SafeErrorMessage = attempt.SafeErrorMessage
+        SafeErrorMessage = attempt.SafeErrorMessage,
+        ExecutionDurationMs = attempt.ExecutionDurationMs,
+        RetryReason = attempt.RetryReason,
+        IsManualRetry = attempt.IsManualRetry
     };
 }

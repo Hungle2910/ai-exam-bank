@@ -4,7 +4,7 @@
 
 ## Status
 
-Proposed for M1–M5 review. This document has not been accepted. Since the original proposal, the team selected SQL Server and M3 implemented EF Core SQL Server persistence and ASP.NET Core Identity cookie authentication; see [M3-02 schema handoff](../M3-02_identity_schema_handoff.md) and [ADR 0005](0005-identity-session-and-authorization.md). M1 must reconcile the baseline below with the implementation before acceptance.
+Proposed for M1–M5 review. This document has not been accepted. Since the original proposal, the team selected SQL Server and M3 implemented EF Core SQL Server persistence and ASP.NET Core Identity cookie authentication; see [M3-02 schema handoff](../M3-02_identity_schema_handoff.md) and [ADR 0006](0006-identity-session-and-authorization.md). M1 must reconcile the baseline below with the implementation before acceptance.
 
 ## Context
 

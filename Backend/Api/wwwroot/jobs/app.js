@@ -370,7 +370,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (isCompleted) {
                 actionHtml = `<button class="btn btn-xs btn-success-outline" onclick="window.viewJobDetail('${job.jobId}')">Xem KQ</button>`;
             } else if (isFailed) {
-                actionHtml = `<button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Xem Lỗi</button>`;
+                actionHtml = `
+                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ thất bại">🔄 Thử lại</button>
+                    <button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Xem Lỗi</button>`;
+            } else if (isCancelled) {
+                actionHtml = `
+                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ đã hủy">🔄 Thử lại</button>
+                    <button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Chi tiết</button>`;
             } else {
                 actionHtml = `<button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Chi tiết</button>`;
             }
@@ -408,6 +414,46 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    window.retryJob = async (jobId) => {
+        const job = jobsList.find(j => j.jobId === jobId);
+        const reason = prompt('Nhập lý do thử lại (tùy chọn):', 'Thử lại tác vụ từ Dashboard');
+        if (reason === null) return; // Người dùng ấn Cancel
+
+        const scopeKind = job?.scopeKind || scopeKindSelect.value;
+        const scopeId = job?.scopeResourceId || scopeIdInput.value.trim() || 'school-hn-01';
+
+        try {
+            const token = await getAuthorizedToken(scopeKind, scopeId);
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Scope-Id': scopeId
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(`/api/v1/jobs/${jobId}/retry`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ reason: reason || 'Manual retry requested' })
+            });
+
+            if (response.ok) {
+                showToast(`Đã kích hoạt thử lại cho Job #${jobId.substring(0, 8)}...`, 'success');
+                fetchJobs(true);
+                if (detailDrawer.classList.contains('active')) {
+                    window.viewJobDetail(jobId);
+                }
+            } else {
+                const errData = await response.json().catch(() => ({}));
+                showToast(`Không thể thử lại: ${errData.detail || 'Lỗi không xác định'}`, 'error');
+            }
+        } catch (err) {
+            showToast('Lỗi kết nối tới máy chủ khi thử lại job.', 'error');
+        }
+    };
+
     window.cancelJob = async (jobId) => {
         if (!confirm('Bạn có chắc chắn muốn hủy tác vụ này không?')) return;
         const job = jobsList.find(j => j.jobId === jobId);
@@ -431,9 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response.ok) {
                 showToast(`Đã gửi yêu cầu hủy cho Job #${jobId.substring(0, 8)}...`, 'success');
-                fetchJobs();
+                fetchJobs(true);
             } else {
-                const errData = await response.json();
+                const errData = await response.json().catch(() => ({}));
                 showToast(`Không thể hủy: ${errData.detail || 'Lỗi không xác định'}`, 'error');
             }
         } catch (err) {
@@ -480,11 +526,93 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="item-value text-emerald font-mono">${escapeHtml(job.resultId)}</div>
             </div>` : ''}
             ${errorBannerHtml}
+            <div id="drawerAttemptsContainer">
+                <div class="text-muted" style="font-size: 0.75rem; margin-top: 1rem;">Đang tải lịch sử thực thi (Attempts)...</div>
+            </div>
         `;
 
         detailDrawer.removeAttribute('inert');
         detailDrawer.classList.add('active');
         btnCloseDrawer.focus();
+
+        // Tải lịch sử attempts
+        (async () => {
+            const container = document.getElementById('drawerAttemptsContainer');
+            if (!container) return;
+            try {
+                const scopeKind = job.scopeKind || scopeKindSelect.value;
+                const scopeId = job.scopeResourceId || scopeIdInput.value.trim() || 'school-hn-01';
+                const token = await getAuthorizedToken(scopeKind, scopeId);
+                const headers = {
+                    'Accept': 'application/json',
+                    'X-Scope-Id': scopeId
+                };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const resp = await fetch(`/api/v1/jobs/${jobId}/attempts`, { headers });
+                if (resp.ok) {
+                    const attempts = await resp.json();
+                    if (!attempts || attempts.length === 0) {
+                        container.innerHTML = `
+                            <div class="attempts-section">
+                                <div class="attempts-section-title">Lịch Sử Thực Thi (0 lượt)</div>
+                                <div class="text-muted" style="font-size: 0.75rem;">Chưa có lượt thực thi nào được ghi nhận.</div>
+                            </div>`;
+                        return;
+                    }
+
+                    const itemsHtml = attempts.map(att => {
+                        const durationText = att.executionDurationMs !== null && att.executionDurationMs !== undefined
+                            ? `${att.executionDurationMs} ms`
+                            : (att.status === 'Started' ? 'Đang chạy...' : '—');
+                        const isManual = att.isManualRetry;
+                        const startedTime = att.startedAt ? new Date(att.startedAt).toLocaleTimeString() : '—';
+                        return `
+                            <div class="attempt-card">
+                                <div class="attempt-card-header">
+                                    <div class="attempt-num">
+                                        Lượt #${att.attemptNumber}
+                                        ${isManual ? '<span class="badge-manual">Thử lại thủ công</span>' : ''}
+                                    </div>
+                                    <span class="badge-attempt-status ${escapeHtml(att.status)}">${escapeHtml(att.status)}</span>
+                                </div>
+                                <div class="attempt-meta">
+                                    <span>Worker: <code class="font-mono">${escapeHtml(att.workerId || 'N/A')}</code></span>
+                                    <span>•</span>
+                                    <span>Bắt đầu: ${startedTime}</span>
+                                    <span>•</span>
+                                    <span>Thời gian: ${durationText}</span>
+                                </div>
+                                ${att.retryReason ? `
+                                <div class="attempt-detail-row">
+                                    <span>Lý do: <em>${escapeHtml(att.retryReason)}</em></span>
+                                </div>` : ''}
+                                ${att.errorCode ? `
+                                <div class="attempt-detail-row" style="color: var(--color-rose);">
+                                    <span>Lỗi: [${escapeHtml(att.errorCode)}] ${escapeHtml(att.safeErrorMessage || '')}</span>
+                                </div>` : ''}
+                            </div>`;
+                    }).join('');
+
+                    container.innerHTML = `
+                        <div class="attempts-section">
+                            <div class="attempts-section-title">
+                                <span>Lịch Sử Thực Thi (${attempts.length} lượt)</span>
+                                ${job.status === 'Failed' || job.status === 'Cancelled' ? `
+                                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')">🔄 Thử lại</button>
+                                ` : ''}
+                            </div>
+                            <div class="attempts-list">
+                                ${itemsHtml}
+                            </div>
+                        </div>`;
+                } else {
+                    container.innerHTML = `<div class="text-muted" style="font-size: 0.75rem; color: var(--color-rose); margin-top: 1rem;">Không thể tải lịch sử attempts.</div>`;
+                }
+            } catch (err) {
+                container.innerHTML = `<div class="text-muted" style="font-size: 0.75rem; margin-top: 1rem;">Lỗi kết nối khi tải attempts.</div>`;
+            }
+        })();
     };
 
     // -------------------------------------------------------------

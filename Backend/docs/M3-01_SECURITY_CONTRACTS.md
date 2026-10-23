@@ -1,6 +1,6 @@
 # M3-01 — Hợp đồng bảo mật, thiết kế và bằng chứng tuần 1
 
-**Owner:** M3 / Minh Phúc. **Trạng thái:** bản bàn giao để M1/M3 và nhóm review; phân biệt rõ phần đã chạy với phần còn là hợp đồng thiết kế. Đọc cùng [bảng quyền](IDENTITY_AND_PERMISSIONS.md) và [ADR phiên đăng nhập](adr/0005-identity-session-and-authorization.md).
+**Owner:** M3 / Minh Phúc. **Trạng thái:** bản bàn giao để M1/M3 và nhóm review; phân biệt rõ phần đã chạy với phần còn là hợp đồng thiết kế. Đọc cùng [bảng quyền](IDENTITY_AND_PERMISSIONS.md) và [ADR phiên đăng nhập](adr/0006-identity-session-and-authorization.md).
 
 ## Ranh giới danh tính và dữ liệu
 
@@ -46,4 +46,4 @@ Review là hợp đồng **chưa có bảng/migration/API**. Đề xuất `Revie
 
 M3 đề xuất ba ranh giới: human browser session chỉ gọi API; app runtime đọc đúng secret ứng dụng, không sửa IAM/duyệt đề; DB runtime đọc đúng secret DB; CI/Terraform chỉ dùng role triển khai giới hạn tài nguyên/state/PassRole, không đọc secret value. Bootstrap user dùng secret channel, không ghi password vào Git hoặc CLI argument. M2 đã chuẩn bị [IAM/KMS policy drafts](../infrastructure/security/README.md) với role/profile tách biệt, SSM SecureString + CMK riêng, và nêu rõ chưa attach/kiểm chứng trên AWS. M2 và account admin phải xác nhận principal/ARN thực, IAM simulation và live allow/deny trước deploy; không coi draft là bằng chứng AWS live.
 
-Đã có role matrix và các policy/unit tests. Chưa thể nghiệm thu các đường duyệt Question/Blueprint/Exam hoặc Ministry event bằng API vì M1/M4/M5 chưa có đủ tài nguyên và endpoint tích hợp; các mục đó cần issue/PR riêng. M1 cần review ADR 0005 và cập nhật ADR 0003 theo SQL Server. Thời gian thực tế và peer review của M3-01 do chủ task/reviewer xác nhận; không suy ra từ estimate 16 giờ. Khi tích hợp, thêm direct API allow/deny, self-review, `409` cạnh tranh, rollback audit, và test không dùng được quyền cũ sau revoke trước khi đánh dấu các tiêu chí đó hoàn tất.
+Đã có role matrix và các policy/unit tests. Chưa thể nghiệm thu các đường duyệt Question/Blueprint/Exam hoặc Ministry event bằng API vì M1/M4/M5 chưa có đủ tài nguyên và endpoint tích hợp; các mục đó cần issue/PR riêng. M1 cần review ADR 0006 và cập nhật ADR 0003 theo SQL Server. Thời gian thực tế và peer review của M3-01 do chủ task/reviewer xác nhận; không suy ra từ estimate 16 giờ. Khi tích hợp, thêm direct API allow/deny, self-review, `409` cạnh tranh, rollback audit, và test không dùng được quyền cũ sau revoke trước khi đánh dấu các tiêu chí đó hoàn tất.

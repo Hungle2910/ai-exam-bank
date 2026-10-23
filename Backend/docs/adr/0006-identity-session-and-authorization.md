@@ -1,4 +1,4 @@
-# ADR 0005 — Identity session and resource authorization
+# ADR 0006 — Identity session and resource authorization
 
 **Owner:** M3 / Minh Phúc. **Related:** M3-01, M3-02, [permission matrix](../IDENTITY_AND_PERMISSIONS.md), [ADR 0003](0003-data-identity-runtime-baseline.md).
 

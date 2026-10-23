@@ -122,12 +122,14 @@ public sealed class JobEngineExecutionTests
         Assert.IsNotNull(jobAfter1);
         Assert.AreEqual(JobStatus.Pending, jobAfter1.Status);
         Assert.AreEqual(1, jobAfter1.AttemptCount);
-        Assert.AreEqual(now.AddMinutes(1), jobAfter1.AvailableAt);
+        Assert.IsNotNull(jobAfter1.AvailableAt);
+        Assert.IsTrue(jobAfter1.AvailableAt >= now.AddSeconds(24) && jobAfter1.AvailableAt <= now.AddSeconds(36),
+            $"Attempt 1 delay should be within 30s +/- 20% jitter [24s, 36s], but was {(jobAfter1.AvailableAt.Value - now).TotalSeconds}s.");
 
-        // Tua đồng hồ qua 1 phút
-        now = now.AddMinutes(1).AddSeconds(1);
+        // Tua đồng hồ qua thời điểm AvailableAt của attempt 1
+        now = jobAfter1.AvailableAt.Value.AddSeconds(1);
 
-        // Attempt 2: Thất bại tạm thời -> quay về Pending hẹn giờ sau 5 phút
+        // Attempt 2: Thất bại tạm thời -> quay về Pending với exponential backoff (60s +/- 20% jitter)
         var claim2 = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
         Assert.IsNotNull(claim2);
         await store.FailJobAsync(job.Id, claim2.LeaseToken, "TIMEOUT", "Timeout 2", isTransient: true);
@@ -136,10 +138,12 @@ public sealed class JobEngineExecutionTests
         Assert.IsNotNull(jobAfter2);
         Assert.AreEqual(JobStatus.Pending, jobAfter2.Status);
         Assert.AreEqual(2, jobAfter2.AttemptCount);
-        Assert.AreEqual(now.AddMinutes(5), jobAfter2.AvailableAt);
+        Assert.IsNotNull(jobAfter2.AvailableAt);
+        Assert.IsTrue(jobAfter2.AvailableAt >= now.AddSeconds(48) && jobAfter2.AvailableAt <= now.AddSeconds(72),
+            $"Attempt 2 delay should be within 60s +/- 20% jitter [48s, 72s], but was {(jobAfter2.AvailableAt.Value - now).TotalSeconds}s.");
 
-        // Tua đồng hồ qua 5 phút
-        now = now.AddMinutes(5).AddSeconds(1);
+        // Tua đồng hồ qua thời điểm AvailableAt của attempt 2
+        now = jobAfter2.AvailableAt.Value.AddSeconds(1);
 
         // Attempt 3: Thất bại tạm thời -> Đã chạm trần 3 lần -> Chuyển sang Failed vĩnh viễn
         var claim3 = await store.ClaimNextJobAsync("worker-3", TimeSpan.FromMinutes(2));
@@ -1365,6 +1369,12 @@ public sealed class JobEngineExecutionTests
 
         public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default)
             => _inner.RecoverExpiredLeasesAsync(cancellationToken);
+
+        public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requestedBy, string? reason = null, CancellationToken cancellationToken = default)
+            => _inner.RetryJobAsync(jobId, requestedBy, reason, cancellationToken);
+
+        public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
+            => _inner.GetAttemptsAsync(jobId, cancellationToken);
     }
 
     /// <summary>
@@ -1475,6 +1485,12 @@ public sealed class JobEngineExecutionTests
 
         public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default)
             => _inner.RecoverExpiredLeasesAsync(cancellationToken);
+
+        public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requestedBy, string? reason = null, CancellationToken cancellationToken = default)
+            => _inner.RetryJobAsync(jobId, requestedBy, reason, cancellationToken);
+
+        public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
+            => _inner.GetAttemptsAsync(jobId, cancellationToken);
     }
 
     private sealed class FastJobHandler : IJobHandler
@@ -1801,6 +1817,12 @@ public sealed class JobEngineExecutionTests
 
         public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
             _inner.RecoverExpiredLeasesAsync(cancellationToken);
+
+        public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requestedBy, string? reason = null, CancellationToken cancellationToken = default) =>
+            _inner.RetryJobAsync(jobId, requestedBy, reason, cancellationToken);
+
+        public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetAttemptsAsync(jobId, cancellationToken);
     }
 
     private sealed class ThrowingProgressJobStore : IJobStore
@@ -1840,6 +1862,12 @@ public sealed class JobEngineExecutionTests
 
         public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
             _inner.RecoverExpiredLeasesAsync(cancellationToken);
+
+        public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requestedBy, string? reason = null, CancellationToken cancellationToken = default) =>
+            _inner.RetryJobAsync(jobId, requestedBy, reason, cancellationToken);
+
+        public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetAttemptsAsync(jobId, cancellationToken);
     }
 
     private sealed class CountingSuccessfulJobHandler : IJobHandler
@@ -1942,5 +1970,11 @@ public sealed class JobEngineExecutionTests
 
         public Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default) =>
             _inner.RecoverExpiredLeasesAsync(cancellationToken);
+
+        public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requestedBy, string? reason = null, CancellationToken cancellationToken = default) =>
+            _inner.RetryJobAsync(jobId, requestedBy, reason, cancellationToken);
+
+        public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+            _inner.GetAttemptsAsync(jobId, cancellationToken);
     }
 }

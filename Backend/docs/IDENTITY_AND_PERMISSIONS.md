@@ -223,6 +223,6 @@ khi viết migration hoặc controller. Xem [hợp đồng và bằng chứng M3
 2. M1/M3/M4 phải chốt hợp đồng bản nháp câu AI → `QuestionRevision` →
    review độc lập → câu đủ điều kiện chọn, rồi kiểm thử toàn luồng.
 3. M3-02 đã triển khai Identity cookie, CSRF và quyền quản trị trường;
-   [ADR 0005](adr/0005-identity-session-and-authorization.md) ghi rõ lựa
+   [ADR 0006](adr/0006-identity-session-and-authorization.md) ghi rõ lựa
    chọn phiên và ranh giới kiểm quyền để M1/M3 review. Cần kiểm tra bảo
    vệ nội dung đề thật khi M1/M4 đưa các API tài nguyên vào hệ thống.
