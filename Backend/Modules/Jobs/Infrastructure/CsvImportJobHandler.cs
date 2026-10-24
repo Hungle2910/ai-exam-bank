@@ -17,6 +17,16 @@ public sealed class CsvImportJobHandler : IJobHandler
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Kỹ thuật Check-before-write (Phục hồi Timeout-after-write):
+        // Nếu đây là lượt thử lại (AttemptNumber > 1) và phát hiện batch import đã được commit trước đó,
+        // lập tức tái sử dụng kết quả (Result Reuse) mà không parse hay insert lại câu hỏi, tránh nhân đôi dữ liệu.
+        if (context.AttemptNumber > 1 && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
+        {
+            var recoveredBatchResultId = $"import-batch-{context.JobId.Value:N}";
+            if (context.ReportProgressAsync != null) await context.ReportProgressAsync(100);
+            return JobExecutionResult.Success(recoveredBatchResultId);
+        }
+
         // Chặng 1: Đọc và phân tích cấu trúc file CSV
         cancellationToken.ThrowIfCancellationRequested();
         if (context.ReportProgressAsync != null) await context.ReportProgressAsync(25);

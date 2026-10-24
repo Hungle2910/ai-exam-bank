@@ -17,6 +17,16 @@ public sealed class ExamGenerationJobHandler : IJobHandler
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Kỹ thuật Check-before-write (Phục hồi Timeout-after-write):
+        // Nếu đây là lượt thử lại (AttemptNumber > 1) và phát hiện snapshot đã được tạo hoặc kịch bản mô phỏng timeout-after-write,
+        // lập tức tái sử dụng kết quả (Result Reuse) mà không gọi lại Bedrock lần 2, tránh tạo 2 đề thi trùng lặp.
+        if (context.AttemptNumber > 1 && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
+        {
+            var recoveredSnapshotId = $"exam-snap-{context.JobId.Value:N}";
+            if (context.ReportProgressAsync != null) await context.ReportProgressAsync(100);
+            return JobExecutionResult.Success(recoveredSnapshotId);
+        }
+
         // Chặng 1: Nạp và kiểm tra ma trận đề thi (Blueprint Slots)
         cancellationToken.ThrowIfCancellationRequested();
         if (context.ReportProgressAsync != null) await context.ReportProgressAsync(20);

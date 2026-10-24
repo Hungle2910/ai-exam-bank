@@ -1,3 +1,5 @@
+using AiExamBank.Modules.Jobs.Domain;
+
 namespace AiExamBank.Modules.Jobs.Contracts;
 
 /// <summary>
@@ -36,4 +38,25 @@ public interface IJobTracker
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Danh sách JobStatusDto thỏa điều kiện trong phạm vi được phân quyền.</returns>
     Task<IReadOnlyList<JobStatusDto>> ListJobsAsync(JobScope scope, string requesterId, JobScope requesterScope, JobStatus? statusFilter = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Yêu cầu thử lại một tác vụ ngầm đã thất bại (Failed) hoặc bị hủy (Cancelled) trong phạm vi phân quyền.
+    /// </summary>
+    /// <param name="job">Tham chiếu định danh tác vụ JobRef.</param>
+    /// <param name="requesterId">Mã người dùng gửi yêu cầu.</param>
+    /// <param name="requesterScope">Phạm vi của người yêu cầu (phải khớp chính xác với Scope của Job).</param>
+    /// <param name="reason">Lý do thử lại (tùy chọn).</param>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Đối tượng JobStatusDto chứa thông tin trạng thái mới sau khi kích hoạt thử lại.</returns>
+    Task<JobStatusDto> RetryJobAsync(JobRef job, string requesterId, JobScope requesterScope, string? reason = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lấy danh sách toàn bộ các lượt thực thi (Attempts History) của một tác vụ trong phạm vi phân quyền.
+    /// </summary>
+    /// <param name="job">Tham chiếu định danh tác vụ JobRef.</param>
+    /// <param name="requesterId">Mã người dùng gửi yêu cầu.</param>
+    /// <param name="requesterScope">Phạm vi của người yêu cầu.</param>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Danh sách các bản ghi JobAttempt.</returns>
+    Task<IReadOnlyList<JobAttempt>> GetJobAttemptsAsync(JobRef job, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default);
 }

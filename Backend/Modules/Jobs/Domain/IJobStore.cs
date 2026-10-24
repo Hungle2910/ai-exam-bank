@@ -131,4 +131,23 @@ public interface IJobStore
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Số lượng tác vụ đã được thu hồi và khôi phục xử lý.</returns>
     Task<int> RecoverExpiredLeasesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Yêu cầu thử lại một tác vụ đã thất bại (Failed) hoặc bị hủy (Cancelled).
+    /// Chuyển trạng thái tác vụ về Pending và đặt AvailableAt về thời điểm hiện tại (ngay lập tức).
+    /// </summary>
+    /// <param name="jobId">Mã định danh của tác vụ.</param>
+    /// <param name="requesterId">Mã người dùng gửi yêu cầu thử lại.</param>
+    /// <param name="reason">Lý do thử lại (tùy chọn).</param>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Thực thể BackgroundJob sau khi được cập nhật.</returns>
+    Task<BackgroundJob> RetryJobAsync(Guid jobId, string requesterId, string? reason = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lấy danh sách toàn bộ các lượt chạy (Job Attempts) của một tác vụ để hiển thị lịch sử thực thi trên UI.
+    /// </summary>
+    /// <param name="jobId">Mã định danh của tác vụ.</param>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Danh sách các lượt chạy của tác vụ.</returns>
+    Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default);
 }

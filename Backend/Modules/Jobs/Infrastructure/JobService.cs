@@ -126,6 +126,58 @@ public sealed class JobService : IJobPublisher, IJobTracker
             .ToList();
     }
 
+    /// <inheritdoc />
+    public async Task<JobStatusDto> RetryJobAsync(JobRef jobRef, string requesterId, JobScope requesterScope, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobRef);
+        if (string.IsNullOrWhiteSpace(requesterId))
+            throw new ArgumentException("Requester ID is required.", nameof(requesterId));
+
+        if (requesterScope is null)
+        {
+            throw new UnauthorizedAccessException("Requester scope is required for scoped job retry.");
+        }
+
+        var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
+        if (job is null)
+            throw new KeyNotFoundException($"Job with ID '{jobRef.Value}' was not found.");
+
+        // Kiểm tra phân quyền phạm vi: Tuyệt đối không cho phép retry tác vụ chéo phạm vi (cả Kind và ResourceId)
+        if (requesterScope.Kind != job.Scope.Kind ||
+            !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Requester is not authorized to retry this job.");
+        }
+
+        var retriedJob = await _store.RetryJobAsync(jobRef.Value, requesterId, reason, cancellationToken);
+        return MapToDto(retriedJob);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<JobAttempt>> GetJobAttemptsAsync(JobRef jobRef, string requesterId, JobScope requesterScope, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobRef);
+        if (string.IsNullOrWhiteSpace(requesterId))
+            throw new ArgumentException("Requester ID is required.", nameof(requesterId));
+
+        if (requesterScope is null)
+        {
+            throw new UnauthorizedAccessException("Requester scope is required to view job attempts.");
+        }
+
+        var job = await _store.GetByIdAsync(jobRef.Value, cancellationToken);
+        if (job is null)
+            throw new KeyNotFoundException($"Job with ID '{jobRef.Value}' was not found.");
+
+        if (requesterScope.Kind != job.Scope.Kind ||
+            !string.Equals(requesterScope.ResourceId, job.Scope.ResourceId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Requester is not authorized to view attempts for this job.");
+        }
+
+        return await _store.GetAttemptsAsync(jobRef.Value, cancellationToken);
+    }
+
     private static JobStatusDto MapToDto(BackgroundJob job) =>
         new(
             JobRef.Create(job.Id),
