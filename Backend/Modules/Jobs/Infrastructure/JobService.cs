@@ -149,7 +149,18 @@ public sealed class JobService : IJobPublisher, IJobTracker
             throw new UnauthorizedAccessException("Requester is not authorized to retry this job.");
         }
 
-        // Chặn retry đối với các tác vụ lỗi vĩnh viễn (Permanent) hoặc chưa kết thúc
+        // Kiểm tra trạng thái tác vụ: chỉ cho phép retry khi tác vụ đã kết thúc (Failed hoặc Cancelled)
+        if (job.Status == JobStatus.Running || job.Status == JobStatus.Pending)
+        {
+            throw new InvalidOperationException($"Cannot retry a job that is currently {job.Status.ToString().ToLowerInvariant()}.");
+        }
+
+        if (job.Status == JobStatus.Completed)
+        {
+            throw new InvalidOperationException("Cannot retry a job that has already completed successfully.");
+        }
+
+        // Chặn retry đối với các tác vụ lỗi vĩnh viễn (Permanent)
         if (!IsEligibleForRetry(job))
         {
             throw new InvalidOperationException($"Job '{jobRef.Value}' is not eligible for retry because it failed with permanent error '{job.ErrorCode}'.");
@@ -172,20 +183,22 @@ public sealed class JobService : IJobPublisher, IJobTracker
             return false;
         }
 
-        // Tác vụ Cancelled không có mã lỗi vĩnh viễn được phép thử lại
+        // Tác vụ Cancelled không có mã lỗi hoặc mã lỗi không phải Permanent được phép thử lại
         if (job.Status == JobStatus.Cancelled)
         {
             return string.IsNullOrWhiteSpace(job.ErrorCode) ||
-                   !ErrorClassifier.IsKnownPermanent(job.ErrorCode);
+                   ErrorClassifier.Classify(job.ErrorCode) != ErrorCategory.Permanent;
         }
 
-        // Với tác vụ Failed: chỉ cho phép thử lại nếu mã lỗi là Transient
+        // Với tác vụ Failed: chỉ cho phép thử lại nếu mã lỗi KHÔNG phải lỗi vĩnh viễn (Permanent).
+        // Cho phép thử lại tác vụ cạn ngân sách retry tự động (RETRY_BUDGET_EXHAUSTED) hoặc lỗi tạm thời.
+        // Các mã lỗi không xác định sẽ mặc định bị coi là Permanent theo ErrorClassifier và bị từ chối.
         if (string.IsNullOrWhiteSpace(job.ErrorCode))
         {
             return false;
         }
 
-        return ErrorClassifier.Classify(job.ErrorCode) == ErrorCategory.Transient;
+        return ErrorClassifier.Classify(job.ErrorCode) != ErrorCategory.Permanent;
     }
 
     /// <inheritdoc />

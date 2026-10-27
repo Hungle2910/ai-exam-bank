@@ -76,7 +76,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
   - Đỏ: `Thất bại` (`Failed`) kèm thẻ mã lỗi (VD: `AWS_BEDROCK_THROTTLED`)
   - Xám: `Đã hủy` (`Cancelled`)
 - Logic nút `[🔄 Thử lại]`:
-  - `IsRetryEligible`: Được đánh giá qua `JobService.IsEligibleForRetry(job)` (yêu cầu trạng thái `Failed` hoặc `Cancelled`, và mã lỗi là `Transient`; các lỗi `Permanent` hoặc `Terminal` như `RETRY_BUDGET_EXHAUSTED` đều không đủ điều kiện).
+  - `IsRetryEligible`: Được đánh giá qua `JobService.IsEligibleForRetry(job)` (yêu cầu trạng thái `Failed` hoặc `Cancelled`, và mã lỗi không phải `Permanent`; cho phép thử lại thủ công khi đã cạn hạn mức tự động `RETRY_BUDGET_EXHAUSTED` hoặc khi bị hủy; các lỗi vĩnh viễn `Permanent` bị chặn).
   - Nếu `!IsRetryEligible`: Nút bấm có class `.btn-disabled`, thuộc tính `disabled`, hiển thị tooltip: *"Không thể thử lại: [Lý do cụ thể]"*. API `POST /api/v1/jobs/{id}/retry` đồng thời chặn và trả về HTTP 409 Conflict (`JOB_NOT_RETRY_ELIGIBLE`).
 
 ---

@@ -240,10 +240,10 @@ public sealed class RetryAndIdempotencyTests
         var req = JobRequest.Create("ExamGen", "s3://ref", "teacher-hn", SchoolScope, "idem-scope-auth", "corr-scope-auth");
         var jobRef = await service.EnqueueAsync(req);
 
-        // Chuyển job sang Failed để đủ điều kiện retry
+        // Chuyển job sang Failed để đủ điều kiện retry (sử dụng RETRY_BUDGET_EXHAUSTED đại diện cho job cạn hạn mức thử lại tự động)
         var claim = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
         Assert.IsNotNull(claim);
-        await store.FailJobAsync(jobRef.Value, claim.LeaseToken, "ROW_VALIDATION_ERROR", "Data invalid", isTransient: false);
+        await store.FailJobAsync(jobRef.Value, claim.LeaseToken, "RETRY_BUDGET_EXHAUSTED", "Retry budget exhausted", isTransient: false);
 
         // Case 1: Caller từ SchoolScope khác (school-hcm-99) cố gắng Retry -> Phải bị chặn 403 (UnauthorizedAccessException)
         await Assert.ThrowsExactlyAsync<UnauthorizedAccessException>(async () =>
