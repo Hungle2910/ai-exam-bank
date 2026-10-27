@@ -317,7 +317,7 @@ public sealed class RetryAndIdempotencyTests
     [TestMethod]
     public async Task ExamGenerationAdapter_recovers_gracefully_from_timeout_after_write()
     {
-        var handler = new ExamGenerationJobHandler();
+        var handler = new ExamGenerationJobHandler(allowFailureSimulation: true);
         var cancellationSource = new CancellationTokenSource();
 
         var request = JobRequest.Create("ExamGeneration", "simulate-timeout-after-write", "user-1", SchoolScope, "idem-exam-recovery", "corr-exam-recovery");

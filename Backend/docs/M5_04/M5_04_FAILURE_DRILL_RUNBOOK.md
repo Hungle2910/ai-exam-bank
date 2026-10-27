@@ -18,20 +18,23 @@
 - [x] **Durable Store:** Thư mục lưu trữ tác vụ bền vững khả dụng (`%LOCALAPPDATA%/AiExamBank/Jobs` hoặc Windows Named Mutex).
 - [x] **Zero Information Leak:** Cơ chế khử trùng lỗi `AwsErrorMapping.SanitizeForClient` đang hoạt động (chặn 100% stack trace và secret tokens).
 
-### 1.2 Execution Checklist (Các bước diễn tập)
-- [x] **Drill 1 - Bedrock Throttling:** Gửi request sinh đề vượt ngưỡng hạn ngạch AI. Xác nhận hệ thống phân loại `Transient`, dời lịch thử lại có jitter, không làm rơi job.
-- [x] **Drill 2 - Process Kill (Sập Worker đột ngột):** Kill cưỡng bức tiến trình Worker khi đang xử lý job `Running`. Xác nhận sau 2 phút cơ chế `RecoverExpiredLeasesAsync` phát hiện lease quá hạn và thu hồi về `Pending`.
-- [x] **Drill 3 - AI Provider Circuit Breaker:** Mô phỏng sự cố mạng kéo dài khiến 5 request AI liên tiếp thất bại trong 60s. Xác nhận Circuit Breaker ngắt `Open`, từ chối ngay với `CIRCUIT_BREAKER_OPEN`. Sau 60s tự động chuyển `HalfOpen` thăm dò.
-- [x] **Drill 4 - S3 Permanent Error & Retry Eligibility:** Mô phỏng request import file S3 không tồn tại (`NoSuchKey`). Xác nhận hệ thống chuyển ngay sang `Failed`, khóa nút `[🚫 Không thể thử lại]` trên giao diện.
+### 1.2 Execution Checklist (Các bước diễn tập - Mẫu quy trình)
+- [ ] **Drill 1 - Bedrock Throttling:** Gửi request sinh đề vượt ngưỡng hạn ngạch AI. Xác nhận hệ thống phân loại `Transient`, dời lịch thử lại có jitter, không làm rơi job (Chưa thực hiện trên live AWS — chờ môi trường Staging).
+- [ ] **Drill 2 - Process Kill (Sập Worker đột ngột):** Kill cưỡng bức tiến trình Worker khi đang xử lý job `Running`. Xác nhận sau 2 phút cơ chế `RecoverExpiredLeasesAsync` phát hiện lease quá hạn và thu hồi về `Pending` (Chưa thực hiện trên live AWS — chờ môi trường Staging).
+- [ ] **Drill 3 - AI Provider Circuit Breaker:** Mô phỏng sự cố mạng kéo dài khiến 5 request AI liên tiếp thất bại trong 60s. Xác nhận Circuit Breaker ngắt `Open`, từ chối ngay với `CIRCUIT_BREAKER_OPEN`. Sau 60s tự động chuyển `HalfOpen` thăm dò (Chưa thực hiện trên live AWS — chờ môi trường Staging).
+- [ ] **Drill 4 - S3 Permanent Error & Retry Eligibility:** Mô phỏng request import file S3 không tồn tại (`NoSuchKey`). Xác nhận hệ thống chuyển ngay sang `Failed`, khóa nút `[🚫 Không thể thử lại]` trên giao diện (Chưa thực hiện trên live AWS — chờ môi trường Staging).
 
-### 1.3 Post-Drill Verification & Rollback
-- [x] **Khôi phục tiến trình Worker:** Khởi động lại Worker daemon bình thường.
-- [x] **Xác nhận không tồn đọng Stale Lease:** Tất cả các job đều có trạng thái rõ ràng (`Completed`, `Failed`, hoặc `Cancelled`), không có job nào kẹt spinner vô hạn.
-- [x] **Vệ sinh dữ liệu tạm:** Thu hồi các file `.tmp` nếu có trong thư mục file store.
+### 1.3 Post-Drill Verification & Rollback (Quy trình hoàn nguyên)
+- [ ] **Khôi phục tiến trình Worker:** Khởi động lại Worker daemon bình thường.
+- [ ] **Xác nhận không tồn đọng Stale Lease:** Tất cả các job đều có trạng thái rõ ràng (`Completed`, `Failed`, hoặc `Cancelled`), không có job nào kẹt spinner vô hạn.
+- [ ] **Vệ sinh dữ liệu tạm:** Thu hồi các file `.tmp` nếu có trong thư mục file store.
 
 ---
 
-## 🔬 2. Ví Dụ Khôi Phục Thực Tế (Redacted Recovery Examples)
+## 🔬 2. Ví Dụ Khôi Phục Mô Phỏng Minh Họa (Simulated Recovery Examples)
+
+> [!NOTE]
+> Dữ liệu JSON mẫu dưới đây là **ví dụ minh họa mô phỏng** (`simulated: true`, `liveAws: false`) tương ứng với đặc tả kỹ thuật và kết quả kiểm thử đơn vị tự động, không khẳng định là dữ liệu thu thập trực tiếp từ hạ tầng AWS live khi chưa triển khai staging.
 
 Dữ liệu minh chứng dưới đây đã được lọc khử trùng (Redacted), bảo vệ toàn bộ thông tin nhạy cảm, ARN tài khoản, và token xác thực theo tiêu chuẩn an ninh CWE-209.
 
@@ -91,8 +94,8 @@ Dữ liệu minh chứng dưới đây đã được lọc khử trùng (Redacte
   "attemptCount": 1,
   "maxAttempts": 3,
   "errorCode": "AWS_BEDROCK_THROTTLED",
-  "safeMessage": "Lỗi tạm thời khi kết nối AI Bedrock (Throttling / Quota). Hệ thống sẽ tự động thử lại.",
-  "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động hoãn và thử lại.",
+  "safeMessage": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
+  "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
   "isRetryEligible": true,
   "availableAt": "2026-10-27T10:55:32.180Z",
   "attemptsHistory": [
@@ -101,7 +104,7 @@ Dữ liệu minh chứng dưới đây đã được lọc khử trùng (Redacte
       "status": "Failed",
       "workerId": "worker-aws-apse1-02",
       "errorCode": "AWS_BEDROCK_THROTTLED",
-      "safeErrorMessage": "Lỗi tạm thời khi kết nối AI Bedrock (Throttling / Quota). Hệ thống sẽ tự động thử lại.",
+      "safeErrorMessage": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
       "executionDurationMs": 4250
     }
   ]
@@ -141,8 +144,8 @@ Khi file import không tồn tại trên Amazon S3 (`NoSuchKey`), hệ thống �
   "progressPercentage": null,
   "resultId": null,
   "errorCode": "AWS_S3_FILE_NOT_FOUND",
-  "safeMessage": "Không tìm thấy file tài liệu hoặc dữ liệu trên kho lưu trữ đám mây Amazon S3.",
-  "actionableReason": "Không tìm thấy file tài liệu hoặc file import trên kho lưu trữ đám mây S3. Vui lòng kiểm tra lại đường dẫn file.",
+  "safeMessage": "Không tìm thấy file tài liệu hoặc danh sách câu hỏi import trên Amazon S3.",
+  "actionableReason": "Không tìm thấy file tài liệu hoặc danh sách câu hỏi import trên Amazon S3.",
   "isRetryEligible": false
 }
 ```

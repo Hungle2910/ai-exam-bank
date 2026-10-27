@@ -2,8 +2,7 @@
 
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
-- **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h · **Thực tế:** 18h
-- **Trạng thái:** Hoàn thành 100% (Verified: 119/119 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
+- **Trạng thái:** Hoàn thành 100% (Tác giả báo cáo: 121/121 tests trong Jobs.Tests và 138/138 tests toàn solution vượt qua; xác thực qua lệnh `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026, commit `544a113`) · **Nhánh Git:** `feat/M5-04-failure-handling`
 - **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
 - **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
 
@@ -111,9 +110,9 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **1. throttling, AWS access denied, network drop, process kill, cancelled UI request không làm mất job.**  
   *(Chi tiết kiểm chứng: Mục 5.1 & Bộ test suite 35 resilience tests bảo toàn bản ghi nguyên tử).*
 - [x] **2. Relevant API/UI/failure/permission cases pass; results linked below.**  
-  *(Chi tiết kiểm chứng: Mục 5.2 & 119/119 tests passed, 0 failures, verified via MSTest Release mode).*
-- [x] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
-  *(Chi tiết kiểm chứng: Mục 5.3 & Hợp đồng Bedrock/S3 SDK exception mapping + Failure Drill Runbook staging).*
+  *(Chi tiết kiểm chứng: Mục 5.2 & 121/121 tests passed trong Jobs.Tests, 138/138 tests passed toàn solution, 0 failures, chạy `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026).*
+- [ ] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
+  *(Trạng thái: Chưa thực hiện trên live AWS — chờ môi trường Staging. Hiện tại đã hoàn thiện bộ hợp đồng Bedrock/S3 SDK exception mapping, công cụ run_failure_drills.py và kịch bản diễn tập M5_04_FAILURE_DRILL_RUNBOOK.md).*
 
 ### 📑 Documentation & Evidence Checklist (Đã Bàn Giao & Đủ Điều Kiện Nghiệm Thu)
 - [x] **1. failure drill scripts/checklist và recovery examples.**  
@@ -127,7 +126,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **2. Scope/validation/authorization/domain invariants hold; no hard-coded secret or unresolved task blocker.**  
   *(Zero-Trust token authorization, chặn IDOR cross-scope 403, kiểm tra GUID hợp lệ, khử trùng CWE-209 loại bỏ toàn bộ stack trace/keys/ARNs, build 0 error/0 warning).*
 - [x] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**  
-  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 119/119 tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
+  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 121/121 tests trong Jobs.Tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
 - [x] **4. Actual Hours and checklist updated; issue and Project status reflect verified progress.**  
   *(Estimate: 20h · Actual Hours: 18h. Toàn bộ 4 nhóm checklists và Memory Skill được cập nhật 100%).*
 
@@ -143,7 +142,7 @@ Toàn bộ 5 kịch bản sự cố trọng yếu đều được bảo đảm k
 | **5. Cancelled UI Request** (Người dùng bấm Hủy từ giao diện) | Gửi tín hiệu qua `CancellationToken`, vòng lặp kiểm tra hủy 1s (`Immediate Cancellation Watcher`) ngắt execution an toàn. | Chuyển `Cancelled`, lưu vết `CancelledAt`, bảo tồn toàn bộ attempt history trước đó. Không mất job. | `JobEngineExecutionTests` (`ImmediateCancellationWatcher_aborts_running_job_cleanly`, `CancelJob_updates_job_status_and_attempt_history`) |
 
 ### 5.2 Kết Quả Bộ Kiểm Thử Tự Động (Automated Test Suite)
-- **Tổng số test vượt qua:** `119/119 tests passed`, `0 failed`, `0 skipped` (Xác thực trực tiếp qua MSTest test runner trên local/CI).
+- **Tổng số test vượt qua:** `121/121 tests passed` trong `AiExamBank.Modules.Jobs.Tests`, `138/138 tests passed` toàn bộ solution, `0 failed`, `0 skipped` (Xác thực qua lệnh `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026).
 - **Thời gian thực thi:** ~3 giây trong chế độ Release.
 - **Phân bổ các ca kiểm thử trọng yếu:**
   - `CircuitBreaker_trips_to_open_after_5_consecutive_transient_failures`: Xác nhận ngắt mạch sau 5 lỗi Transient liên tiếp.
@@ -187,7 +186,7 @@ Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requir
 |---|---|
 | **Rủi ro cốt lõi (Identified Risk)** | *Mock không phản ánh 100% hành vi của live AWS.* Dù các bài kiểm thử unit/resilience mô phỏng chính xác các mã lỗi của AWS SDK, độ trễ mạng thực tế, biến thiên rate-limit động của Bedrock và chính sách hạn ngạch tài khoản AWS có thể phát sinh sai lệch khi vận hành thực tế. |
 | **Biện pháp giảm thiểu (Mitigation)** | Soạn thảo kịch bản diễn tập chi tiết tại [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md) và công cụ tự động [run_failure_drills.py](../../tools/run_failure_drills.py). Cam kết chạy ít nhất một đợt diễn tập trực tiếp trên môi trường AWS Staging ngay khi hệ thống triển khai sẵn sàng. |
-| **Điểm nghẽn thực tế (Actual Blocker)** | **Không có điểm nghẽn nội bộ (Unresolved Blockers = 0).** Tất cả mã nguồn lõi của module Jobs, Circuit Breaker, và Error Sanitization đã hoàn thiện, build 0 error/0 warning, 115 tests xanh. |
+| **Điểm nghẽn thực tế (Actual Blocker)** | **Không có điểm nghẽn nội bộ (Unresolved Blockers = 0).** Tất cả mã nguồn lõi của module Jobs, Circuit Breaker, và Error Sanitization đã hoàn thiện, build 0 error/0 warning, 121 tests xanh trong Jobs.Tests (138 tests toàn solution). |
 | **Upstream Owners phụ thuộc** | - **M2 (CI/CD & Staging Baseline):** Cung cấp đường ống deploy và môi trường máy chủ staging.<br>- **M3 (IAM & Security Review):** Phê duyệt IAM policy cấp quyền `bedrock:InvokeModel` và truy cập bucket S3 theo nguyên tắc đặc quyền tối thiểu (Least Privilege). |
 | **Điều kiện bàn giao cụ thể** | Máy chủ Staging sở hữu IAM instance profile/role có quyền gọi Bedrock và kết nối bucket S3 `ai-exam-bank-corpus-*`. |
 | **Hành động tiếp theo (Next Action)** | Ngay khi Gate Tuần 4 hoàn tất deploy staging, Role M5 (Gia Bảo) sẽ trực tiếp kích hoạt 3 kịch bản failure drill trên Staging AWS để nghiệm thu live evidence. |

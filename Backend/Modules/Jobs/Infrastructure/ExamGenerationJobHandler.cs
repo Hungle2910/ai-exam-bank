@@ -15,10 +15,14 @@ public sealed class ExamGenerationJobHandler : IJobHandler
 
     /// <inheritdoc />
     private readonly IAiProviderCircuitBreaker? _circuitBreaker;
+    private readonly bool _allowFailureSimulation;
 
-    public ExamGenerationJobHandler(IAiProviderCircuitBreaker? circuitBreaker = null)
+    public ExamGenerationJobHandler(
+        IAiProviderCircuitBreaker? circuitBreaker = null,
+        bool allowFailureSimulation = false)
     {
         _circuitBreaker = circuitBreaker;
+        _allowFailureSimulation = allowFailureSimulation;
     }
 
     /// <inheritdoc />
@@ -29,7 +33,9 @@ public sealed class ExamGenerationJobHandler : IJobHandler
         // Kỹ thuật Check-before-write (Phục hồi Timeout-after-write):
         // Nếu đây là lượt thử lại (AttemptNumber > 1) và phát hiện snapshot đã được tạo hoặc kịch bản mô phỏng timeout-after-write,
         // lập tức tái sử dụng kết quả (Result Reuse) mà không gọi lại Bedrock lần 2, tránh tạo 2 đề thi trùng lặp.
-        if (context.AttemptNumber > 1 && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
+        if (context.AttemptNumber > 1 &&
+            ((_allowFailureSimulation && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase)) ||
+             context.Request.PayloadReference.StartsWith("s3://snapshot/", StringComparison.OrdinalIgnoreCase)))
         {
             var recoveredSnapshotId = $"exam-snap-{context.JobId.Value:N}";
             if (context.ReportProgressAsync != null) await context.ReportProgressAsync(100);
@@ -60,47 +66,50 @@ public sealed class ExamGenerationJobHandler : IJobHandler
         if (context.ReportProgressAsync != null) await context.ReportProgressAsync(80);
         await Task.Delay(20, cancellationToken);
 
-        // Giả lập lỗi nếu payload yêu cầu thử nghiệm
-        if (context.Request.PayloadReference.Contains("simulate-blueprint-error", StringComparison.OrdinalIgnoreCase))
+        // Giả lập lỗi chỉ khi cờ cấu hình cho phép mô phỏng lỗi được bật (chặn tấn công DoS/circuit tripping ở Production)
+        if (_allowFailureSimulation)
         {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", "BLUEPRINT_INSUFFICIENT_QUESTIONS");
-            return JobExecutionResult.Failure("BLUEPRINT_INSUFFICIENT_QUESTIONS", "Không đủ câu hỏi đã duyệt thỏa mãn ma trận đề thi.", isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-blueprint-error", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", "BLUEPRINT_INSUFFICIENT_QUESTIONS");
+                return JobExecutionResult.Failure("BLUEPRINT_INSUFFICIENT_QUESTIONS", "Không đủ câu hỏi đã duyệt thỏa mãn ma trận đề thi.", isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-bedrock-throttled", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
-            return JobExecutionResult.Failure(AwsErrorCodes.BedrockThrottled, "AWS Bedrock HTTP 429 ThrottlingException: Request rate exceeded.", isTransient: true);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-bedrock-throttled", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+                return JobExecutionResult.Failure(AwsErrorCodes.BedrockThrottled, "AWS Bedrock HTTP 429 ThrottlingException: Request rate exceeded.", isTransient: true);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-bedrock-timeout", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockModelTimeout);
-            return JobExecutionResult.Failure(AwsErrorCodes.BedrockModelTimeout, "AWS Bedrock invocation timed out.", isTransient: true);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-bedrock-timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockModelTimeout);
+                return JobExecutionResult.Failure(AwsErrorCodes.BedrockModelTimeout, "AWS Bedrock invocation timed out.", isTransient: true);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-bedrock-access-denied", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockAccessDenied);
-            return JobExecutionResult.Failure(AwsErrorCodes.BedrockAccessDenied, "AWS Bedrock AccessDeniedException: User is not authorized to invoke model.", isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-bedrock-access-denied", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockAccessDenied);
+                return JobExecutionResult.Failure(AwsErrorCodes.BedrockAccessDenied, "AWS Bedrock AccessDeniedException: User is not authorized to invoke model.", isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-bedrock-quota-exceeded", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockQuotaExceeded);
-            return JobExecutionResult.Failure(AwsErrorCodes.BedrockQuotaExceeded, "AWS Bedrock ServiceQuotaExceededException: Monthly quota reached.", isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-bedrock-quota-exceeded", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockQuotaExceeded);
+                return JobExecutionResult.Failure(AwsErrorCodes.BedrockQuotaExceeded, "AWS Bedrock ServiceQuotaExceededException: Monthly quota reached.", isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-ai-malformed-output", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.AiMalformedOutput);
-            return JobExecutionResult.Failure(AwsErrorCodes.AiMalformedOutput, "Model output could not be parsed as valid exam schema JSON.", isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-ai-malformed-output", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.AiMalformedOutput);
+                return JobExecutionResult.Failure(AwsErrorCodes.AiMalformedOutput, "Model output could not be parsed as valid exam schema JSON.", isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-rag-empty", StringComparison.OrdinalIgnoreCase))
-        {
-            _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.RagRetrievalEmpty);
-            return JobExecutionResult.Failure(AwsErrorCodes.RagRetrievalEmpty, "No matching knowledge base chunks found for blueprint slots.", isTransient: false);
+            if (context.Request.PayloadReference.Contains("simulate-rag-empty", StringComparison.OrdinalIgnoreCase))
+            {
+                _circuitBreaker?.RecordFailure("AWS_BEDROCK", AwsErrorCodes.RagRetrievalEmpty);
+                return JobExecutionResult.Failure(AwsErrorCodes.RagRetrievalEmpty, "No matching knowledge base chunks found for blueprint slots.", isTransient: false);
+            }
         }
 
         // Chặng 4: Tạo ExamSnapshot bất biến và lưu kết quả

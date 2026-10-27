@@ -14,6 +14,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
     {
         public CircuitBreakerState State { get; set; } = CircuitBreakerState.Closed;
         public int ConsecutiveFailures { get; set; }
+        public DateTimeOffset? WindowStartedAt { get; set; }
         public DateTimeOffset? OpenedAt { get; set; }
         public bool HalfOpenProbeInFlight { get; set; }
         public DateTimeOffset? LastProbeTime { get; set; }
@@ -22,16 +23,19 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
     private readonly ConcurrentDictionary<string, ProviderCircuit> _circuits = new(StringComparer.OrdinalIgnoreCase);
     private readonly int _failureThreshold;
     private readonly TimeSpan _coolingPeriod;
+    private readonly TimeSpan _failureWindow;
     private readonly Func<DateTimeOffset> _clock;
     private readonly object _syncRoot = new();
 
     public InMemoryCircuitBreaker(
         int failureThreshold = 5,
         TimeSpan? coolingPeriod = null,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        TimeSpan? failureWindow = null)
     {
         _failureThreshold = Math.Max(1, failureThreshold);
         _coolingPeriod = coolingPeriod ?? TimeSpan.FromSeconds(60);
+        _failureWindow = failureWindow ?? TimeSpan.FromSeconds(60);
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -90,6 +94,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
         {
             var circuit = GetOrCreate(provider);
             circuit.ConsecutiveFailures = 0;
+            circuit.WindowStartedAt = null;
             circuit.OpenedAt = null;
             circuit.HalfOpenProbeInFlight = false;
             circuit.LastProbeTime = null;
@@ -118,6 +123,15 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                 return;
             }
 
+            // Cửa sổ trượt đếm lỗi liên tiếp (mặc định 60s):
+            // Bắt đầu cửa sổ khi có lỗi đầu tiên, hoặc đặt lại số lỗi nếu lỗi tiếp theo xảy ra sau khi cửa sổ đã hết hạn.
+            if (circuit.State == CircuitBreakerState.Closed &&
+                (!circuit.WindowStartedAt.HasValue || now - circuit.WindowStartedAt.Value > _failureWindow))
+            {
+                circuit.ConsecutiveFailures = 0;
+                circuit.WindowStartedAt = now;
+            }
+
             circuit.ConsecutiveFailures++;
 
             if (circuit.State == CircuitBreakerState.HalfOpen || circuit.ConsecutiveFailures >= _failureThreshold)
@@ -126,6 +140,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                 circuit.OpenedAt = now;
                 circuit.HalfOpenProbeInFlight = false;
                 circuit.LastProbeTime = null;
+                circuit.WindowStartedAt = null;
             }
         }
     }
@@ -157,6 +172,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             var circuit = GetOrCreate(provider);
             circuit.State = CircuitBreakerState.Closed;
             circuit.ConsecutiveFailures = 0;
+            circuit.WindowStartedAt = null;
             circuit.OpenedAt = null;
             circuit.HalfOpenProbeInFlight = false;
             circuit.LastProbeTime = null;

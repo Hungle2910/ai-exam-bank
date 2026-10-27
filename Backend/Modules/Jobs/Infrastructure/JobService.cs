@@ -230,7 +230,9 @@ public sealed class JobService : IJobPublisher, IJobTracker
     {
         var isEligible = IsEligibleForRetry(job);
 
-        var actionableReason = AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
+        var actionableReason = string.IsNullOrWhiteSpace(job.ErrorCode) && string.IsNullOrWhiteSpace(job.SafeErrorMessage)
+            ? null
+            : AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
 
         return new(
             JobRef.Create(job.Id),

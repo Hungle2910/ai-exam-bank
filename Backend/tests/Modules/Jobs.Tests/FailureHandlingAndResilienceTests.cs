@@ -299,6 +299,35 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"), "New probe must be permitted after previous probe times out.");
     }
 
+    [TestMethod]
+    public void CircuitBreaker_resets_failures_outside_sliding_window()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var breaker = new InMemoryCircuitBreaker(
+            failureThreshold: 5,
+            coolingPeriod: TimeSpan.FromSeconds(60),
+            clock: () => now,
+            failureWindow: TimeSpan.FromSeconds(60));
+
+        // 4 lỗi liên tiếp trong vòng 30s
+        for (int i = 0; i < 4; i++)
+        {
+            breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+            now = now.AddSeconds(10);
+        }
+        Assert.AreEqual(CircuitBreakerState.Closed, breaker.GetState("AWS_BEDROCK"));
+
+        // Chờ quá cửa sổ 60s (thời gian đã trôi qua 70s kể từ lỗi đầu tiên)
+        now = now.AddSeconds(40);
+
+        // Ghi nhận lỗi thứ 5 nhưng đã ngoài cửa sổ -> cửa sổ được reset, lỗi này chỉ tính là lỗi 1 của chu kỳ mới
+        breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+
+        // Mạch vẫn phải ở trạng thái Closed (không bị ngắt oan)
+        Assert.AreEqual(CircuitBreakerState.Closed, breaker.GetState("AWS_BEDROCK"));
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"));
+    }
+
     #endregion
 
     #region 4. Retry Eligibility & JobService Tests
@@ -316,7 +345,7 @@ public sealed class FailureHandlingAndResilienceTests
 
         var status1 = await service.GetJobStatusAsync(JobRef.Create(job1.Id), "user-01", SchoolScope);
         Assert.IsTrue(status1.IsRetryEligible ?? false, "Cancelled job should be retry eligible.");
-        Assert.IsNotNull(status1.ActionableReason);
+        Assert.IsNull(status1.ActionableReason, "Cancelled job without error should have null ActionableReason.");
 
         // 2. Tác vụ thất bại do Permanent error (AWS_BEDROCK_ACCESS_DENIED) -> Eligible = false
         var req2 = JobRequest.Create("ExamGeneration", "payload-2", "user-01", SchoolScope, "key-elig-2", "corr-2");
@@ -327,6 +356,17 @@ public sealed class FailureHandlingAndResilienceTests
         var status2 = await service.GetJobStatusAsync(JobRef.Create(job2.Id), "user-01", SchoolScope);
         Assert.IsFalse(status2.IsRetryEligible ?? true, "Permanent error must NOT be retry eligible.");
         Assert.IsTrue(status2.ActionableReason!.Contains("IAM", StringComparison.OrdinalIgnoreCase));
+
+        // 3. Tác vụ hoàn tất (Completed) -> ActionableReason = null và IsRetryEligible = false
+        var req3 = JobRequest.Create("ExamGeneration", "payload-3", "user-01", SchoolScope, "key-elig-3", "corr-3");
+        var job3 = await store.EnqueueAsync(req3, "fp-3");
+        var claim3 = await store.ClaimNextJobAsync("w1", TimeSpan.FromMinutes(2));
+        await store.CompleteJobAsync(job3.Id, claim3!.LeaseToken, "result-exam-123");
+
+        var status3 = await service.GetJobStatusAsync(JobRef.Create(job3.Id), "user-01", SchoolScope);
+        Assert.AreEqual(JobStatus.Completed, status3.Status);
+        Assert.IsNull(status3.ActionableReason, "Completed job must have null ActionableReason.");
+        Assert.IsFalse(status3.IsRetryEligible ?? true, "Completed job must not be retry eligible.");
     }
 
     [TestMethod]
@@ -382,7 +422,7 @@ public sealed class FailureHandlingAndResilienceTests
     [DataRow("simulate-rag-empty", AwsErrorCodes.RagRetrievalEmpty, false)]
     public async Task ExamGenerationHandler_simulates_aws_bedrock_failures(string payloadTrigger, string expectedCode, bool expectedTransient)
     {
-        var handler = new ExamGenerationJobHandler();
+        var handler = new ExamGenerationJobHandler(allowFailureSimulation: true);
         var request = JobRequest.Create("ExamGeneration", $"s3://bucket/{payloadTrigger}.json", "user-01", SchoolScope, "k1", "c1");
         var context = new JobExecutionContext
         {
@@ -396,6 +436,33 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsFalse(result.Succeeded);
         Assert.AreEqual(expectedCode, result.ErrorCode);
         Assert.AreEqual(expectedTransient, result.IsTransient);
+    }
+
+    [TestMethod]
+    public async Task ExamGenerationHandler_ignores_simulation_when_flag_is_disabled()
+    {
+        var breaker = new InMemoryCircuitBreaker(failureThreshold: 5);
+        // Handler với allowFailureSimulation = false (mặc định cho production)
+        var handler = new ExamGenerationJobHandler(breaker, allowFailureSimulation: false);
+
+        // Gửi 5 job chứa simulate-bedrock-throttled
+        for (int i = 0; i < 5; i++)
+        {
+            var request = JobRequest.Create("ExamGeneration", "s3://bucket/simulate-bedrock-throttled.json", "user-01", SchoolScope, $"k-{i}", $"c-{i}");
+            var context = new JobExecutionContext
+            {
+                JobId = JobRef.Create(Guid.NewGuid()),
+                Request = request,
+                AttemptNumber = 1
+            };
+
+            var result = await handler.ExecuteAsync(context, CancellationToken.None);
+            Assert.IsTrue(result.Succeeded, "Job must proceed as normal success when failure simulation is disabled.");
+        }
+
+        // Breaker phải vẫn giữ nguyên trạng thái Closed, không bị mở mạch
+        Assert.AreEqual(CircuitBreakerState.Closed, breaker.GetState("AWS_BEDROCK"));
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"));
     }
 
     [TestMethod]
