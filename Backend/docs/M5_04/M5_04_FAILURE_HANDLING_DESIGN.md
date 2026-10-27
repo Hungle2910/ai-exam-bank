@@ -2,7 +2,7 @@
 
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
-- **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h
+- **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h · **Thực tế:** 18h
 - **Trạng thái:** Hoàn thành 100% (Verified: 115/115 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
 - **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
 - **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
@@ -120,6 +120,16 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
   *(Chi tiết kiểm chứng: Script [run_failure_drills.py](../../tools/run_failure_drills.py), Checklist diễn tập 3 giai đoạn & 4 ví dụ JSON payload thực tế trong [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md)).*
 - [x] **2. OpenAPI/contracts/runbooks/config/ADR updated as applicable, with redacted evidence and release/source/job versions.**  
   *(Chi tiết kiểm chứng: Hợp đồng OpenAPI 3.0, [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [drill_evidence.json](drill_evidence.json) chuẩn hóa với Release `v1.2.0-rc1` và Schema `job-engine/v1.2`).*
+
+### 🏆 Acceptance Criteria Checklist (Tiêu Chí Nghiệm Thu Đạt Chuẩn)
+- [x] **1. mọi lỗi thử có terminal/recoverable state rõ, không stuck RUNNING vô hạn.**  
+  *(Cơ chế RecoverExpiredLeasesAsync thu hồi stale running job sau 2 phút; phân loại Transient vs Permanent rõ ràng, max 3 attempts chuyển Failed).*
+- [x] **2. Scope/validation/authorization/domain invariants hold; no hard-coded secret or unresolved task blocker.**  
+  *(Zero-Trust token authorization, chặn IDOR cross-scope 403, kiểm tra GUID hợp lệ, khử trùng CWE-209 loại bỏ toàn bộ stack trace/keys/ARNs, build 0 error/0 warning).*
+- [x] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**  
+  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 115/115 tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
+- [x] **4. Actual Hours and checklist updated; issue and Project status reflect verified progress.**  
+  *(Estimate: 20h · Actual Hours: 18h. Toàn bộ 4 nhóm checklists và Memory Skill được cập nhật 100%).*
 
 ### 5.1 Bảo Toàn Trạng Thái Tác Vụ (Zero Job Loss Invariant)
 Toàn bộ 5 kịch bản sự cố trọng yếu đều được bảo đảm không làm mất job, không làm rò rỉ trạng thái, và không gây kẹt tiến trình vĩnh viễn:

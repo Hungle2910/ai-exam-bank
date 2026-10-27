@@ -9,6 +9,7 @@ Tài liệu này ghi lại toàn bộ tiến độ công việc, các quyết đ
 ### [2026-10-27] M5-04: Failure Handling cho Import và AI Provider - HOÀN THÀNH 100%
 - **Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20)
 - **Nhánh triển khai:** `feat/M5-04-failure-handling` (tạo từ `dev`).
+- **Ước lượng:** 20h · **Thời gian thực tế (Actual Hours):** 18h · **Tiêu chí:** Hoàn tất 100% 4/4 nhóm Checklist.
 - **Phạm vi kỹ thuật đã bàn giao:**
   1. **Stale Lease Recovery & Crash Resilience:**
      - Tự động phát hiện và khôi phục các job bị kẹt `Running` do worker sập, crash process hoặc network partition.
@@ -26,13 +27,14 @@ Tài liệu này ghi lại toàn bộ tiến độ công việc, các quyết đ
   5. **Nâng cấp Status UI (`/jobs/`) & Quản lý Retry Eligibility:**
      - Bổ sung trường `IsRetryEligible` và `ActionableReason` vào `JobStatusDto` và `JobApiResponse`.
      - Status UI hiển thị cảnh báo `actionable-advice-banner` và tự động vô hiệu hóa nút `[🔄 Thử lại]` đối với lỗi vĩnh viễn (Permanent) hoặc khi đã cạn số lượt retry.
-  6. **Tài liệu & Quyết định Kiến trúc:**
+  6. **Tài liệu, Runbook Diễn Tập & ADR:**
      - Soạn thảo tài liệu thiết kế: `Backend/docs/M5_04/M5_04_FAILURE_HANDLING_DESIGN.md`.
+     - Soạn thảo runbook diễn tập: `Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md` & `drill_evidence.json`.
+     - Tool chạy tự động: `Backend/tools/run_failure_drills.py`.
      - Bổ sung quyết định kiến trúc: `Backend/docs/adr/0007-failure-handling-stale-lease-recovery-resilience.md`.
-     - Cập nhật chỉ mục `Backend/docs/adr/README.md`.
   7. **Kiểm thử toàn diện:**
      - 115 unit tests trong `AiExamBank.Modules.Jobs.Tests` vượt qua 100% (bổ sung 31 test mới trong `FailureHandlingAndResilienceTests.cs`).
-     - Script kiểm tra repo `python Backend/tools/check_repository.py` đạt 0 lỗi trên 419 files.
+     - Script kiểm tra repo `python Backend/tools/check_repository.py` đạt 0 lỗi trên 433 files.
 
 ### [2026-10-27] M5-03: Retry, Backoff, Idempotency & Integration Adapters - HOÀN THÀNH 100% (PR #74 MERGED)
 - **Issue:** [#15](https://github.com/Hungle2910/ai-exam-bank/issues/15)
