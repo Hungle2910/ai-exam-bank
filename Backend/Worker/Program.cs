@@ -13,6 +13,9 @@ var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configu
 builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
 builder.Services.AddSingleton<JobRegistry>();
 
+// Đăng ký Circuit Breaker bảo vệ nhà cung cấp AI
+builder.Services.AddSingleton<IAiProviderCircuitBreaker, InMemoryCircuitBreaker>();
+
 // Đăng ký các Handler thực thi tác vụ
 builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
 builder.Services.AddSingleton<IJobHandler, ExamGenerationJobHandler>();

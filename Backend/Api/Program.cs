@@ -94,6 +94,7 @@ builder.Services.AddProblemDetails();
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
 builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
 builder.Services.AddSingleton<JobRegistry>();
+builder.Services.AddSingleton<IAiProviderCircuitBreaker, InMemoryCircuitBreaker>();
 builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
 builder.Services.AddSingleton<IJobHandler, ExamGenerationJobHandler>();
 builder.Services.AddSingleton<IJobHandler, CsvImportJobHandler>();

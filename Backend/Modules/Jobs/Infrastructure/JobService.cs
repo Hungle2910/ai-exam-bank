@@ -178,13 +178,22 @@ public sealed class JobService : IJobPublisher, IJobTracker
         return await _store.GetAttemptsAsync(jobRef.Value, cancellationToken);
     }
 
-    private static JobStatusDto MapToDto(BackgroundJob job) =>
-        new(
+    private static JobStatusDto MapToDto(BackgroundJob job)
+    {
+        var isEligible = (job.Status == JobStatus.Failed || job.Status == JobStatus.Cancelled) &&
+                         !ErrorClassifier.IsKnownPermanent(job.ErrorCode);
+
+        var actionableReason = AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
+
+        return new(
             JobRef.Create(job.Id),
             job.Type,
             job.Status,
             job.ProgressPercentage,
             job.ResultId,
             job.ErrorCode,
-            job.SafeErrorMessage);
+            job.SafeErrorMessage,
+            isEligible,
+            actionableReason);
+    }
 }

@@ -324,9 +324,11 @@ public sealed class InMemoryJobStore : IJobStore
             if (currentAttempt is null || currentAttempt.LeaseToken != leaseToken || currentAttempt.Status != AttemptStatus.Started)
                 return Task.FromResult(false);
 
+            var sanitizedMessage = AwsErrorMapping.SanitizeForClient(safeErrorMessage, errorCode);
+
             currentAttempt.Status = AttemptStatus.Failed;
             currentAttempt.ErrorCode = errorCode;
-            currentAttempt.SafeErrorMessage = safeErrorMessage;
+            currentAttempt.SafeErrorMessage = sanitizedMessage;
             currentAttempt.FinishedAt = now;
             currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
 
@@ -341,7 +343,7 @@ public sealed class InMemoryJobStore : IJobStore
                 job.Status = JobStatus.Pending;
                 job.AvailableAt = BackoffJitterCalculator.CalculateAvailableAt(job.AttemptCount, now);
                 job.ErrorCode = errorCode;
-                job.SafeErrorMessage = safeErrorMessage;
+                job.SafeErrorMessage = sanitizedMessage;
                 job.UpdatedAt = now;
             }
             else
@@ -350,7 +352,7 @@ public sealed class InMemoryJobStore : IJobStore
                 job.ErrorCode = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts
                     ? "RETRY_BUDGET_EXHAUSTED"
                     : errorCode;
-                job.SafeErrorMessage = safeErrorMessage;
+                job.SafeErrorMessage = sanitizedMessage;
                 job.UpdatedAt = now;
             }
 
@@ -435,15 +437,22 @@ public sealed class InMemoryJobStore : IJobStore
                     {
                         job.Status = JobStatus.Failed;
                         job.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
-                        job.SafeErrorMessage = "Job attempt limit reached after lease expiration.";
+                        job.SafeErrorMessage = AwsErrorMapping.GetActionableMessage("RETRY_BUDGET_EXHAUSTED", "Job attempt limit reached after lease expiration.");
                         job.UpdatedAt = now;
+                        lastAttempt.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
+                        lastAttempt.SafeErrorMessage = job.SafeErrorMessage;
                     }
                     else
                     {
                         var retryDelayMinutes = job.AttemptCount == 1 ? 1 : 5;
                         job.Status = JobStatus.Pending;
                         job.AvailableAt = now.AddMinutes(retryDelayMinutes);
+                        job.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                        job.SafeErrorMessage = AwsErrorMapping.GetActionableMessage(AwsErrorCodes.StaleLeaseRecovered);
+                        job.RetryReason = "Tự động phục hồi sau khi Worker bị mất tín hiệu Heartbeat.";
                         job.UpdatedAt = now;
+                        lastAttempt.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                        lastAttempt.SafeErrorMessage = job.SafeErrorMessage;
                     }
                 }
             }

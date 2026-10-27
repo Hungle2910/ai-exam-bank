@@ -1,4 +1,5 @@
 using AiExamBank.Modules.Jobs.Contracts;
+using AiExamBank.Modules.Jobs.Domain;
 
 namespace AiExamBank.Modules.Jobs.Infrastructure;
 
@@ -44,6 +45,38 @@ public sealed class CsvImportJobHandler : IJobHandler
                 "ROW_VALIDATION_ERROR",
                 "Dữ liệu dòng 15 bị thiếu trường 'Đáp án đúng'. Sửa file CSV và thử lại.",
                 isTransient: false);
+        }
+
+        if (context.Request.PayloadReference.Contains("simulate-s3-access-denied", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobExecutionResult.Failure(
+                AwsErrorCodes.S3AccessDenied,
+                "Amazon S3 AccessDenied: 403 Forbidden reading import file.",
+                isTransient: false);
+        }
+
+        if (context.Request.PayloadReference.Contains("simulate-s3-file-not-found", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobExecutionResult.Failure(
+                AwsErrorCodes.S3FileNotFound,
+                "Amazon S3 NoSuchKey: The specified import file was not found in bucket.",
+                isTransient: false);
+        }
+
+        if (context.Request.PayloadReference.Contains("simulate-s3-slowdown", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobExecutionResult.Failure(
+                AwsErrorCodes.S3SlowDown,
+                "Amazon S3 503 SlowDown: Rate limit reached.",
+                isTransient: true);
+        }
+
+        if (context.Request.PayloadReference.Contains("simulate-s3-timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return JobExecutionResult.Failure(
+                AwsErrorCodes.S3Timeout,
+                "Amazon S3 socket connection timed out while streaming CSV.",
+                isTransient: true);
         }
 
         // Chặng 3: Kiểm tra chống trùng lặp nội dung câu hỏi

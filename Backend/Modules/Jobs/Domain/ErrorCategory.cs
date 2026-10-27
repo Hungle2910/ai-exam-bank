@@ -41,7 +41,13 @@ public static class ErrorClassifier
         "WORKER_CRASHED",
         "TRANSIENT_FAULT",
         "TIMEOUT",
-        "UNHANDLED_EXCEPTION"
+        "UNHANDLED_EXCEPTION",
+        AwsErrorCodes.BedrockThrottled,
+        AwsErrorCodes.BedrockModelTimeout,
+        AwsErrorCodes.S3SlowDown,
+        AwsErrorCodes.S3Timeout,
+        AwsErrorCodes.StaleLeaseRecovered,
+        AwsErrorCodes.CircuitBreakerOpen
     };
 
     private static readonly HashSet<string> KnownPermanentErrors = new(StringComparer.OrdinalIgnoreCase)
@@ -58,7 +64,14 @@ public static class ErrorClassifier
         "RESOURCE_NOT_FOUND",
         "VALIDATION_FAILED",
         "ARGUMENT_ERROR",
-        "SCHEMA_ERROR"
+        "SCHEMA_ERROR",
+        AwsErrorCodes.BedrockQuotaExceeded,
+        AwsErrorCodes.BedrockAccessDenied,
+        AwsErrorCodes.AiMalformedOutput,
+        AwsErrorCodes.S3AccessDenied,
+        AwsErrorCodes.S3FileNotFound,
+        AwsErrorCodes.RagRetrievalEmpty,
+        AwsErrorCodes.KnowledgeBaseNotFound
     };
 
     private static readonly HashSet<string> KnownTerminalErrors = new(StringComparer.OrdinalIgnoreCase)
