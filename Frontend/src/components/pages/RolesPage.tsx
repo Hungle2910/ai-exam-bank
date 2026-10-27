@@ -2,8 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  Shield, Plus, Search, MoreHorizontal, RefreshCw, Trash2,
-  Building2, ChevronDown
+  Shield, Plus, Search, RefreshCw, Trash2
 } from 'lucide-react';
 import { useAuth, AppRole } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -115,9 +114,6 @@ export default function RolesPage() {
     a.userId.toLowerCase().includes(search.toLowerCase()) ||
     ROLE_LABEL[a.role].toLowerCase().includes(search.toLowerCase())
   );
-
-  // Group by role
-  const grouped = ROLE_LABEL as Record<AppRole, string>;
 
   return (
     <div>
@@ -317,11 +313,14 @@ function GrantRoleModal({ schools, defaultSchoolId, csrfToken, primaryRole, onCl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { error: showError } = useToast();
+  const selectedSchoolId = schools.some(school => school.id === schoolId)
+    ? schoolId
+    : schools.find(school => school.id === defaultSchoolId)?.id ?? schools[0]?.id ?? '';
 
   useEffect(() => {
-    if (!schoolId || role === 'SchoolAdmin') return;
+    if (!selectedSchoolId || role === 'SchoolAdmin') return;
     let active = true;
-    apiFetch(`/api/v1/admin/schools/${schoolId}/departments`)
+    apiFetch(`/api/v1/admin/schools/${selectedSchoolId}/departments`)
       .then(async response => {
         if (!response.ok) throw new Error('Không thể tải bộ môn');
         return response.json() as Promise<Department[]>;
@@ -330,12 +329,12 @@ function GrantRoleModal({ schools, defaultSchoolId, csrfToken, primaryRole, onCl
       .catch(() => { if (active) setError('Không thể tải bộ môn'); })
       .finally(() => { if (active) setLoadingDepartments(false); });
     return () => { active = false; };
-  }, [apiFetch, schoolId, role]);
+  }, [apiFetch, selectedSchoolId, role]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId.trim()) { setError('Vui lòng nhập User ID'); return; }
-    if (!schoolId) { setError('Vui lòng chọn trường'); return; }
+    if (!selectedSchoolId) { setError('Vui lòng chọn trường'); return; }
     if (role !== 'SchoolAdmin' && !departmentId) { setError('Vui lòng chọn bộ môn'); return; }
     if (!csrfToken) return;
 
@@ -346,7 +345,7 @@ function GrantRoleModal({ schools, defaultSchoolId, csrfToken, primaryRole, onCl
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
-        body: JSON.stringify({ role, schoolId, departmentId: role === 'SchoolAdmin' ? null : departmentId }),
+        body: JSON.stringify({ role, schoolId: selectedSchoolId, departmentId: role === 'SchoolAdmin' ? null : departmentId }),
       });
 
       if (res.status === 201) {
@@ -413,7 +412,7 @@ function GrantRoleModal({ schools, defaultSchoolId, csrfToken, primaryRole, onCl
 
             <div className="form-group">
               <label className="form-label" htmlFor="grant-school">Trường</label>
-              <select id="grant-school" className="form-select" value={schoolId} onChange={e => {
+              <select id="grant-school" className="form-select" value={selectedSchoolId} onChange={e => {
                 setSchoolId(e.target.value);
                 setDepartmentId('');
                 setDepartments([]);

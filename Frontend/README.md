@@ -13,12 +13,13 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. If you instead run the backend from a terminal at `http://localhost:5000`, set `AIEXAMBANK_BACKEND_URL=http://localhost:5000` in `.env.local` and restart Next.js:
+Open `http://localhost:3000`. If you instead run the backend at `http://localhost:5000`, set `AIEXAMBANK_BACKEND_URL=http://localhost:5000` in `.env.local` and restart Next.js. In a separate terminal opened in `Frontend/`, run:
 
 ```powershell
+cd ..\Backend\Api
 dotnet run --no-launch-profile --urls http://localhost:5000
 ```
 
 `next.config.ts` forwards `/auth`, `/api` and `/health` requests to `AIEXAMBANK_BACKEND_URL`. The backend needs its SQL Server connection configuration and applied migrations. The frontend may display mock data for endpoints that have not been implemented yet; that is not proof that the corresponding backend workflow works.
 
-Run `npm run build` to check the frontend. From `Backend/`, run `dotnet build AiExamBank.slnx` and `dotnet test AiExamBank.slnx` to check the backend.
+Run `npm run test:unit` and `npm run build` to check the frontend. From `Backend/`, run `dotnet build AiExamBank.slnx` and `dotnet test AiExamBank.slnx` to check the backend.

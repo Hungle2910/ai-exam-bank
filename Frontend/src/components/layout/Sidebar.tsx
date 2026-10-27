@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   BookOpen, GraduationCap, Users, Building2, Shield,
   LayoutDashboard, FileText, ClipboardCheck, Upload,
@@ -146,13 +146,6 @@ const ROLE_LABEL: Record<AppRole, string> = {
   Teacher: 'Giáo viên',
 };
 
-const ROLE_COLOR: Record<AppRole, string> = {
-  MinistryAdmin: 'badge-purple',
-  SchoolAdmin: 'badge-blue',
-  DepartmentHead: 'badge-teal',
-  Teacher: 'badge-green',
-};
-
 /* ============================================================
    SIDEBAR COMPONENT
    ============================================================ */
@@ -166,11 +159,15 @@ interface SidebarProps {
 
 export function Sidebar({ activeRoute, onNavigate, open, onClose }: SidebarProps) {
   const { user, primaryRole, logout } = useAuth();
-  const { success } = useToast();
+  const { success, error: showError } = useToast();
 
   const handleLogout = async () => {
-    await logout();
-    success('Đã đăng xuất thành công');
+    try {
+      await logout();
+      success('Đã đăng xuất thành công');
+    } catch {
+      showError('Đăng xuất thất bại. Vui lòng thử lại');
+    }
   };
 
   const visibleSections = navSections.filter(section => {
