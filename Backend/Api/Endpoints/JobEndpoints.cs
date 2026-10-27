@@ -534,13 +534,17 @@ public static class JobEndpoints
             catch (InvalidOperationException opEx)
             {
                 var isCompleted = opEx.Message.Contains("completed", StringComparison.OrdinalIgnoreCase);
+                var isNotEligible = opEx.Message.Contains("eligible", StringComparison.OrdinalIgnoreCase);
+                var title = isCompleted ? "Job Already Completed" : (isNotEligible ? "Job Not Retry Eligible" : "Job Already Active");
+                var code = isCompleted ? "JOB_ALREADY_COMPLETED" : (isNotEligible ? "JOB_NOT_RETRY_ELIGIBLE" : "JOB_ALREADY_ACTIVE");
+
                 return Results.Problem(
                     statusCode: isCompleted ? StatusCodes.Status400BadRequest : StatusCodes.Status409Conflict,
-                    title: isCompleted ? "Job Already Completed" : "Job Already Active",
+                    title: title,
                     detail: opEx.Message,
                     extensions: new Dictionary<string, object?>
                     {
-                        ["code"] = isCompleted ? "JOB_ALREADY_COMPLETED" : "JOB_ALREADY_ACTIVE",
+                        ["code"] = code,
                         ["traceId"] = httpContext.TraceIdentifier
                     });
             }

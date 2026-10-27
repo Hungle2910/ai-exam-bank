@@ -92,6 +92,10 @@ def generate_redacted_evidence():
         "engineVersion": "job-engine/v1.2",
         "releaseTag": "v1.2.0-rc1",
         "drillExecutionTimeUtc": timestamp,
+        "evidenceType": "Illustrative Simulated Benchmark",
+        "simulated": True,
+        "liveAws": False,
+        "executionEnvironment": "Local Unit & Resilience Test Suite",
         "drills": [
             {
                 "drillId": "DRILL-01-THROTTLING",
@@ -148,7 +152,7 @@ def generate_redacted_evidence():
                 "circuitTransitions": [
                     {"step": 1, "state": "Closed", "failures": 0, "action": "Allow request"},
                     {"step": 2, "state": "Closed", "failures": 4, "action": "Allow request"},
-                    {"step": 3, "state": "Open", "failures": 5, "action": "Trip circuit; reject all incoming with AWS_BEDROCK_CIRCUIT_OPEN"},
+                    {"step": 3, "state": "Open", "failures": 5, "action": "Trip circuit; reject all incoming with CIRCUIT_BREAKER_OPEN"},
                     {"step": 4, "state": "HalfOpen", "cooldownSeconds": 60, "action": "Allow 1 probe request"},
                     {"step": 5, "state": "Closed", "probeResult": "Success", "action": "Reset failures to 0, resume normal traffic"}
                 ],
@@ -158,7 +162,7 @@ def generate_redacted_evidence():
             {
                 "drillId": "DRILL-04-ZERO-INFORMATION-LEAK",
                 "title": "Zero Information Leak Sanitization (CWE-209)",
-                "rawDiagnosticInput": "System.Exception: S3 failure at C:\\app\\aws\\secret_keys.cs:42 (AKIAIOSFODNN7EXAMPLE) arn:aws:iam::123456789012:role/Dev",
+                "rawDiagnosticInput": "System.Exception: S3 failure at C:\\app\\aws\\secret_keys.cs:42 (AKIA****REDACTED) arn:aws:iam::123456789012:role/Dev",
                 "sanitizedClientOutput": "Không có quyền đọc file dữ liệu từ kho lưu trữ Amazon S3. Vui lòng kiểm tra quyền IAM trên bucket.",
                 "sanitizationChecks": {
                     "stackTraceMasked": True,
@@ -194,7 +198,7 @@ def main():
 
     elapsed = time.time() - start_time
     print("================================================================================")
-    print(f"[SUCCESS] All 4 Failure Drills validated successfully in {elapsed:.2f}s!")
+    print(f"[SUCCESS] Resilience unit tests passed and illustrative failure drill evidence generated in {elapsed:.2f}s!")
     print(f"[INFO] Total drills recorded: {len(evidence['drills'])}")
     print("================================================================================")
     return 0

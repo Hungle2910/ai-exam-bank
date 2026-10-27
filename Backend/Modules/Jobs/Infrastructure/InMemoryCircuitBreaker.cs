@@ -16,6 +16,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
         public int ConsecutiveFailures { get; set; }
         public DateTimeOffset? OpenedAt { get; set; }
         public bool HalfOpenProbeInFlight { get; set; }
+        public DateTimeOffset? LastProbeTime { get; set; }
     }
 
     private readonly ConcurrentDictionary<string, ProviderCircuit> _circuits = new(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +54,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                         // Hết thời gian hạ nhiệt -> chuyển sang HalfOpen để thăm dò
                         circuit.State = CircuitBreakerState.HalfOpen;
                         circuit.HalfOpenProbeInFlight = true;
+                        circuit.LastProbeTime = now;
                         return true;
                     }
                     return false;
@@ -62,8 +64,17 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                     if (!circuit.HalfOpenProbeInFlight)
                     {
                         circuit.HalfOpenProbeInFlight = true;
+                        circuit.LastProbeTime = now;
                         return true;
                     }
+
+                    // Nếu probe cũ bị quá hạn (worker crash hoặc canceled) quá cooling period, cho phép cấp probe mới
+                    if (circuit.LastProbeTime.HasValue && now - circuit.LastProbeTime.Value >= _coolingPeriod)
+                    {
+                        circuit.LastProbeTime = now;
+                        return true;
+                    }
+
                     return false;
 
                 default:
@@ -81,6 +92,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             circuit.ConsecutiveFailures = 0;
             circuit.OpenedAt = null;
             circuit.HalfOpenProbeInFlight = false;
+            circuit.LastProbeTime = null;
             circuit.State = CircuitBreakerState.Closed;
         }
     }
@@ -97,7 +109,12 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             var category = ErrorClassifier.Classify(errorCode);
             if (category == ErrorCategory.Permanent && errorCode != AwsErrorCodes.BedrockQuotaExceeded)
             {
-                // Lỗi validation hay sai schema từ phía client không kích hoạt ngắt mạch
+                // Lỗi validation hay sai schema từ phía client không kích hoạt ngắt mạch.
+                // Giải phóng probe để mạch không bị kẹt ở HalfOpen.
+                if (circuit.State == CircuitBreakerState.HalfOpen)
+                {
+                    circuit.HalfOpenProbeInFlight = false;
+                }
                 return;
             }
 
@@ -108,6 +125,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                 circuit.State = CircuitBreakerState.Open;
                 circuit.OpenedAt = now;
                 circuit.HalfOpenProbeInFlight = false;
+                circuit.LastProbeTime = null;
             }
         }
     }
@@ -141,6 +159,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             circuit.ConsecutiveFailures = 0;
             circuit.OpenedAt = null;
             circuit.HalfOpenProbeInFlight = false;
+            circuit.LastProbeTime = null;
         }
     }
 

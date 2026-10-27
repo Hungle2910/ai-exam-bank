@@ -247,15 +247,22 @@ public sealed class FileJobStore : IJobStore, IDisposable
                             {
                                 runningJob.Status = JobStatus.Failed;
                                 runningJob.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
-                                runningJob.SafeErrorMessage = "Job exceeded maximum attempts after lease expiration.";
+                                runningJob.SafeErrorMessage = AwsErrorMapping.GetActionableMessage("RETRY_BUDGET_EXHAUSTED", "Job attempt limit reached after lease expiration.");
                                 runningJob.UpdatedAt = now;
+                                lastAttempt.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
+                                lastAttempt.SafeErrorMessage = runningJob.SafeErrorMessage;
                                 continue;
                             }
 
                             var retryDelayMinutes = runningJob.AttemptCount == 1 ? 1 : 5;
                             runningJob.Status = JobStatus.Pending;
                             runningJob.AvailableAt = now.AddMinutes(retryDelayMinutes);
+                            runningJob.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                            runningJob.SafeErrorMessage = AwsErrorMapping.GetActionableMessage(AwsErrorCodes.StaleLeaseRecovered);
+                            runningJob.RetryReason = "Tự động phục hồi sau khi Worker bị mất tín hiệu Heartbeat.";
                             runningJob.UpdatedAt = now;
+                            lastAttempt.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                            lastAttempt.SafeErrorMessage = runningJob.SafeErrorMessage;
                             continue;
                         }
                     }

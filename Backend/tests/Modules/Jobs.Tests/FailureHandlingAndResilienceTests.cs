@@ -81,6 +81,20 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsTrue(sanitized.Contains("AI đang quá tải", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public void AwsErrorMapping_sanitizes_temporary_keys_and_linux_paths_and_custom_stacktraces()
+    {
+        const string leakyMessage = "at AiExamBank.Modules.Jobs.Handler.Execute() in /var/app/code/JobService.cs with ASIAIOSFODNN7EXAMPLE and arn:aws-cn:bedrock:cn-north-1:123456789012:model/claude";
+
+        var sanitized = AwsErrorMapping.SanitizeForClient(leakyMessage, AwsErrorCodes.BedrockAccessDenied);
+
+        Assert.IsFalse(sanitized.Contains("AiExamBank", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(sanitized.Contains("/var/app", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(sanitized.Contains("ASIA", StringComparison.Ordinal));
+        Assert.IsFalse(sanitized.Contains("arn:aws-cn:", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(sanitized.Contains("IAM", StringComparison.OrdinalIgnoreCase));
+    }
+
     #endregion
 
     #region 2. Stale Lease Recovery Tests (Process Crash / Abandoned Worker)
@@ -241,6 +255,50 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"));
     }
 
+    [TestMethod]
+    public void CircuitBreaker_half_open_probe_released_on_permanent_error()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var breaker = new InMemoryCircuitBreaker(failureThreshold: 1, coolingPeriod: TimeSpan.FromSeconds(60), clock: () => now);
+
+        // Lỗi 1 -> Open
+        breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+        Assert.AreEqual(CircuitBreakerState.Open, breaker.GetState("AWS_BEDROCK"));
+
+        // Hết cooldown 60s -> HalfOpen (cấp probe 1)
+        now = now.AddSeconds(61);
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"));
+        Assert.AreEqual(CircuitBreakerState.HalfOpen, breaker.GetState("AWS_BEDROCK"));
+
+        // Probe gặp lỗi Permanent (ví dụ AI_MALFORMED_OUTPUT)
+        breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.AiMalformedOutput);
+
+        // Cờ HalfOpenProbeInFlight phải được giải phóng, cho phép probe tiếp theo thăm dò mà không kẹt
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"), "Probe must be released after non-provider permanent failure.");
+    }
+
+    [TestMethod]
+    public void CircuitBreaker_half_open_probe_recovers_after_probe_timeout()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var breaker = new InMemoryCircuitBreaker(failureThreshold: 1, coolingPeriod: TimeSpan.FromSeconds(30), clock: () => now);
+
+        // Lỗi 1 -> Open
+        breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+        now = now.AddSeconds(31);
+
+        // Cấp probe 1
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"));
+        // Gọi lại ngay lập tức -> bị chặn vì probe đang xử lý
+        Assert.IsFalse(breaker.CanExecute("AWS_BEDROCK"));
+
+        // Giả lập worker giữ probe bị crash/hủy và quá thời gian cooling period (35s)
+        now = now.AddSeconds(35);
+
+        // Breaker phải cho phép probe mới thay thế probe bị bỏ rơi
+        Assert.IsTrue(breaker.CanExecute("AWS_BEDROCK"), "New probe must be permitted after previous probe times out.");
+    }
+
     #endregion
 
     #region 4. Retry Eligibility & JobService Tests
@@ -269,6 +327,24 @@ public sealed class FailureHandlingAndResilienceTests
         var status2 = await service.GetJobStatusAsync(JobRef.Create(job2.Id), "user-01", SchoolScope);
         Assert.IsFalse(status2.IsRetryEligible ?? true, "Permanent error must NOT be retry eligible.");
         Assert.IsTrue(status2.ActionableReason!.Contains("IAM", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task JobService_rejects_retry_when_job_has_permanent_error()
+    {
+        var store = new InMemoryJobStore();
+        var service = new JobService(store);
+
+        var req = JobRequest.Create("ExamGeneration", "payload", "user-01", SchoolScope, "key-reject", "corr-reject");
+        var job = await store.EnqueueAsync(req, "fp-reject");
+        var claim = await store.ClaimNextJobAsync("w1", TimeSpan.FromMinutes(2));
+        await store.FailJobAsync(job.Id, claim!.LeaseToken, AwsErrorCodes.BedrockAccessDenied, "Access Denied", isTransient: false);
+
+        // Gọi RetryJobAsync với lỗi vĩnh viễn phải ném ngoại lệ InvalidOperationException
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => service.RetryJobAsync(JobRef.Create(job.Id), "user-01", SchoolScope));
+
+        Assert.IsTrue(ex.Message.Contains("not eligible for retry", StringComparison.OrdinalIgnoreCase));
     }
 
     #endregion

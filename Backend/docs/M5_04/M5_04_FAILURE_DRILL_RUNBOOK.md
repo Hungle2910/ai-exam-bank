@@ -21,7 +21,7 @@
 ### 1.2 Execution Checklist (Các bước diễn tập)
 - [x] **Drill 1 - Bedrock Throttling:** Gửi request sinh đề vượt ngưỡng hạn ngạch AI. Xác nhận hệ thống phân loại `Transient`, dời lịch thử lại có jitter, không làm rơi job.
 - [x] **Drill 2 - Process Kill (Sập Worker đột ngột):** Kill cưỡng bức tiến trình Worker khi đang xử lý job `Running`. Xác nhận sau 2 phút cơ chế `RecoverExpiredLeasesAsync` phát hiện lease quá hạn và thu hồi về `Pending`.
-- [x] **Drill 3 - AI Provider Circuit Breaker:** Mô phỏng sự cố mạng kéo dài khiến 5 request AI liên tiếp thất bại trong 60s. Xác nhận Circuit Breaker ngắt `Open`, từ chối ngay với `AWS_BEDROCK_CIRCUIT_OPEN`. Sau 60s tự động chuyển `HalfOpen` thăm dò.
+- [x] **Drill 3 - AI Provider Circuit Breaker:** Mô phỏng sự cố mạng kéo dài khiến 5 request AI liên tiếp thất bại trong 60s. Xác nhận Circuit Breaker ngắt `Open`, từ chối ngay với `CIRCUIT_BREAKER_OPEN`. Sau 60s tự động chuyển `HalfOpen` thăm dò.
 - [x] **Drill 4 - S3 Permanent Error & Retry Eligibility:** Mô phỏng request import file S3 không tồn tại (`NoSuchKey`). Xác nhận hệ thống chuyển ngay sang `Failed`, khóa nút `[🚫 Không thể thử lại]` trên giao diện.
 
 ### 1.3 Post-Drill Verification & Rollback
@@ -119,7 +119,7 @@ Khi có 5 lỗi Bedrock liên tiếp trong vòng 60 giây, Circuit Breaker lập
   "jobId": "c19a4e32-55fb-41aa-8812-332e1289dfaa",
   "jobType": "ExamGeneration",
   "status": "Pending",
-  "errorCode": "AWS_BEDROCK_CIRCUIT_OPEN",
+  "errorCode": "CIRCUIT_BREAKER_OPEN",
   "safeMessage": "Dịch vụ AI tạm thời bị ngắt mạch bảo vệ do sự cố kéo dài từ nhà cung cấp. Yêu cầu sẽ tự động hoãn lại.",
   "actionableReason": "Dịch vụ AI đang tạm ngưng do sự cố diện rộng. Hệ thống sẽ tự động thử lại khi ổn định.",
   "isRetryEligible": true,

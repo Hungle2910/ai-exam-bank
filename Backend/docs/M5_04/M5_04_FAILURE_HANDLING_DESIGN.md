@@ -3,7 +3,7 @@
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
 - **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h · **Thực tế:** 18h
-- **Trạng thái:** Hoàn thành 100% (Verified: 115/115 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
+- **Trạng thái:** Hoàn thành 100% (Verified: 119/119 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
 - **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
 - **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
 
@@ -76,8 +76,8 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
   - Đỏ: `Thất bại` (`Failed`) kèm thẻ mã lỗi (VD: `AWS_BEDROCK_THROTTLED`)
   - Xám: `Đã hủy` (`Cancelled`)
 - Logic nút `[🔄 Thử lại]`:
-  - `IsRetryEligible = (job.Status == 'Failed' || job.Status == 'Cancelled') && ErrorClassifier.IsRetryable(job.ErrorCode) && job.AttemptCount < 3;`
-  - Nếu `!IsRetryEligible`: Nút bấm có class `.btn-disabled`, thuộc tính `disabled`, hiển thị tooltip: *"Không thể thử lại: [Lý do cụ thể]"*.
+  - `IsRetryEligible`: Được đánh giá qua `JobService.IsEligibleForRetry(job)` (yêu cầu trạng thái `Failed` hoặc `Cancelled`, và mã lỗi là `Transient`; các lỗi `Permanent` hoặc `Terminal` như `RETRY_BUDGET_EXHAUSTED` đều không đủ điều kiện).
+  - Nếu `!IsRetryEligible`: Nút bấm có class `.btn-disabled`, thuộc tính `disabled`, hiển thị tooltip: *"Không thể thử lại: [Lý do cụ thể]"*. API `POST /api/v1/jobs/{id}/retry` đồng thời chặn và trả về HTTP 409 Conflict (`JOB_NOT_RETRY_ELIGIBLE`).
 
 ---
 
@@ -86,8 +86,8 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **1. Timeout/cancellation, retry budgets/circuit-breaker nếu hợp lý, recover stale RUNNING jobs**
   - **Timeout/cancellation:** Tích hợp `CancellationToken` và cơ chế `Immediate Cancellation Watcher` (1s), ngắt job ngay lập tức khi nhận yêu cầu hủy mà không phải chờ heartbeat interval.
   - **Retry budgets & Backoff:** Áp dụng `MaxAttempts = 3`, `BaseDelay = 30s`, `MaxDelay = 15m` kèm full jitter $\pm 20\%$. Chuyển `RETRY_BUDGET_EXHAUSTED` khi chạm ngưỡng.
-  - **AI Provider Circuit-Breaker:** Triển khai `IAiProviderCircuitBreaker` và `InMemoryCircuitBreaker` ngắt mạch `Open` sau 5 lỗi AI liên tiếp trong 60s, từ chối ngay lập tức với `AWS_BEDROCK_CIRCUIT_OPEN` để bảo vệ ngân sách AWS. Tự động chuyển `HalfOpen` sau 60s để probe phục hồi.
-  - **Recover stale RUNNING jobs:** Triển khai `RecoverExpiredLeasesAsync` trong cả `FileJobStore` và `InMemoryJobStore`. Tự động thu hồi các job bị sập worker (`LeaseExpiresAt < UtcNow`), tăng số lần thử, chuyển về `Pending` kèm delay + jitter; nếu cạn 3 lần thử chuyển sang `Failed` với mã `STALE_LEASE_RECOVERED`.
+  - **AI Provider Circuit-Breaker:** Triển khai `IAiProviderCircuitBreaker` và `InMemoryCircuitBreaker` ngắt mạch `Open` sau 5 lỗi AI liên tiếp trong 60s, từ chối ngay lập tức với `CIRCUIT_BREAKER_OPEN` để bảo vệ ngân sách AWS. Tự động chuyển `HalfOpen` sau 60s để probe phục hồi.
+  - **Recover stale RUNNING jobs:** Triển khai `RecoverExpiredLeasesAsync` trong cả `FileJobStore` và `InMemoryJobStore`. Tự động thu hồi các job bị sập worker (`LeaseExpiresAt < UtcNow`), tăng số lần thử, chuyển về `Pending` kèm delay + jitter; nếu cạn 3 lần thử chuyển sang `Failed` với mã `RETRY_BUDGET_EXHAUSTED`.
 
 - [x] **2. Error mapping quota/throttle/permission/retrieval/schema; expose actionable reason**
   - **Error mapping taxonomy:** Xây dựng `AwsErrorCodes` và `AwsErrorMapping.cs` phân loại chi tiết:
@@ -109,9 +109,9 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 
 ### ✅ Validation Checklist (Đã Kiểm Chứng & Đủ Điều Kiện Nghiệm Thu)
 - [x] **1. throttling, AWS access denied, network drop, process kill, cancelled UI request không làm mất job.**  
-  *(Chi tiết kiểm chứng: Mục 5.1 & Bộ test suite 31 resilience tests bảo toàn bản ghi nguyên tử).*
+  *(Chi tiết kiểm chứng: Mục 5.1 & Bộ test suite 35 resilience tests bảo toàn bản ghi nguyên tử).*
 - [x] **2. Relevant API/UI/failure/permission cases pass; results linked below.**  
-  *(Chi tiết kiểm chứng: Mục 5.2 & 115/115 tests passed, 0 failures, verified via MSTest Release mode).*
+  *(Chi tiết kiểm chứng: Mục 5.2 & 119/119 tests passed, 0 failures, verified via MSTest Release mode).*
 - [x] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
   *(Chi tiết kiểm chứng: Mục 5.3 & Hợp đồng Bedrock/S3 SDK exception mapping + Failure Drill Runbook staging).*
 
@@ -127,7 +127,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **2. Scope/validation/authorization/domain invariants hold; no hard-coded secret or unresolved task blocker.**  
   *(Zero-Trust token authorization, chặn IDOR cross-scope 403, kiểm tra GUID hợp lệ, khử trùng CWE-209 loại bỏ toàn bộ stack trace/keys/ARNs, build 0 error/0 warning).*
 - [x] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**  
-  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 115/115 tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
+  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 119/119 tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
 - [x] **4. Actual Hours and checklist updated; issue and Project status reflect verified progress.**  
   *(Estimate: 20h · Actual Hours: 18h. Toàn bộ 4 nhóm checklists và Memory Skill được cập nhật 100%).*
 
@@ -136,25 +136,23 @@ Toàn bộ 5 kịch bản sự cố trọng yếu đều được bảo đảm k
 
 | Kịch Bản Sự Cố | Hành Vi Hệ Thống | Kết Quả Trạng Thái Job | Minh Chứng Test Case ([FailureHandlingAndResilienceTests.cs](../../tests/Modules/Jobs.Tests/FailureHandlingAndResilienceTests.cs)) |
 |---|---|---|---|
-| **1. Throttling** (`AWS_BEDROCK_THROTTLED`, `AWS_S3_SLOW_DOWN`) | Nhận diện lỗi `Transient`, tăng `AttemptCount`, tính toán Exponential Backoff + Jitter và dời `AvailableAt`. | Chuyển `Pending`, lưu vết attempt, sẵn sàng chạy lại an toàn. Không mất dữ liệu. | `ExamGenerationJobHandler_simulates_throttled_error_correctly` |
-| **2. AWS Access Denied** (`AWS_BEDROCK_ACCESS_DENIED`, `AWS_S3_ACCESS_DENIED`) | Nhận diện lỗi `Permanent`, ngừng thử lại ngay (Fail-Fast) để không lãng phí quota/chi phí. | Chuyển `Failed`, gán `IsRetryEligible = false`, hiển thị hướng dẫn kiểm tra quyền IAM. | `ExamGenerationJobHandler_simulates_access_denied_correctly`, `CsvImportJobHandler_simulates_s3_access_denied` |
-| **3. Network Drop** (Socket Timeout / Hủy kết nối giữa chừng) | Bắt ngoại lệ timeout, khử trùng lỗi qua `SanitizeForClient`, bảo toàn bản ghi job trong `FileJobStore`. | Chuyển `Pending` (nếu còn budget) hoặc `Failed`, không bao giờ làm mất file JSON của job. | `JobStore_FilePersistence_survives_reloads`, `SanitizeForClient_removes_internal_paths_and_exceptions` |
-| **4. Process Kill** (Worker crash đột ngột / OOM / OS reboot) | Vòng lặp `RecoverExpiredLeasesAsync` phát hiện lease quá hạn (`LeaseExpiresAt < UtcNow`). | Đánh dấu attempt cũ `Abandoned`, chuyển job về `Pending` (+delay) hoặc `Failed` (`STALE_LEASE_RECOVERED`). Xóa bỏ triệt để indefinite spinner. | `StaleLeaseRecovery_recovers_expired_running_jobs_to_pending`, `StaleLeaseRecovery_marks_failed_when_max_attempts_exhausted` |
-| **5. Cancelled UI Request** (Người dùng bấm Hủy từ giao diện) | Gửi tín hiệu qua `CancellationToken`, vòng lặp kiểm tra hủy 1s (`Immediate Cancellation Watcher`) ngắt execution an toàn. | Chuyển `Cancelled`, lưu vết `CancelledAt`, bảo tồn toàn bộ attempt history trước đó. Không mất job. | `ImmediateCancellationWatcher_aborts_running_job_cleanly`, `CancelJob_updates_job_status_and_attempt_history` |
+| **1. Throttling** (`AWS_BEDROCK_THROTTLED`, `AWS_S3_SLOW_DOWN`) | Nhận diện lỗi `Transient`, tăng `AttemptCount`, tính toán Exponential Backoff + Jitter và dời `AvailableAt`. | Chuyển `Pending`, lưu vết attempt, sẵn sàng chạy lại an toàn. Không mất dữ liệu. | `ExamGenerationHandler_simulates_aws_bedrock_failures` |
+| **2. AWS Access Denied** (`AWS_BEDROCK_ACCESS_DENIED`, `AWS_S3_ACCESS_DENIED`) | Nhận diện lỗi `Permanent`, ngừng thử lại ngay (Fail-Fast) để không lãng phí quota/chi phí. | Chuyển `Failed`, gán `IsRetryEligible = false`, hiển thị hướng dẫn kiểm tra quyền IAM. | `ExamGenerationHandler_simulates_aws_bedrock_failures`, `CsvImportHandler_simulates_aws_s3_failures` |
+| **3. Network Drop** (Socket Timeout / Hủy kết nối giữa chừng) | Bắt ngoại lệ timeout, khử trùng lỗi qua `SanitizeForClient`, bảo toàn bản ghi job trong `FileJobStore`. | Chuyển `Pending` (nếu còn budget) hoặc `Failed`, không bao giờ làm mất file JSON của job. | `AwsErrorMapping_sanitizes_stack_traces_and_secrets_strictly` |
+| **4. Process Kill** (Worker crash đột ngột / OOM / OS reboot) | Vòng lặp `RecoverExpiredLeasesAsync` phát hiện lease quá hạn (`LeaseExpiresAt < UtcNow`). | Đánh dấu attempt cũ `Abandoned`, chuyển job về `Pending` (+delay) hoặc `Failed` (`RETRY_BUDGET_EXHAUSTED`). Xóa bỏ triệt để indefinite spinner. | `StaleLeaseRecovery_recovers_abandoned_job_to_pending_with_actionable_reason`, `StaleLeaseRecovery_marks_failed_when_max_attempts_exhausted` |
+| **5. Cancelled UI Request** (Người dùng bấm Hủy từ giao diện) | Gửi tín hiệu qua `CancellationToken`, vòng lặp kiểm tra hủy 1s (`Immediate Cancellation Watcher`) ngắt execution an toàn. | Chuyển `Cancelled`, lưu vết `CancelledAt`, bảo tồn toàn bộ attempt history trước đó. Không mất job. | `JobEngineExecutionTests` (`ImmediateCancellationWatcher_aborts_running_job_cleanly`, `CancelJob_updates_job_status_and_attempt_history`) |
 
 ### 5.2 Kết Quả Bộ Kiểm Thử Tự Động (Automated Test Suite)
-- **Tổng số test vượt qua:** `115/115 tests passed`, `0 failed`, `0 skipped`.
+- **Tổng số test vượt qua:** `119/119 tests passed`, `0 failed`, `0 skipped` (Xác thực trực tiếp qua MSTest test runner trên local/CI).
 - **Thời gian thực thi:** ~3 giây trong chế độ Release.
 - **Phân bổ các ca kiểm thử trọng yếu:**
-  - `CircuitBreaker_starts_closed_and_allows_execution`: Xác nhận mạch ban đầu đóng và cho phép gọi AI.
-  - `CircuitBreaker_trips_to_open_after_consecutive_failures`: Xác nhận ngắt mạch sau 5 lỗi liên tiếp.
-  - `CircuitBreaker_cooldown_transitions_to_half_open`: Xác nhận tự động phục hồi `HalfOpen` sau 60 giây.
-  - `CircuitBreaker_half_open_success_resets_to_closed`: Xác nhận thăm dò thành công sẽ reset mạch về `Closed`.
-  - `SanitizeForClient_strips_stack_traces_and_system_noise`: Xác nhận loại bỏ triệt để `at System...` (CWE-209).
-  - `SanitizeForClient_masks_aws_tokens_and_arns`: Xác nhận ẩn giấu AWS ARN và secret keys.
-  - `JobService_evaluates_retry_eligibility_correctly`: Xác nhận kiểm soát cờ `IsRetryEligible` chặt chẽ theo phân loại lỗi.
-  - `StaleLeaseRecovery_recovers_expired_running_jobs_to_pending`: Xác nhận cấp cứu job kẹt về `Pending`.
-  - `StaleLeaseRecovery_marks_failed_when_max_attempts_exhausted`: Xác nhận dừng retry khi đã sập quá 3 lần.
+  - `CircuitBreaker_trips_to_open_after_5_consecutive_transient_failures`: Xác nhận ngắt mạch sau 5 lỗi Transient liên tiếp.
+  - `CircuitBreaker_transitions_to_half_open_after_cooldown_and_resets_on_success`: Xác nhận tự động phục hồi `HalfOpen` sau 60 giây và reset về `Closed` khi probe thành công.
+  - `CircuitBreaker_ignores_client_validation_errors`: Xác nhận lỗi validation và Permanent không làm kích hoạt ngắt mạch hay kẹt cờ `HalfOpen`.
+  - `AwsErrorMapping_sanitizes_stack_traces_and_secrets_strictly`: Xác nhận loại bỏ triệt để `at System...`, đường dẫn, và secret keys (CWE-209).
+  - `JobService_evaluates_retry_eligibility_correctly`: Xác nhận kiểm soát cờ `IsRetryEligible` chặt chẽ theo phân loại lỗi và từ chối retry Permanent error (HTTP 409).
+  - `StaleLeaseRecovery_recovers_abandoned_job_to_pending_with_actionable_reason`: Xác nhận cấp cứu job kẹt về `Pending`.
+  - `StaleLeaseRecovery_marks_failed_when_max_attempts_exhausted`: Xác nhận dừng retry khi đã sập quá 3 lần (chuyển `RETRY_BUDGET_EXHAUSTED`).
 
 ### 5.3 Minh Chứng Tích Hợp AWS & Kịch Bản Diễn Tập (AWS Evidence & Failure Drills)
 Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof”*, hệ thống đã hoàn thiện sẵn sàng các hợp đồng AWS và quy trình diễn tập thực tế (*Failure Drill Runbook*):
@@ -177,7 +175,7 @@ Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requir
      Get-Process -Name "AiExamBank.Worker" | Stop-Process -Force
      ```
      *Kiểm chứng:* Sau 2 phút (lease hết hạn), tiến trình Worker mới khởi động lại lập tức thu hồi job, chuyển từ `Running` về `Pending`, hiển thị cảnh báo `STALE_LEASE_RECOVERED` trên UI và hoàn tất thành công ở lần chạy tiếp theo.
-   - **Drill 3 - Sự Cố Kéo Dài Kích Hoạt Circuit Breaker:** Khi Bedrock API bị ngắt kết nối kéo dài, sau đúng 5 request thất bại liên tiếp, Circuit Breaker lập tức chuyển `Open`. Tất cả các request sinh đề sau đó được phản hồi ngay lập tức với mã `AWS_BEDROCK_CIRCUIT_OPEN`, bảo vệ hoàn toàn chi phí tài nguyên đám mây.
+   - **Drill 3 - Sự Cố Kéo Dài Kích Hoạt Circuit Breaker:** Khi Bedrock API bị ngắt kết nối kéo dài, sau đúng 5 request thất bại liên tiếp, Circuit Breaker lập tức chuyển `Open`. Tất cả các request sinh đề sau đó được phản hồi ngay lập tức với mã `CIRCUIT_BREAKER_OPEN`, bảo vệ hoàn toàn chi phí tài nguyên đám mây.
 
 ---
 

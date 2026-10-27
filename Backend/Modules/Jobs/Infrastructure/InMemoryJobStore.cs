@@ -151,21 +151,29 @@ public sealed class InMemoryJobStore : IJobStore
                             // Đánh dấu lượt cũ là Bị bỏ hoang (Abandoned)
                             lastAttempt.Status = AttemptStatus.Abandoned;
                             lastAttempt.FinishedAt = now;
+                            lastAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - lastAttempt.StartedAt).TotalMilliseconds);
 
-                            if (runningJob.AttemptCount >= 3)
+                            if (runningJob.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts)
                             {
                                 // Hết ngân sách retry
                                 runningJob.Status = JobStatus.Failed;
                                 runningJob.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
-                                runningJob.SafeErrorMessage = "Job exceeded maximum of 3 attempts after lease expiration.";
+                                runningJob.SafeErrorMessage = AwsErrorMapping.GetActionableMessage("RETRY_BUDGET_EXHAUSTED", "Job attempt limit reached after lease expiration.");
                                 runningJob.UpdatedAt = now;
+                                lastAttempt.ErrorCode = "RETRY_BUDGET_EXHAUSTED";
+                                lastAttempt.SafeErrorMessage = runningJob.SafeErrorMessage;
                                 continue;
                             }
 
                             var retryDelayMinutes = runningJob.AttemptCount == 1 ? 1 : 5;
                             runningJob.Status = JobStatus.Pending;
                             runningJob.AvailableAt = now.AddMinutes(retryDelayMinutes);
+                            runningJob.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                            runningJob.SafeErrorMessage = AwsErrorMapping.GetActionableMessage(AwsErrorCodes.StaleLeaseRecovered);
+                            runningJob.RetryReason = "Tự động phục hồi sau khi Worker bị mất tín hiệu Heartbeat.";
                             runningJob.UpdatedAt = now;
+                            lastAttempt.ErrorCode = AwsErrorCodes.StaleLeaseRecovered;
+                            lastAttempt.SafeErrorMessage = runningJob.SafeErrorMessage;
                             continue;
                         }
                     }

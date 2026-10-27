@@ -149,8 +149,43 @@ public sealed class JobService : IJobPublisher, IJobTracker
             throw new UnauthorizedAccessException("Requester is not authorized to retry this job.");
         }
 
+        // Chặn retry đối với các tác vụ lỗi vĩnh viễn (Permanent) hoặc chưa kết thúc
+        if (!IsEligibleForRetry(job))
+        {
+            throw new InvalidOperationException($"Job '{jobRef.Value}' is not eligible for retry because it failed with permanent error '{job.ErrorCode}'.");
+        }
+
         var retriedJob = await _store.RetryJobAsync(jobRef.Value, requesterId, reason, cancellationToken);
         return MapToDto(retriedJob);
+    }
+
+    /// <summary>
+    /// Đánh giá điều kiện cho phép thử lại (Retry Eligibility).
+    /// Áp dụng nhất quán giữa DTO hiển thị và kiểm tra nghiệp vụ khi gọi API Retry.
+    /// </summary>
+    public static bool IsEligibleForRetry(BackgroundJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        if (job.Status != JobStatus.Failed && job.Status != JobStatus.Cancelled)
+        {
+            return false;
+        }
+
+        // Tác vụ Cancelled không có mã lỗi vĩnh viễn được phép thử lại
+        if (job.Status == JobStatus.Cancelled)
+        {
+            return string.IsNullOrWhiteSpace(job.ErrorCode) ||
+                   !ErrorClassifier.IsKnownPermanent(job.ErrorCode);
+        }
+
+        // Với tác vụ Failed: chỉ cho phép thử lại nếu mã lỗi là Transient
+        if (string.IsNullOrWhiteSpace(job.ErrorCode))
+        {
+            return false;
+        }
+
+        return ErrorClassifier.Classify(job.ErrorCode) == ErrorCategory.Transient;
     }
 
     /// <inheritdoc />
@@ -180,8 +215,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
 
     private static JobStatusDto MapToDto(BackgroundJob job)
     {
-        var isEligible = (job.Status == JobStatus.Failed || job.Status == JobStatus.Cancelled) &&
-                         !ErrorClassifier.IsKnownPermanent(job.ErrorCode);
+        var isEligible = IsEligibleForRetry(job);
 
         var actionableReason = AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
 
