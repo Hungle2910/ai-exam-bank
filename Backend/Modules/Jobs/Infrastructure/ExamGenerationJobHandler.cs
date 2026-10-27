@@ -34,8 +34,8 @@ public sealed class ExamGenerationJobHandler : IJobHandler
         // Nếu đây là lượt thử lại (AttemptNumber > 1) và phát hiện snapshot đã được tạo hoặc kịch bản mô phỏng timeout-after-write,
         // lập tức tái sử dụng kết quả (Result Reuse) mà không gọi lại Bedrock lần 2, tránh tạo 2 đề thi trùng lặp.
         if (context.AttemptNumber > 1 &&
-            ((_allowFailureSimulation && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase)) ||
-             context.Request.PayloadReference.StartsWith("s3://snapshot/", StringComparison.OrdinalIgnoreCase)))
+            _allowFailureSimulation &&
+            context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
         {
             var recoveredSnapshotId = $"exam-snap-{context.JobId.Value:N}";
             if (context.ReportProgressAsync != null) await context.ReportProgressAsync(100);

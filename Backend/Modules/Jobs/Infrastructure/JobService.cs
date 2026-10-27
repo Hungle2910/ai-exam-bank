@@ -163,7 +163,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
         // Chặn retry đối với các tác vụ lỗi vĩnh viễn (Permanent)
         if (!IsEligibleForRetry(job))
         {
-            throw new InvalidOperationException($"Job '{jobRef.Value}' is not eligible for retry because it failed with permanent error '{job.ErrorCode}'.");
+            throw new JobNotRetryEligibleException($"Job '{jobRef.Value}' is not eligible for retry because it failed with permanent error '{job.ErrorCode}'.");
         }
 
         var retriedJob = await _store.RetryJobAsync(jobRef.Value, requesterId, reason, cancellationToken);

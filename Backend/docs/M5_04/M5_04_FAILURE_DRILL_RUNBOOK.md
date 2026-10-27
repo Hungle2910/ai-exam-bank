@@ -67,7 +67,7 @@ Dữ liệu minh chứng dưới đây đã được lọc khử trùng (Redacte
   "maxAttempts": 3,
   "errorCode": "STALE_LEASE_RECOVERED",
   "safeMessage": "Tiến trình xử lý bị mất kết nối đột ngột. Tác vụ đã được tự động cấp cứu và khôi phục.",
-  "isRetryEligible": true,
+  "isRetryEligible": false,
   "actionableReason": "Tiến trình xử lý bị mất kết nối đột ngột. Tác vụ đã được tự động cấp cứu và khôi phục.",
   "availableAt": "2026-10-27T10:53:15.420Z",
   "attemptsHistory": [
@@ -96,7 +96,7 @@ Dữ liệu minh chứng dưới đây đã được lọc khử trùng (Redacte
   "errorCode": "AWS_BEDROCK_THROTTLED",
   "safeMessage": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
   "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
-  "isRetryEligible": true,
+  "isRetryEligible": false,
   "availableAt": "2026-10-27T10:55:32.180Z",
   "attemptsHistory": [
     {
@@ -124,8 +124,8 @@ Khi có 5 lỗi Bedrock liên tiếp trong vòng 60 giây, Circuit Breaker lập
   "status": "Pending",
   "errorCode": "CIRCUIT_BREAKER_OPEN",
   "safeMessage": "Dịch vụ AI tạm thời bị ngắt mạch bảo vệ do sự cố kéo dài từ nhà cung cấp. Yêu cầu sẽ tự động hoãn lại.",
-  "actionableReason": "Dịch vụ AI đang tạm ngưng do sự cố diện rộng. Hệ thống sẽ tự động thử lại khi ổn định.",
-  "isRetryEligible": true,
+  "actionableReason": "Dịch vụ AI đang tạm ngưng do phát hiện sự cố liên tiếp. Hệ thống sẽ tự động khôi phục sau ít phút.",
+  "isRetryEligible": false,
   "availableAt": "2026-10-27T11:01:00.000Z"
 }
 ```

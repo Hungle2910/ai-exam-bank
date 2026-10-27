@@ -101,11 +101,10 @@ public static class AwsErrorMapping
         @"(?:\b[A-Za-z0-9_]*Exception\b)|" +              // Exception keyword (e.g. InvalidOperationException)
         @"(?:Stack trace:)|" +                             // Stack trace literal
         @"(?:arn:aws[a-z0-9-]*:)|" +                       // AWS ARN across any partition (aws, aws-cn, aws-us-gov)
-        @"(?:\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)|" +            // AWS Access Key or Temporary Session Key (ASIA)
-        @"(?:\b(?:AKIA|ASIA))|" +                          // Access key prefix
+        @"(?-i:\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)|" +          // AWS Access Key or Temporary Session Key (ASIA), phân biệt hoa thường
         @"(?:SecretAccessKey)|" +                          // AWS secret key marker
         @"(?:[a-zA-Z]:\\[^""'\r\n]+)|" +                   // Windows path like C:\app\...
-        @"(?:/(?:home|var|tmp|Users|etc|app)/)",           // Linux/Unix path like /var/app/... or /home/...
+        @"(?:/(?:home|var|tmp|Users|etc|app|opt|usr|srv|mnt|root)/)", // Linux/Unix path
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>

@@ -95,6 +95,21 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsTrue(sanitized.Contains("IAM", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public void AwsErrorMapping_preserves_benign_asia_timezone_and_sanitizes_extended_unix_paths()
+    {
+        // 1. Chuỗi lành tính chứa timezone Asia/Ho_Chi_Minh phải được giữ nguyên
+        const string benignMessage = "Tác vụ chạy tại múi giờ Asia/Ho_Chi_Minh hợp lệ.";
+        var preserved = AwsErrorMapping.SanitizeForClient(benignMessage, errorCode: null);
+        Assert.AreEqual(benignMessage, preserved, "Benign timezone Asia/Ho_Chi_Minh must not be falsely sanitized as AWS access key.");
+
+        // 2. Đường dẫn /opt/app/... phải bị lọc khử trùng
+        const string optPathMessage = "Lỗi đọc cấu hình tại /opt/app/config.json";
+        var sanitized = AwsErrorMapping.SanitizeForClient(optPathMessage, AwsErrorCodes.S3FileNotFound);
+        Assert.IsFalse(sanitized.Contains("/opt/app", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(sanitized.Contains("Không tìm thấy file", StringComparison.OrdinalIgnoreCase));
+    }
+
     #endregion
 
     #region 2. Stale Lease Recovery Tests (Process Crash / Abandoned Worker)
@@ -380,8 +395,8 @@ public sealed class FailureHandlingAndResilienceTests
         var claim = await store.ClaimNextJobAsync("w1", TimeSpan.FromMinutes(2));
         await store.FailJobAsync(job.Id, claim!.LeaseToken, AwsErrorCodes.BedrockAccessDenied, "Access Denied", isTransient: false);
 
-        // Gọi RetryJobAsync với lỗi vĩnh viễn phải ném ngoại lệ InvalidOperationException
-        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+        // Gọi RetryJobAsync với lỗi vĩnh viễn phải ném ngoại lệ JobNotRetryEligibleException
+        var ex = await Assert.ThrowsExactlyAsync<JobNotRetryEligibleException>(
             () => service.RetryJobAsync(JobRef.Create(job.Id), "user-01", SchoolScope));
 
         Assert.IsTrue(ex.Message.Contains("not eligible for retry", StringComparison.OrdinalIgnoreCase));
@@ -466,13 +481,37 @@ public sealed class FailureHandlingAndResilienceTests
     }
 
     [TestMethod]
+    public async Task ExamGenerationHandler_returns_circuit_breaker_open_for_snapshot_payload_when_circuit_is_open()
+    {
+        var breaker = new InMemoryCircuitBreaker(failureThreshold: 1);
+        breaker.RecordFailure("AWS_BEDROCK", AwsErrorCodes.BedrockThrottled);
+        Assert.AreEqual(CircuitBreakerState.Open, breaker.GetState("AWS_BEDROCK"));
+
+        // Handler nhận payload s3://snapshot/x ở Attempt 2 nhưng breaker đang Open
+        var handler = new ExamGenerationJobHandler(breaker, allowFailureSimulation: true);
+        var request = JobRequest.Create("ExamGeneration", "s3://snapshot/exam-01.json", "user-01", SchoolScope, "key-snap-cb", "corr-snap-cb");
+        var context = new JobExecutionContext
+        {
+            JobId = JobRef.Create(Guid.NewGuid()),
+            Request = request,
+            AttemptNumber = 2
+        };
+
+        var result = await handler.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.IsFalse(result.Succeeded, "Client-provided s3://snapshot/ payload must NOT bypass circuit breaker.");
+        Assert.AreEqual(AwsErrorCodes.CircuitBreakerOpen, result.ErrorCode);
+        Assert.IsTrue(result.IsTransient);
+    }
+
+    [TestMethod]
     [DataRow("simulate-s3-access-denied", AwsErrorCodes.S3AccessDenied, false)]
     [DataRow("simulate-s3-file-not-found", AwsErrorCodes.S3FileNotFound, false)]
     [DataRow("simulate-s3-slowdown", AwsErrorCodes.S3SlowDown, true)]
     [DataRow("simulate-s3-timeout", AwsErrorCodes.S3Timeout, true)]
     public async Task CsvImportHandler_simulates_aws_s3_failures(string payloadTrigger, string expectedCode, bool expectedTransient)
     {
-        var handler = new CsvImportJobHandler();
+        var handler = new CsvImportJobHandler(allowFailureSimulation: true);
         var request = JobRequest.Create("CsvImport", $"s3://bucket/{payloadTrigger}.csv", "user-01", SchoolScope, "k2", "c2");
         var context = new JobExecutionContext
         {
@@ -486,6 +525,24 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsFalse(result.Succeeded);
         Assert.AreEqual(expectedCode, result.ErrorCode);
         Assert.AreEqual(expectedTransient, result.IsTransient);
+    }
+
+    [TestMethod]
+    public async Task CsvImportHandler_ignores_simulation_when_flag_is_disabled()
+    {
+        var handler = new CsvImportJobHandler(allowFailureSimulation: false);
+        var request = JobRequest.Create("CsvImport", "s3://bucket/simulate-s3-file-not-found.csv", "user-01", SchoolScope, "k-ignore", "c-ignore");
+        var context = new JobExecutionContext
+        {
+            JobId = JobRef.Create(Guid.NewGuid()),
+            Request = request,
+            AttemptNumber = 1
+        };
+
+        var result = await handler.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded, "CsvImport must succeed normally when failure simulation is disabled.");
+        Assert.IsNotNull(result.ResultId);
     }
 
     #endregion

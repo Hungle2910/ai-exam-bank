@@ -531,20 +531,28 @@ public static class JobEndpoints
                         ["traceId"] = httpContext.TraceIdentifier
                     });
             }
+            catch (JobNotRetryEligibleException notEligibleEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Job Not Retry Eligible",
+                    detail: notEligibleEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "JOB_NOT_RETRY_ELIGIBLE",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
             catch (InvalidOperationException opEx)
             {
                 var isCompleted = opEx.Message.Contains("completed", StringComparison.OrdinalIgnoreCase);
-                var isNotEligible = opEx.Message.Contains("eligible", StringComparison.OrdinalIgnoreCase);
-                var title = isCompleted ? "Job Already Completed" : (isNotEligible ? "Job Not Retry Eligible" : "Job Already Active");
-                var code = isCompleted ? "JOB_ALREADY_COMPLETED" : (isNotEligible ? "JOB_NOT_RETRY_ELIGIBLE" : "JOB_ALREADY_ACTIVE");
-
                 return Results.Problem(
                     statusCode: isCompleted ? StatusCodes.Status400BadRequest : StatusCodes.Status409Conflict,
-                    title: title,
+                    title: isCompleted ? "Job Already Completed" : "Job Already Active",
                     detail: opEx.Message,
                     extensions: new Dictionary<string, object?>
                     {
-                        ["code"] = code,
+                        ["code"] = isCompleted ? "JOB_ALREADY_COMPLETED" : "JOB_ALREADY_ACTIVE",
                         ["traceId"] = httpContext.TraceIdentifier
                     });
             }

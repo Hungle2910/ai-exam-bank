@@ -349,7 +349,7 @@ public sealed class RetryAndIdempotencyTests
     [TestMethod]
     public async Task CsvImportAdapter_recovers_gracefully_from_timeout_after_write()
     {
-        var handler = new CsvImportJobHandler();
+        var handler = new CsvImportJobHandler(allowFailureSimulation: true);
         var cancellationSource = new CancellationTokenSource();
 
         var request = JobRequest.Create("CsvImport", "simulate-timeout-after-write", "teacher-1", SchoolScope, "idem-csv-recovery", "corr-csv-recovery");

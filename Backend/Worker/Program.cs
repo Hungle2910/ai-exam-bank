@@ -17,9 +17,15 @@ builder.Services.AddSingleton<JobRegistry>();
 builder.Services.AddSingleton<IAiProviderCircuitBreaker, InMemoryCircuitBreaker>();
 
 // Đăng ký các Handler thực thi tác vụ
+var allowFailureSimulation = builder.Environment.IsDevelopment()
+    && builder.Configuration.GetValue<bool>("Jobs:AllowFailureSimulation");
+
 builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
-builder.Services.AddSingleton<IJobHandler, ExamGenerationJobHandler>();
-builder.Services.AddSingleton<IJobHandler, CsvImportJobHandler>();
+builder.Services.AddSingleton<IJobHandler>(sp => new ExamGenerationJobHandler(
+    sp.GetRequiredService<IAiProviderCircuitBreaker>(),
+    allowFailureSimulation: allowFailureSimulation));
+builder.Services.AddSingleton<IJobHandler>(_ => new CsvImportJobHandler(
+    allowFailureSimulation: allowFailureSimulation));
 
 // Đăng ký IJobRegistry phân giải từ JobRegistry cụ thể, tránh đệ quy
 builder.Services.AddSingleton<IJobRegistry>(sp =>

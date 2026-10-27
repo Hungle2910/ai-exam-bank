@@ -102,7 +102,7 @@ def generate_redacted_evidence():
                 "title": "Amazon Bedrock API Throttling & Rate-Limit Backoff",
                 "simulatedError": "Amazon.BedrockRuntime.Model.ThrottlingException: Rate limit exceeded",
                 "sanitizedErrorCode": "AWS_BEDROCK_THROTTLED",
-                "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động hoãn và thử lại.",
+                "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
                 "attemptStateBefore": {
                     "attempt": 1,
                     "status": "Started",
@@ -112,14 +112,14 @@ def generate_redacted_evidence():
                     "attempt": 1,
                     "status": "Failed",
                     "errorCode": "AWS_BEDROCK_THROTTLED",
-                    "safeErrorMessage": "Lỗi tạm thời khi kết nối AI Bedrock (Throttling / Quota). Hệ thống sẽ tự động thử lại."
+                    "safeErrorMessage": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại."
                 },
                 "jobStateAfter": {
                     "status": "Pending",
                     "attemptCount": 1,
                     "maxAttempts": 3,
                     "backoffDelaySeconds": 30,
-                    "isRetryEligible": True,
+                    "isRetryEligible": False,
                     "dataLoss": False
                 }
             },
@@ -156,14 +156,14 @@ def generate_redacted_evidence():
                     {"step": 4, "state": "HalfOpen", "cooldownSeconds": 60, "action": "Allow 1 probe request"},
                     {"step": 5, "state": "Closed", "probeResult": "Success", "action": "Reset failures to 0, resume normal traffic"}
                 ],
-                "actionableReason": "Dịch vụ AI đang tạm ngưng do sự cố diện rộng. Hệ thống sẽ tự động thử lại khi ổn định.",
+                "actionableReason": "Dịch vụ AI đang tạm ngưng do phát hiện sự cố liên tiếp. Hệ thống sẽ tự động khôi phục sau ít phút.",
                 "quotaProtected": True
             },
             {
                 "drillId": "DRILL-04-ZERO-INFORMATION-LEAK",
                 "title": "Zero Information Leak Sanitization (CWE-209)",
                 "rawDiagnosticInput": "System.Exception: S3 failure at C:\\app\\aws\\secret_keys.cs:42 (AKIA****REDACTED) arn:aws:iam::123456789012:role/Dev",
-                "sanitizedClientOutput": "Không có quyền đọc file dữ liệu từ kho lưu trữ Amazon S3. Vui lòng kiểm tra quyền IAM trên bucket.",
+                "sanitizedClientOutput": "Không có quyền truy cập kho lưu trữ tài liệu đám mây Amazon S3.",
                 "sanitizationChecks": {
                     "stackTraceMasked": True,
                     "internalPathsMasked": True,

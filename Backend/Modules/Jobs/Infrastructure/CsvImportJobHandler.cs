@@ -13,6 +13,13 @@ public sealed class CsvImportJobHandler : IJobHandler
     /// <inheritdoc />
     public string JobType => "CsvImport";
 
+    private readonly bool _allowFailureSimulation;
+
+    public CsvImportJobHandler(bool allowFailureSimulation = false)
+    {
+        _allowFailureSimulation = allowFailureSimulation;
+    }
+
     /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(JobExecutionContext context, CancellationToken cancellationToken)
     {
@@ -21,7 +28,9 @@ public sealed class CsvImportJobHandler : IJobHandler
         // Kỹ thuật Check-before-write (Phục hồi Timeout-after-write):
         // Nếu đây là lượt thử lại (AttemptNumber > 1) và phát hiện batch import đã được commit trước đó,
         // lập tức tái sử dụng kết quả (Result Reuse) mà không parse hay insert lại câu hỏi, tránh nhân đôi dữ liệu.
-        if (context.AttemptNumber > 1 && context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
+        if (context.AttemptNumber > 1 &&
+            _allowFailureSimulation &&
+            context.Request.PayloadReference.Contains("simulate-timeout-after-write", StringComparison.OrdinalIgnoreCase))
         {
             var recoveredBatchResultId = $"import-batch-{context.JobId.Value:N}";
             if (context.ReportProgressAsync != null) await context.ReportProgressAsync(100);
@@ -38,45 +47,48 @@ public sealed class CsvImportJobHandler : IJobHandler
         if (context.ReportProgressAsync != null) await context.ReportProgressAsync(50);
         await Task.Delay(20, cancellationToken);
 
-        // Kiểm tra kịch bản giả lập lỗi dữ liệu dòng (như trong wireframe M5-01)
-        if (context.Request.PayloadReference.Contains("simulate-row-error", StringComparison.OrdinalIgnoreCase))
+        // Giả lập lỗi chỉ khi cờ cấu hình cho phép mô phỏng lỗi được bật (chặn lỗi ngoài ý muốn ở Production)
+        if (_allowFailureSimulation)
         {
-            return JobExecutionResult.Failure(
-                "ROW_VALIDATION_ERROR",
-                "Dữ liệu dòng 15 bị thiếu trường 'Đáp án đúng'. Sửa file CSV và thử lại.",
-                isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-row-error", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobExecutionResult.Failure(
+                    "ROW_VALIDATION_ERROR",
+                    "Dữ liệu dòng 15 bị thiếu trường 'Đáp án đúng'. Sửa file CSV và thử lại.",
+                    isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-s3-access-denied", StringComparison.OrdinalIgnoreCase))
-        {
-            return JobExecutionResult.Failure(
-                AwsErrorCodes.S3AccessDenied,
-                "Amazon S3 AccessDenied: 403 Forbidden reading import file.",
-                isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-s3-access-denied", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobExecutionResult.Failure(
+                    AwsErrorCodes.S3AccessDenied,
+                    "Amazon S3 AccessDenied: 403 Forbidden reading import file.",
+                    isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-s3-file-not-found", StringComparison.OrdinalIgnoreCase))
-        {
-            return JobExecutionResult.Failure(
-                AwsErrorCodes.S3FileNotFound,
-                "Amazon S3 NoSuchKey: The specified import file was not found in bucket.",
-                isTransient: false);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-s3-file-not-found", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobExecutionResult.Failure(
+                    AwsErrorCodes.S3FileNotFound,
+                    "Amazon S3 NoSuchKey: The specified import file was not found in bucket.",
+                    isTransient: false);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-s3-slowdown", StringComparison.OrdinalIgnoreCase))
-        {
-            return JobExecutionResult.Failure(
-                AwsErrorCodes.S3SlowDown,
-                "Amazon S3 503 SlowDown: Rate limit reached.",
-                isTransient: true);
-        }
+            if (context.Request.PayloadReference.Contains("simulate-s3-slowdown", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobExecutionResult.Failure(
+                    AwsErrorCodes.S3SlowDown,
+                    "Amazon S3 503 SlowDown: Rate limit reached.",
+                    isTransient: true);
+            }
 
-        if (context.Request.PayloadReference.Contains("simulate-s3-timeout", StringComparison.OrdinalIgnoreCase))
-        {
-            return JobExecutionResult.Failure(
-                AwsErrorCodes.S3Timeout,
-                "Amazon S3 socket connection timed out while streaming CSV.",
-                isTransient: true);
+            if (context.Request.PayloadReference.Contains("simulate-s3-timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                return JobExecutionResult.Failure(
+                    AwsErrorCodes.S3Timeout,
+                    "Amazon S3 socket connection timed out while streaming CSV.",
+                    isTransient: true);
+            }
         }
 
         // Chặng 3: Kiểm tra chống trùng lặp nội dung câu hỏi

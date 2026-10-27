@@ -2,7 +2,7 @@
 
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
-- **Trạng thái:** Hoàn thành 100% (Tác giả báo cáo: 121/121 tests trong Jobs.Tests và 138/138 tests toàn solution vượt qua; xác thực qua lệnh `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026, commit `544a113`) · **Nhánh Git:** `feat/M5-04-failure-handling`
+- **Trạng thái:** Hoàn thành 100% (Tác giả báo cáo: 124/124 tests trong Jobs.Tests và 141/141 tests toàn solution vượt qua; xác thực qua lệnh `dotnet test Backend/AiExamBank.slnx --configuration Release` ngày 27/10/2026) · **Nhánh Git:** `feat/M5-04-failure-handling`
 - **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
 - **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
 
@@ -18,7 +18,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 4. **Bão yêu cầu khi nhà cung cấp bị sập (Thundering Herd):** Khi Bedrock gặp sự cố diện rộng, hàng loạt worker tiếp tục gửi yêu cầu làm cạn kiệt chi phí API và nghẽn hệ thống.
 
 ### 1.2 Giải pháp kiến trúc
-1. **Stale Lease Recovery Loop:** Thu hồi tự động các job bị mất tín hiệu Heartbeat quá hạn (> 2 phút lease), giải phóng tài nguyên và đưa về `Pending` (nếu còn lượt thử) hoặc `Failed` (kèm mã lỗi `STALE_LEASE_RECOVERED` và lý do rõ ràng).
+1. **Stale Lease Recovery Loop:** Thu hồi tự động các job bị mất tín hiệu Heartbeat quá hạn (> 2 phút lease), giải phóng tài nguyên và đưa về `Pending` (nếu còn lượt thử) hoặc `Failed` (kèm mã lỗi `RETRY_BUDGET_EXHAUSTED` và lý do rõ ràng).
 2. **Error Mapping Taxonomy cho AWS:** Phân loại tường minh các lỗi từ AWS Bedrock, AWS S3, và RAG Knowledge Base thành `Transient` (tự động retry) hoặc `Permanent` (dừng ngay, khóa nút retry vô ích).
 3. **Actionable Reason & Zero-Leak Security:** Chuyển đổi mã lỗi kỹ thuật thành thông điệp người dùng thân thiện (`SafeErrorMessage`), loại bỏ 100% stack trace, IAM token, credential khỏi phản hồi API và giao diện UI.
 4. **AI Provider Circuit Breaker:** Cơ chế ngắt mạch tạm thời khi phát hiện 5 lỗi liên tiếp từ AI Provider, chuyển sang trạng thái `Open` trong 60 giây để hệ thống phục hồi.
@@ -30,7 +30,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 
 | Nhóm Dịch Vụ | Mã Lỗi (ErrorCode) | Phân Loại | Khả Năng Thử Lại | Thông Điệp Hành Động Cho Người Dùng (Actionable Reason) |
 |---|---|---|---|---|
-| **AWS Bedrock** | `AWS_BEDROCK_THROTTLED` | Transient | Có (Tự động) | Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động hoãn và thử lại. |
+| **AWS Bedrock** | `AWS_BEDROCK_THROTTLED` | Transient | Có (Tự động) | Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại. |
 | **AWS Bedrock** | `AWS_BEDROCK_QUOTA_EXCEEDED` | Permanent | Không (Khóa nút) | Hạn ngạch gọi AI trong tháng đã hết. Vui lòng liên hệ Quản trị viên để nâng gói. |
 | **AWS Bedrock** | `AWS_BEDROCK_ACCESS_DENIED` | Permanent | Không (Khóa nút) | Không có quyền truy cập mô hình AI. Vui lòng kiểm tra quyền IAM của tài khoản. |
 | **AWS Bedrock** | `AWS_BEDROCK_MODEL_TIMEOUT` | Transient | Có (Tự động) | Mô hình AI phản hồi quá thời gian cho phép. Hệ thống sẽ tự động thử lại. |
@@ -40,7 +40,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 | **Amazon S3** | `AWS_S3_SLOW_DOWN` | Transient | Có (Tự động) | Kho lưu trữ S3 đang bị nghẽn tải I/O. Hệ thống sẽ tự động thử lại sau ít giây. |
 | **RAG / KB** | `RAG_RETRIEVAL_EMPTY` | Permanent | Không | Không tìm thấy tài liệu kiến thức tương ứng trong Knowledge Base để làm ngữ cảnh. |
 | **Hạ Tầng Worker**| `STALE_LEASE_RECOVERED` | Transient | Có (Tự động) | Tiến trình xử lý bị mất kết nối đột ngột. Tác vụ đã được tự động cấp cứu và khôi phục. |
-| **Bảo Vệ Hạ Tầng**| `CIRCUIT_BREAKER_OPEN` | Transient | Có (Hoãn lại) | Dịch vụ AI đang tạm ngưng do sự cố diện rộng. Hệ thống sẽ tự động thử lại khi ổn định. |
+| **Bảo Vệ Hạ Tầng**| `CIRCUIT_BREAKER_OPEN` | Transient | Có (Hoãn lại) | Dịch vụ AI đang tạm ngưng do phát hiện sự cố liên tiếp. Hệ thống sẽ tự động khôi phục sau ít phút. |
 | **Giới Hạn Thử Lại**| `RETRY_BUDGET_EXHAUSTED` | Terminal | Không | Tác vụ đã thử lại tối đa 3 lần nhưng không thành công. Vui lòng kiểm tra dữ liệu đầu vào. |
 
 ---
@@ -100,7 +100,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **3. UI partial/failed attempts và retry eligibility, tránh indefinite spinner**
   - **Tránh indefinite spinner:** Nhờ `RecoverExpiredLeasesAsync` và cơ chế phát hiện stale lease, các job bị crash process không còn kẹt ở trạng thái `Running` vô hạn mà được chuyển về trạng thái rõ ràng (`Pending` hoặc `Failed`).
   - **UI partial/failed attempts:** Status UI (`/jobs/`) hiển thị drawer với toàn bộ lịch sử các attempts: worker ID, thời gian bắt đầu, thời gian thực thi (ms), lý do retry, mã lỗi và thông báo an toàn.
-  - **Retry eligibility:** Tính toán `IsRetryEligible` dựa trên trạng thái (`Failed`/`Cancelled`) và phân loại lỗi (`!IsKnownPermanent`). Trên giao diện, nếu không đủ điều kiện thử lại, nút bấm chuyển thành `🚫 Không thể thử lại` (`.btn-disabled`, thuộc tính `disabled`) kèm tooltip giải thích lý do, ngăn chặn việc bấm retry mù quáng.
+  - **Retry eligibility:** Tính toán `IsRetryEligible` dựa trên trạng thái (`Failed`/`Cancelled`) và phân loại lỗi (`ErrorCategory.Classify(job.ErrorCode) != ErrorCategory.Permanent`). Trên giao diện, nếu không đủ điều kiện thử lại, nút bấm chuyển thành `🚫 Không thể thử lại` (`.btn-disabled`, thuộc tính `disabled`) kèm tooltip giải thích lý do, ngăn chặn việc bấm retry mù quáng.
 
 ---
 
@@ -108,9 +108,9 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 
 ### ✅ Validation Checklist (Đã Kiểm Chứng & Đủ Điều Kiện Nghiệm Thu)
 - [x] **1. throttling, AWS access denied, network drop, process kill, cancelled UI request không làm mất job.**  
-  *(Chi tiết kiểm chứng: Mục 5.1 & Bộ test suite 35 resilience tests bảo toàn bản ghi nguyên tử).*
+  *(Chi tiết kiểm chứng: Mục 5.1 & Bộ test suite 40 resilience tests bảo toàn bản ghi nguyên tử).*
 - [x] **2. Relevant API/UI/failure/permission cases pass; results linked below.**  
-  *(Chi tiết kiểm chứng: Mục 5.2 & 121/121 tests passed trong Jobs.Tests, 138/138 tests passed toàn solution, 0 failures, chạy `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026).*
+  *(Chi tiết kiểm chứng: Mục 5.2 & 124/124 tests passed trong Jobs.Tests, 141/141 tests passed toàn solution, 0 failures, chạy `dotnet test Backend/AiExamBank.slnx --configuration Release` ngày 27/10/2026).*
 - [ ] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
   *(Trạng thái: Chưa thực hiện trên live AWS — chờ môi trường Staging. Hiện tại đã hoàn thiện bộ hợp đồng Bedrock/S3 SDK exception mapping, công cụ run_failure_drills.py và kịch bản diễn tập M5_04_FAILURE_DRILL_RUNBOOK.md).*
 
@@ -126,7 +126,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **2. Scope/validation/authorization/domain invariants hold; no hard-coded secret or unresolved task blocker.**  
   *(Zero-Trust token authorization, chặn IDOR cross-scope 403, kiểm tra GUID hợp lệ, khử trùng CWE-209 loại bỏ toàn bộ stack trace/keys/ARNs, build 0 error/0 warning).*
 - [x] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**  
-  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 121/121 tests trong Jobs.Tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
+  *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 124/124 tests trong Jobs.Tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
 - [x] **4. Actual Hours and checklist updated; issue and Project status reflect verified progress.**  
   *(Estimate: 20h · Actual Hours: 18h. Toàn bộ 4 nhóm checklists và Memory Skill được cập nhật 100%).*
 
@@ -142,7 +142,7 @@ Toàn bộ 5 kịch bản sự cố trọng yếu đều được bảo đảm k
 | **5. Cancelled UI Request** (Người dùng bấm Hủy từ giao diện) | Gửi tín hiệu qua `CancellationToken`, vòng lặp kiểm tra hủy 1s (`Immediate Cancellation Watcher`) ngắt execution an toàn. | Chuyển `Cancelled`, lưu vết `CancelledAt`, bảo tồn toàn bộ attempt history trước đó. Không mất job. | `JobEngineExecutionTests` (`ImmediateCancellationWatcher_aborts_running_job_cleanly`, `CancelJob_updates_job_status_and_attempt_history`) |
 
 ### 5.2 Kết Quả Bộ Kiểm Thử Tự Động (Automated Test Suite)
-- **Tổng số test vượt qua:** `121/121 tests passed` trong `AiExamBank.Modules.Jobs.Tests`, `138/138 tests passed` toàn bộ solution, `0 failed`, `0 skipped` (Xác thực qua lệnh `dotnet test AiExamBank.slnx --configuration Release` ngày 27/10/2026).
+- **Tổng số test vượt qua:** `124/124 tests passed` trong `AiExamBank.Modules.Jobs.Tests`, `141/141 tests passed` toàn bộ solution, `0 failed`, `0 skipped` (Xác thực qua lệnh `dotnet test Backend/AiExamBank.slnx --configuration Release` ngày 27/10/2026).
 - **Thời gian thực thi:** ~3 giây trong chế độ Release.
 - **Phân bổ các ca kiểm thử trọng yếu:**
   - `CircuitBreaker_trips_to_open_after_5_consecutive_transient_failures`: Xác nhận ngắt mạch sau 5 lỗi Transient liên tiếp.
