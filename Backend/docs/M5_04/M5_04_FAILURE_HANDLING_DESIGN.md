@@ -115,6 +115,12 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
   *(Chi tiết kiểm chứng: Mục 5.3 & Hợp đồng Bedrock/S3 SDK exception mapping + Failure Drill Runbook staging).*
 
+### 📑 Documentation & Evidence Checklist (Đã Bàn Giao & Đủ Điều Kiện Nghiệm Thu)
+- [x] **1. failure drill scripts/checklist và recovery examples.**  
+  *(Chi tiết kiểm chứng: Script [run_failure_drills.py](../../tools/run_failure_drills.py), Checklist diễn tập 3 giai đoạn & 4 ví dụ JSON payload thực tế trong [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md)).*
+- [x] **2. OpenAPI/contracts/runbooks/config/ADR updated as applicable, with redacted evidence and release/source/job versions.**  
+  *(Chi tiết kiểm chứng: Hợp đồng OpenAPI 3.0, [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [drill_evidence.json](drill_evidence.json) chuẩn hóa với Release `v1.2.0-rc1` và Schema `job-engine/v1.2`).*
+
 ### 5.1 Bảo Toàn Trạng Thái Tác Vụ (Zero Job Loss Invariant)
 Toàn bộ 5 kịch bản sự cố trọng yếu đều được bảo đảm không làm mất job, không làm rò rỉ trạng thái, và không gây kẹt tiến trình vĩnh viễn:
 
