@@ -4,7 +4,8 @@
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
 - **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h
 - **Trạng thái:** Hoàn thành 100% (Verified: 115/115 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
-- **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md)
+- **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
+- **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
 
 ---
 

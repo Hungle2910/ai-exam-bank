@@ -1,11 +1,12 @@
 # ADR 0007 — Failure Handling, Stale Lease Recovery, and Provider Resilience
 
 **Owner:** M5 / Tran Gia Bao (@TranGiaBao2005) — Reliability & ML Evaluation Engineer. **Date:** 2026-10-27.  
-**Related:** [M5_04_FAILURE_HANDLING_DESIGN.md](../M5_04/M5_04_FAILURE_HANDLING_DESIGN.md), [ADR 0005](0005-durable-worker-retry-idempotency.md), Issue #20.
+**Release Tag:** `v1.2.0-rc1` · **Job Engine Version:** `job-engine/v1.2`  
+**Related:** [M5_04_FAILURE_HANDLING_DESIGN.md](../M5_04/M5_04_FAILURE_HANDLING_DESIGN.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](../M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md), [ADR 0005](0005-durable-worker-retry-idempotency.md), Issue #20.
 
 ## Status
 
-Accepted and implemented in branch `feat/M5-04-failure-handling`.
+Accepted and implemented in branch `feat/M5-04-failure-handling` (Verified via 115/115 tests and automated failure drills in [drill_evidence.json](../M5_04/drill_evidence.json)).
 
 ## Context
 
