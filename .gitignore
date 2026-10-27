@@ -25,6 +25,7 @@ __pycache__/
 .vs/
 .vscode/
 .idea/
+.agents/
 .DS_Store
 Thumbs.db
 # IaC state/config containing deployment-specific values
