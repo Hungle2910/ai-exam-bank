@@ -3,8 +3,8 @@
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
 - **Độ ưu tiên:** P0 · **Mức cam kết:** MUST · **Độ khó:** 4/5 · **Ước lượng:** 20h
-- **Trạng thái:** In Progress · **Nhánh Git:** `feat/M5-04-failure-handling`
-- **Tài liệu tham chiếu:** [ADR 0005](file:///d:/projectCode/AWS_project/ai-exam-bank/Backend/docs/adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](file:///d:/projectCode/AWS_project/ai-exam-bank/Backend/docs/adr/0007-failure-handling-stale-lease-recovery-resilience.md)
+- **Trạng thái:** Hoàn thành 100% (Verified: 115/115 tests passed) · **Nhánh Git:** `feat/M5-04-failure-handling`
+- **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md)
 
 ---
 
@@ -77,3 +77,27 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - Logic nút `[🔄 Thử lại]`:
   - `IsRetryEligible = (job.Status == 'Failed' || job.Status == 'Cancelled') && ErrorClassifier.IsRetryable(job.ErrorCode) && job.AttemptCount < 3;`
   - Nếu `!IsRetryEligible`: Nút bấm có class `.btn-disabled`, thuộc tính `disabled`, hiển thị tooltip: *"Không thể thử lại: [Lý do cụ thể]"*.
+
+---
+
+## ✅ 4. Implementation Checklist (Tiêu Chí Bàn Giao & Nghiệm Thu)
+
+- [x] **1. Timeout/cancellation, retry budgets/circuit-breaker nếu hợp lý, recover stale RUNNING jobs**
+  - **Timeout/cancellation:** Tích hợp `CancellationToken` và cơ chế `Immediate Cancellation Watcher` (1s), ngắt job ngay lập tức khi nhận yêu cầu hủy mà không phải chờ heartbeat interval.
+  - **Retry budgets & Backoff:** Áp dụng `MaxAttempts = 3`, `BaseDelay = 30s`, `MaxDelay = 15m` kèm full jitter $\pm 20\%$. Chuyển `RETRY_BUDGET_EXHAUSTED` khi chạm ngưỡng.
+  - **AI Provider Circuit-Breaker:** Triển khai `IAiProviderCircuitBreaker` và `InMemoryCircuitBreaker` ngắt mạch `Open` sau 5 lỗi AI liên tiếp trong 60s, từ chối ngay lập tức với `AWS_BEDROCK_CIRCUIT_OPEN` để bảo vệ ngân sách AWS. Tự động chuyển `HalfOpen` sau 60s để probe phục hồi.
+  - **Recover stale RUNNING jobs:** Triển khai `RecoverExpiredLeasesAsync` trong cả `FileJobStore` và `InMemoryJobStore`. Tự động thu hồi các job bị sập worker (`LeaseExpiresAt < UtcNow`), tăng số lần thử, chuyển về `Pending` kèm delay + jitter; nếu cạn 3 lần thử chuyển sang `Failed` với mã `STALE_LEASE_RECOVERED`.
+
+- [x] **2. Error mapping quota/throttle/permission/retrieval/schema; expose actionable reason**
+  - **Error mapping taxonomy:** Xây dựng `AwsErrorCodes` và `AwsErrorMapping.cs` phân loại chi tiết:
+    - *Quota & Throttle:* `AWS_BEDROCK_QUOTA_EXCEEDED` (Permanent), `AWS_BEDROCK_THROTTLED` (Transient), `AWS_S3_SLOW_DOWN` (Transient).
+    - *Permission:* `AWS_BEDROCK_ACCESS_DENIED` (Permanent), `AWS_S3_ACCESS_DENIED` (Permanent).
+    - *Retrieval & Storage:* `RAG_RETRIEVAL_EMPTY` (Permanent), `AWS_S3_FILE_NOT_FOUND` (Permanent).
+    - *Schema & AI Output:* `AI_MALFORMED_OUTPUT` (Permanent), `INVALID_CSV_SCHEMA` (Permanent), `ROW_VALIDATION_ERROR` (Permanent).
+  - **Expose actionable reason:** Bổ sung trường `ActionableReason` vào `JobStatusDto` và `JobApiResponse` cung cấp chỉ dẫn rõ ràng, thân thiện cho người dùng cuối (ví dụ: yêu cầu admin tăng quota Bedrock, kiểm tra quyền S3, kiểm tra định dạng CSV).
+  - **Zero Information Leak (CWE-209):** Triển khai `AwsErrorMapping.SanitizeForClient` loại bỏ toàn bộ stack trace (`at System...`), AWS secret tokens, ARN, và đường dẫn file hệ thống trước khi trả ra client.
+
+- [x] **3. UI partial/failed attempts và retry eligibility, tránh indefinite spinner**
+  - **Tránh indefinite spinner:** Nhờ `RecoverExpiredLeasesAsync` và cơ chế phát hiện stale lease, các job bị crash process không còn kẹt ở trạng thái `Running` vô hạn mà được chuyển về trạng thái rõ ràng (`Pending` hoặc `Failed`).
+  - **UI partial/failed attempts:** Status UI (`/jobs/`) hiển thị drawer với toàn bộ lịch sử các attempts: worker ID, thời gian bắt đầu, thời gian thực thi (ms), lý do retry, mã lỗi và thông báo an toàn.
+  - **Retry eligibility:** Tính toán `IsRetryEligible` dựa trên trạng thái (`Failed`/`Cancelled`) và phân loại lỗi (`!IsKnownPermanent`). Trên giao diện, nếu không đủ điều kiện thử lại, nút bấm chuyển thành `🚫 Không thể thử lại` (`.btn-disabled`, thuộc tính `disabled`) kèm tooltip giải thích lý do, ngăn chặn việc bấm retry mù quáng.

@@ -25,10 +25,10 @@ Skill này dùng để quản lý toàn bộ bộ nhớ kỹ thuật, kiến tr�
 
 | Tài liệu | Mô tả nội dung | Liên kết |
 |---|---|---|
-| **Lịch sử & Tiến độ (Memory)** | Chi tiết các task M5-01, M5-02 (PR #68), M5-03 (PR #74 merged), các quyết định kỹ thuật | [memory.md](file:///d:/projectCode/AWS_project/ai-exam-bank/.agents/skills/ai-exam-bank-memory/references/memory.md) |
-| **Bản đồ Kiến trúc (Architecture)** | Cấu trúc Monorepo Backend/Frontend, Modular Monolith, ranh giới domain và data flow | [architecture.md](file:///d:/projectCode/AWS_project/ai-exam-bank/.agents/skills/ai-exam-bank-memory/references/architecture.md) |
-| **Bảng tra cứu lệnh (Cheat Sheet)** | Toàn bộ lệnh CLI thường dùng: build, test, run host, run worker, smoke test, repo check | [cheat_sheet.md](file:///d:/projectCode/AWS_project/ai-exam-bank/.agents/skills/ai-exam-bank-memory/references/cheat_sheet.md) |
-| **Kinh nghiệm xử lý sự cố (Troubleshooting)** | Bài học kinh nghiệm: lệch version SDK, Named Mutex, quy tắc link markdown, CodeRabbit | [troubleshooting.md](file:///d:/projectCode/AWS_project/ai-exam-bank/.agents/skills/ai-exam-bank-memory/references/troubleshooting.md) |
+| **Lịch sử & Tiến độ (Memory)** | Chi tiết các task M5-01, M5-02 (PR #68), M5-03 (PR #74 merged), các quyết định kỹ thuật | [memory.md](references/memory.md) |
+| **Bản đồ Kiến trúc (Architecture)** | Cấu trúc Monorepo Backend/Frontend, Modular Monolith, ranh giới domain và data flow | [architecture.md](references/architecture.md) |
+| **Bảng tra cứu lệnh (Cheat Sheet)** | Toàn bộ lệnh CLI thường dùng: build, test, run host, run worker, smoke test, repo check | [cheat_sheet.md](references/cheat_sheet.md) |
+| **Kinh nghiệm xử lý sự cố (Troubleshooting)** | Bài học kinh nghiệm: lệch version SDK, Named Mutex, quy tắc link markdown, CodeRabbit | [troubleshooting.md](references/troubleshooting.md) |
 
 ---
 
