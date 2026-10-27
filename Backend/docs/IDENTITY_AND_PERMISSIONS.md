@@ -1,6 +1,6 @@
 # Vai trò và phân quyền nhiều trường/cấp Bộ
 
-**Trạng thái:** Phạm vi MVP được project owner chốt ngày 09/10/2026; đây là hợp đồng thiết kế, chưa có auth/API thực thi.
+**Trạng thái:** Phạm vi MVP được project owner chốt ngày 09/10/2026. Auth và API quản trị trường/role đã có trong M3-02; luồng Review, Question/Blueprint và kỳ thi cấp Bộ vẫn là hợp đồng thiết kế, chưa có endpoint tích hợp đầy đủ.
 **Người thực hiện:** Minh Phúc — Lancelot-sys25
 **Liên quan:** M3-01 (thiết kế đã merge); M3-02 (triển khai đăng nhập và phân quyền)
 
@@ -182,9 +182,9 @@ tra để gom các đề cùng cạnh tranh. Mỗi đề cần biết cấp tổ
 hữu, người soạn, phiên bản, trạng thái và người quyết định; `ExamEvent`
 chỉ trỏ tới một phiên bản đang được chọn tại một thời điểm.
 
-API quản lý role, tạo đề, danh sách chờ duyệt và quyết định duyệt phải
-định nghĩa rõ quyền và phạm vi. Trường dữ liệu và endpoint cụ thể sẽ
-được chốt cùng M1/M4 trước khi viết migration hoặc controller.
+API quản lý role đã có trong M3-02. API tạo đề, danh sách chờ duyệt và
+quyết định duyệt vẫn phải chốt quyền, phạm vi và schema cùng M1/M4 trước
+khi viết migration hoặc controller. Xem [hợp đồng và bằng chứng M3-01](M3-01_SECURITY_CONTRACTS.md).
 
 ## 8. Các trường hợp cần kiểm thử
 
@@ -222,5 +222,7 @@ API quản lý role, tạo đề, danh sách chờ duyệt và quyết định d
    và quy trình cấp/thu hồi quyền trước khi mở endpoint soạn/xác nhận.
 2. M1/M3/M4 phải chốt hợp đồng bản nháp câu AI → `QuestionRevision` →
    review độc lập → câu đủ điều kiện chọn, rồi kiểm thử toàn luồng.
-3. Cách đăng nhập, quản lý phiên và bảo vệ nội dung đề thi vẫn theo
-   ADR 0003 đang đề xuất; cần chốt trước khi triển khai M3-02.
+3. M3-02 đã triển khai Identity cookie, CSRF và quyền quản trị trường;
+   [ADR 0006](adr/0006-identity-session-and-authorization.md) ghi rõ lựa
+   chọn phiên và ranh giới kiểm quyền để M1/M3 review. Cần kiểm tra bảo
+   vệ nội dung đề thật khi M1/M4 đưa các API tài nguyên vào hệ thống.
