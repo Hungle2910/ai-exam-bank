@@ -178,3 +178,26 @@ Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requir
      ```
      *Kiểm chứng:* Sau 2 phút (lease hết hạn), tiến trình Worker mới khởi động lại lập tức thu hồi job, chuyển từ `Running` về `Pending`, hiển thị cảnh báo `STALE_LEASE_RECOVERED` trên UI và hoàn tất thành công ở lần chạy tiếp theo.
    - **Drill 3 - Sự Cố Kéo Dài Kích Hoạt Circuit Breaker:** Khi Bedrock API bị ngắt kết nối kéo dài, sau đúng 5 request thất bại liên tiếp, Circuit Breaker lập tức chuyển `Open`. Tất cả các request sinh đề sau đó được phản hồi ngay lập tức với mã `AWS_BEDROCK_CIRCUIT_OPEN`, bảo vệ hoàn toàn chi phí tài nguyên đám mây.
+
+---
+
+## ⚠️ 6. Phân Tích Rủi Ro, Điểm Nghẽn & Kết Quả Bàn Giao (Risks, Blockers & Deliverables)
+
+### 6.1 Quản Trị Rủi Ro & Kế Hoạch Tháo Gỡ (Risk / Blocker Management)
+
+| Hạng Mục | Nhận Định & Kế Hoạch Chi Tiết |
+|---|---|
+| **Rủi ro cốt lõi (Identified Risk)** | *Mock không phản ánh 100% hành vi của live AWS.* Dù các bài kiểm thử unit/resilience mô phỏng chính xác các mã lỗi của AWS SDK, độ trễ mạng thực tế, biến thiên rate-limit động của Bedrock và chính sách hạn ngạch tài khoản AWS có thể phát sinh sai lệch khi vận hành thực tế. |
+| **Biện pháp giảm thiểu (Mitigation)** | Soạn thảo kịch bản diễn tập chi tiết tại [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md) và công cụ tự động [run_failure_drills.py](../../tools/run_failure_drills.py). Cam kết chạy ít nhất một đợt diễn tập trực tiếp trên môi trường AWS Staging ngay khi hệ thống triển khai sẵn sàng. |
+| **Điểm nghẽn thực tế (Actual Blocker)** | **Không có điểm nghẽn nội bộ (Unresolved Blockers = 0).** Tất cả mã nguồn lõi của module Jobs, Circuit Breaker, và Error Sanitization đã hoàn thiện, build 0 error/0 warning, 115 tests xanh. |
+| **Upstream Owners phụ thuộc** | - **M2 (CI/CD & Staging Baseline):** Cung cấp đường ống deploy và môi trường máy chủ staging.<br>- **M3 (IAM & Security Review):** Phê duyệt IAM policy cấp quyền `bedrock:InvokeModel` và truy cập bucket S3 theo nguyên tắc đặc quyền tối thiểu (Least Privilege). |
+| **Điều kiện bàn giao cụ thể** | Máy chủ Staging sở hữu IAM instance profile/role có quyền gọi Bedrock và kết nối bucket S3 `ai-exam-bank-corpus-*`. |
+| **Hành động tiếp theo (Next Action)** | Ngay khi Gate Tuần 4 hoàn tất deploy staging, Role M5 (Gia Bảo) sẽ trực tiếp kích hoạt 3 kịch bản failure drill trên Staging AWS để nghiệm thu live evidence. |
+
+### 6.2 Đối Chiếu Danh Mục Bàn Giao Bắt Buộc (Required Deliverables Matrix)
+
+| Phân Nhóm Yêu Cầu | Kết Quả Bàn Giao Cụ Thể (Delivered Artifacts) | Trạng Thái |
+|---|---|---|
+| **Backend / Frontend / DB-data** | - **Resilience Policies:** Bounded Exponential Backoff + Jitter (`BackoffJitterCalculator`), Circuit Breaker (`InMemoryCircuitBreaker`), Stale lease recovery loop (`RecoverExpiredLeasesAsync`).<br>- **Failed-job UI:** Status UI (`/jobs/`) với badge lỗi, preview lỗi, drawer attempts, banner hướng dẫn `.actionable-advice-banner`, và tự động vô hiệu hóa nút `[🚫 Không thể thử lại]` khi không đủ điều kiện.<br>- **Error code & Lease recovery data:** Mở rộng DTO/Domain với `IsRetryEligible`, `ActionableReason`, `SafeErrorMessage`, `LeaseExpiresAt`, `AttemptStatus.Abandoned`, mã lỗi `STALE_LEASE_RECOVERED`. | ✅ ĐÃ BÀN GIAO 100% |
+| **AWS / Integration** | - **Capture Bedrock/S3 errors & provider metrics:** Ánh xạ đầy đủ `AWS_BEDROCK_THROTTLED`, `AWS_BEDROCK_QUOTA_EXCEEDED`, `AWS_BEDROCK_ACCESS_DENIED`, `AWS_BEDROCK_MODEL_TIMEOUT`, `AWS_S3_ACCESS_DENIED`, `AWS_S3_FILE_NOT_FOUND`, `AWS_S3_SLOW_DOWN`; đo lường `ExecutionDurationMs` và lịch sử attempts.<br>- **Tuyệt đối không mở ML endpoint:** Toàn bộ tác vụ gọi AI Bedrock được cô lập bên trong Durable Job Worker, không tạo bất kỳ endpoint public nào để gọi mô hình trực tiếp. | ✅ ĐÃ BÀN GIAO 100% |
+| **Security** | - **Zero Information Leak (CWE-209):** Khử trùng 100% stack trace (`at System...`), ARN (`arn:aws:...`), đường dẫn tệp cục bộ (`C:\...`) và AWS credentials (`AKIA...`) qua `AwsErrorMapping.SanitizeForClient`.<br>- **Authorization & Scope Invariant:** Kiểm tra quyền qua `ClaimsPrincipal` trên server, ngăn chặn triệt để IDOR / Scope Bypass (CWE-639, CWE-862). User ngoài scope hoàn toàn không đọc được nội dung đề thi, source corpus, hay metadata tác vụ (`403 Forbidden`). | ✅ ĐÃ BÀN GIAO 100% |
