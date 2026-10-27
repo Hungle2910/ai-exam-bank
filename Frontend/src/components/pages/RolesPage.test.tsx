@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import RolesPage from './RolesPage';
 
@@ -58,4 +58,37 @@ it('selects the SchoolAdmin school when the list arrives after the grant modal o
     expect(call).toBeDefined();
     expect(JSON.parse(call![1].body)).toMatchObject({ role: 'DepartmentHead', schoolId: 'school-a', departmentId: 'dept-a' });
   });
+});
+
+it('keeps the selected school assignments when an older school responds later', async () => {
+  let resolveA!: (value: { ok: boolean; json: () => Promise<unknown> }) => void;
+  const schoolA = new Promise<{ ok: boolean; json: () => Promise<unknown> }>(resolve => { resolveA = resolve; });
+  mocks.apiFetch.mockImplementation((url: string) => {
+    if (url === '/api/v1/admin/schools') {
+      return Promise.resolve({ ok: true, json: async () => [
+        { id: 'school-a', name: 'School A' }, { id: 'school-b', name: 'School B' },
+      ] });
+    }
+    if (url === '/api/v1/admin/schools/school-a/role-assignments') return schoolA;
+    if (url === '/api/v1/admin/schools/school-b/role-assignments') {
+      return Promise.resolve({ ok: true, json: async () => [
+        { id: 'assignment-b', userId: 'user-b', role: 'Teacher', schoolId: 'school-b', departmentId: null },
+      ] });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  const view = render(<RolesPage />);
+  await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalledWith('/api/v1/admin/schools/school-a/role-assignments'));
+  fireEvent.change(view.container.querySelector('#roles-school-selector') as HTMLSelectElement, { target: { value: 'school-b' } });
+  await waitFor(() => expect(view.getByText(/user-b/)).toBeDefined());
+
+  await act(async () => {
+    resolveA({ ok: true, json: async () => [
+      { id: 'assignment-a', userId: 'user-a', role: 'Teacher', schoolId: 'school-a', departmentId: null },
+    ] });
+    await schoolA;
+  });
+  expect(view.getByText(/user-b/)).toBeDefined();
+  expect(view.queryByText(/user-a/)).toBeNull();
 });

@@ -89,6 +89,34 @@ it('ignores a late 401 from the previous session after logging in again', async 
   expect(screen.getByTestId('expired').textContent).toBe('false');
 });
 
+it('expires the session when a concurrent 401 follows a successful /auth/me check', async () => {
+  const firstCheck = deferred<Response>();
+  const secondCheck = deferred<Response>();
+  let meCalls = 0;
+  vi.stubGlobal('fetch', vi.fn((input: string) => {
+    if (input === '/auth/me') {
+      meCalls += 1;
+      if (meCalls === 1) return Promise.resolve(response(200, userA));
+      return meCalls === 2 ? firstCheck.promise : secondCheck.promise;
+    }
+    if (input === '/auth/csrf') return Promise.resolve(response(200, { token: 'csrf' }));
+    throw new Error(`Unexpected request: ${input}`);
+  }));
+
+  render(<AuthProvider><Probe /></AuthProvider>);
+  await waitFor(() => expect(screen.getByTestId('user').textContent).toBe('admin.a'));
+  act(() => {
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await waitFor(() => expect(meCalls).toBe(3));
+
+  await act(async () => { firstCheck.resolve(response(200, userA)); await firstCheck.promise; });
+  await act(async () => { secondCheck.resolve(response(401)); await secondCheck.promise; });
+  expect(screen.getByTestId('user').textContent).toBe('none');
+  expect(screen.getByTestId('expired').textContent).toBe('true');
+});
+
 it('keeps the authenticated user when logout fails', async () => {
   vi.stubGlobal('fetch', vi.fn((input: string) => {
     if (input === '/auth/me') return Promise.resolve(response(200, userA));

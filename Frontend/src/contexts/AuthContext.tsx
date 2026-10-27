@@ -80,7 +80,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (version !== authVersion.current) return;
-        authVersion.current += 1;
         authenticated.current = true;
         setUser(data);
       } else if (res.status === 401) {

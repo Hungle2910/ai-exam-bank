@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Shield, Plus, Search, RefreshCw, Trash2
 } from 'lucide-react';
@@ -62,16 +62,23 @@ export default function RolesPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [showGrantModal, setShowGrantModal] = useState(false);
+  const assignmentRequest = useRef(0);
 
   const fetchAssignments = useCallback(async (schoolId: string) => {
     if (!schoolId) return;
+    const request = ++assignmentRequest.current;
     setLoading(true);
     try {
       const res = await apiFetch(`/api/v1/admin/schools/${schoolId}/role-assignments`);
-      if (res.ok) setAssignments(await res.json());
-      else showError('Không thể tải phân quyền');
-    } catch { showError('Lỗi kết nối'); }
-    finally { setLoading(false); }
+      if (res.ok) {
+        const items = await res.json();
+        if (request === assignmentRequest.current) setAssignments(items);
+      } else if (request === assignmentRequest.current) showError('Không thể tải phân quyền');
+    } catch {
+      if (request === assignmentRequest.current) showError('Lỗi kết nối');
+    } finally {
+      if (request === assignmentRequest.current) setLoading(false);
+    }
   }, [apiFetch, showError]);
 
   useEffect(() => {
