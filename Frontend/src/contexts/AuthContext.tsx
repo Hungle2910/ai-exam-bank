@@ -89,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         authenticated.current = false;
         setUser(null);
+        setCsrfToken(null);
       }
     } catch {
       // Keep the current screen during a temporary connection failure.
@@ -103,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authenticated.current = false;
       setSessionExpired(true);
       setUser(null);
+      setCsrfToken(null);
     }
     return res;
   }, []);

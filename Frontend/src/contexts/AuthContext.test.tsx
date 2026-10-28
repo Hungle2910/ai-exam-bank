@@ -21,14 +21,16 @@ function deferred<T>() {
 }
 
 function Probe() {
-  const { user, sessionExpired, login, logout } = useAuth();
+  const { user, csrfToken, sessionExpired, login, logout, apiFetch } = useAuth();
   const [error, setError] = useState('');
   return <>
     <span data-testid="user">{user?.userName ?? 'none'}</span>
     <span data-testid="expired">{String(sessionExpired)}</span>
+    <span data-testid="csrf">{csrfToken ?? 'none'}</span>
     <span data-testid="error">{error}</span>
     <button onClick={() => void login('admin.b', 'password').catch(e => setError(e.message))}>Login B</button>
     <button onClick={() => void logout().catch(e => setError(e.message))}>Logout</button>
+    <button onClick={() => void apiFetch('/protected')}>Check protected API</button>
   </>;
 }
 
@@ -131,4 +133,40 @@ it('keeps the authenticated user when logout fails', async () => {
   await waitFor(() => expect(screen.getByTestId('error').textContent).toBe('Đăng xuất thất bại'));
   expect(screen.getByTestId('user').textContent).toBe('admin.a');
   expect(screen.getByTestId('expired').textContent).toBe('false');
+});
+
+it.each(['fetchMe', 'apiFetch'])('gets a fresh anonymous CSRF token after %s reports an expired session', async source => {
+  let meCalls = 0;
+  let csrfCalls = 0;
+  let loginToken = '';
+  vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => {
+    if (input === '/auth/me') {
+      meCalls += 1;
+      if (meCalls === 1) return Promise.resolve(response(200, userA));
+      if (source === 'fetchMe' && meCalls === 2) return Promise.resolve(response(401));
+      return Promise.resolve(response(200, userB));
+    }
+    if (input === '/auth/csrf') {
+      csrfCalls += 1;
+      return Promise.resolve(response(200, { token: csrfCalls === 1 ? 'old-token' : 'anonymous-token' }));
+    }
+    if (input === '/protected') return Promise.resolve(response(401));
+    if (input === '/auth/login') {
+      loginToken = (init?.headers as Record<string, string>)['X-CSRF-TOKEN'];
+      return Promise.resolve(response(loginToken === 'anonymous-token' ? 204 : 400));
+    }
+    throw new Error(`Unexpected request: ${input}`);
+  }));
+
+  render(<AuthProvider><Probe /></AuthProvider>);
+  await waitFor(() => expect(screen.getByTestId('csrf').textContent).toBe('old-token'));
+  if (source === 'fetchMe') act(() => window.dispatchEvent(new Event('focus')));
+  else fireEvent.click(screen.getByText('Check protected API'));
+  await waitFor(() => expect(screen.getByTestId('expired').textContent).toBe('true'));
+  expect(screen.getByTestId('csrf').textContent).toBe('none');
+
+  fireEvent.click(screen.getByText('Login B'));
+  await waitFor(() => expect(screen.getByTestId('user').textContent).toBe('admin.b'));
+  expect(loginToken).toBe('anonymous-token');
+  expect(screen.getByTestId('error').textContent).toBe('');
 });
