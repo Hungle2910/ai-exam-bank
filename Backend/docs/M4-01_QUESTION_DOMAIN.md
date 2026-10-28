@@ -1,6 +1,6 @@
 # M4-01 — Question domain, taxonomy và seed
 
-**Status:** Proposed cho M1, M2, M3 review; chưa có migration hay code. Đây là thiết kế, không phải chức năng hiện có.
+**Status:** Các quyết định ở mục 11 đã được M1, M2, M3 duyệt theo xác nhận của Thiên Phúc (2026-10-28); nội dung vẫn là thiết kế. Wireframe ở [M4-01_QUESTION_BANK_WIREFRAME.md](M4-01_QUESTION_BANK_WIREFRAME.md). Đã có domain validator và contract interface (mục 11) cùng unit test; chưa có migration, persistence hay API. Đây là thiết kế, không phải chức năng hiện có.
 **Người thực hiện:** Thiên Phúc (M4). **Ngày:** 2026-10-28.
 **Liên quan:** [Architecture](ARCHITECTURE.md), [thiết kế solution .NET](DOTNET_SOLUTION_DESIGN.md), [M2-01 CSV contract](M2-01_deploy_network.md), [M3-02 schema handoff](M3-02_identity_schema_handoff.md), [phân quyền](IDENTITY_AND_PERMISSIONS.md).
 
@@ -41,7 +41,7 @@ erDiagram
 | `Topics` | `Id`, `SubjectId`, `Code`, `Name` | Unique `(SubjectId, Code)`; alternate key `(Id, SubjectId)` |
 | `SchoolSubjects` | `SchoolId`, `SubjectId`, `DepartmentId` | PK `(SchoolId, SubjectId)` để một môn chỉ thuộc một Department; FK `(DepartmentId, SchoolId)` tới `Departments` |
 | `Questions` | `Id`, `SchoolId`, `DepartmentId`, `SubjectId`, `OwnerUserId`, `CreatedAt`, `LatestRevision`, `RowVersion` | `DepartmentId` suy ra từ `SchoolSubjects` lúc tạo, không nhận từ client; `SubjectId` không đổi sau khi tạo |
-| `QuestionRevisions` | PK `(QuestionId, Revision)`; `SubjectId`, `TopicId`, `Difficulty`, `Stem`, `CorrectOption`, `Status`, `Origin`, `SourceText`, `ImportBatchId?`, `CreatedBy`, `CreatedAt` | FK `(TopicId, SubjectId)` tới `Topics` để topic luôn thuộc đúng môn; `Revision >= 1` |
+| `QuestionRevisions` | PK `(QuestionId, Revision)`; `SubjectId`, `TopicId`, `Difficulty`, `Stem`, `CorrectOption`, `Status`, `Origin`, `SourceText`, `ImportBatchId?`, `ImportRowNumber?`, `CreatedBy`, `CreatedAt` | FK `(TopicId, SubjectId)` tới `Topics` để topic luôn thuộc đúng môn; `Revision >= 1`; unique `(ImportBatchId, ImportRowNumber)` (khi có) để retry commit không ghi trùng dòng |
 | `QuestionOptions` | PK `(QuestionId, Revision, Label)`; `Text` | `Label` thuộc A–D; mỗi revision đủ 4 dòng |
 | `KnowledgeSources` | `Id`, `SubjectId`, `Title`, `Kind`, `StorageUri`, `ContentHash`, `LicenseStatus`, `IngestionApprovedBy`, `IngestionApprovedAt` | Chỉ lưu metadata; file nằm ngoài repo |
 | `RevisionCitations` | `(QuestionId, Revision, KnowledgeSourceId)`, `Locator` | Ánh xạ sang `SourceCitation` của module Knowledge |
@@ -136,21 +136,42 @@ Mục tiêu: có dữ liệu để test CRUD, filter, import, blueprint và **ga
 
 ## 9. Corpus RAG và AWS
 
-Phần này làm sau, không chặn M4-02.
+Phần này làm sau, không chặn M4-02. Chi tiết manifest, yêu cầu S3/Bedrock/KB, kế hoạch proof và blocker hiện tại nằm ở [M4-01_CORPUS_AND_AWS.md](M4-01_CORPUS_AND_AWS.md).
 
 - **Manifest:** mỗi tài liệu nguồn ghi tiêu đề, môn, loại, `ContentHash`, nơi lưu, `LicenseStatus` và người duyệt ingestion. Manifest chỉ chứa metadata. File nguồn ở ngoài repo (S3 private hoặc nơi đội chỉ định) và không commit.
 - **Quyền sử dụng:** chỉ ingest tài liệu có `LicenseStatus` được xác nhận; nhật ký người duyệt lưu trong `KnowledgeSources`.
 - **Yêu cầu AWS cần liệt kê:** Region, model và embedding, vector store, S3 bucket, IAM runtime role. Cần ghi chi phí vector store.
 - **Proof retrieval:** làm khi có quyền AWS từ M2/M3. Nếu chưa có, ghi blocker gồm điều kiện cụ thể, người sở hữu và bước tiếp theo.
 
-## 10. Việc còn mở
+## 10. Contract giữa các module
 
-| # | Câu hỏi | Người quyết định |
+Contract nằm trong `Modules/Questions/Contracts` và `Modules/Knowledge/Contracts`; module khác chỉ dùng các interface này, không đọc bảng hay `DbContext` của Questions. Lỗi trả bằng exception có nghĩa nghiệp vụ để API map sang Problem Details.
+
+| Interface | Người dùng | Việc chính |
 |---|---|---|
-| 1 | Chủ đề ở mục 3 có khớp tài liệu nguồn không | Thiên Phúc |
-| 2 | `SchoolSubjects` hay cột `SubjectId` trên `Departments` | Minh Phúc |
-| 3 | `REVIEW_REQUIRED` hay `PENDING_REVIEW` | Minh Phúc, Thiên Phúc |
-| 4 | Quyền đọc bank trong bộ môn cho Teacher | Minh Phúc |
-| 5 | Cột CSV và cách tra tên môn/chủ đề | Hữu Phước |
-| 6 | `TopicId` trong blueprint và cách M1 dùng seed | Gia Hưng |
-| 7 | Nơi lưu file nguồn và người cấp quyền AWS | Đội, Hữu Phước |
+| `IQuestionWriter` | API (M4), Import (M2), AI draft | `CreateDraftAsync`, `CreateRevisionAsync`. Luôn tạo `DRAFT`, tự kiểm quyền và nội dung, tham gia transaction của caller để import commit và ghi câu hỏi cùng thành công hoặc cùng rollback |
+| `IQuestionCatalog` | Import (M2), editor | `ResolveAsync(actor, school, subjectName, topicName)` tra tên trong catalog của trường, không tự tạo taxonomy |
+| `IApprovedQuestionReader` | Exams (M1) | `FindApprovedAsync` (sắp theo question ID để chọn có seed lặp lại được), `GetApprovedAsync` (revalidate khi finalize), `CountApprovedAsync` (số câu theo chủ đề × độ khó cho blueprint và gap report). Chỉ trả revision `APPROVED` |
+| `IKnowledgeRetriever` | Sinh câu AI (M4-04/05) | `RetrieveAsync` theo trường, môn, chủ đề; mỗi đoạn kèm `SourceCitation`. Kết quả rỗng nghĩa là không được sinh câu thiếu nguồn |
+
+Exception: `QuestionValidationException` (400, chứa danh sách lỗi theo field), `QuestionAccessDeniedException` (403), `QuestionNotFoundException` (404), `QuestionConflictException` (409, khi `BaseRevision` không còn là revision mới nhất).
+
+Ghi chú tích hợp:
+
+- Import dùng `QuestionProvenance.Import(batchId, rowNumber)`; `rowNumber` là số dòng logic CSV, header là dòng 1 (theo M2-01).
+- Command không tự validate nội dung. Writer gọi `McqContent.Validate` để mọi nơi báo cùng bộ lỗi; M2 cũng gọi được `Validate` khi tạo preview mà chưa ghi.
+- Reader không kiểm quyền actor. Use case gọi (M1) phải kiểm quyền blueprint; quy tắc Teacher đọc bank dùng chung xem mục 11, câu 4.
+
+## 11. Quyết định và việc còn mở
+
+Các mục 2-6 đã được người phụ trách duyệt theo phương án đề xuất trong tài liệu này (xác nhận qua Thiên Phúc, chưa có biên bản riêng). Nếu ai đã chọn phương án khác, sửa bảng này và các mục liên quan trong cùng PR.
+
+| # | Nội dung | Người quyết định | Kết quả |
+|---|---|---|---|
+| 1 | Chủ đề ở mục 3 có khớp tài liệu nguồn không | Thiên Phúc | **Còn mở**; đối chiếu với tài liệu nguồn |
+| 2 | `SchoolSubjects` hay cột `SubjectId` trên `Departments` | Minh Phúc | Đã duyệt: dùng `SchoolSubjects` |
+| 3 | `REVIEW_REQUIRED` hay `PENDING_REVIEW` | Minh Phúc, Thiên Phúc | Đã duyệt: `REVIEW_REQUIRED` theo ARCHITECTURE.md |
+| 4 | Quyền đọc bank trong bộ môn cho Teacher | Minh Phúc | Đã duyệt, nhưng quy tắc cụ thể (Teacher có đọc câu của đồng nghiệp trong bộ môn không) chưa được ghi lại; Thiên Phúc bổ sung vào mục 7 |
+| 5 | Cột CSV và cách tra tên môn/chủ đề | Hữu Phước | Đã duyệt: tra theo tên trong catalog của trường |
+| 6 | `TopicId` trong blueprint và cách M1 dùng seed | Gia Hưng | Đã duyệt: `TopicId` cố định theo seed |
+| 7 | Nơi lưu file nguồn và người cấp quyền AWS | Đội, Hữu Phước | **Còn mở**: Bedrock chưa dùng được, tài liệu nguồn chưa có trên máy M4; xem [blocker](M4-01_CORPUS_AND_AWS.md) |
