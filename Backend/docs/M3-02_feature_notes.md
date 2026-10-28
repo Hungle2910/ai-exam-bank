@@ -27,8 +27,17 @@ dotnet run --no-launch-profile -- --bootstrap-ministry-admin
 
 Lệnh không mở web server, không in mật khẩu, tạo tài khoản + role + audit trong một transaction, và từ chối chạy lần thứ hai khi đã có MinistryAdmin. Không đặt mật khẩu trong `appsettings.json`, tham số dòng lệnh hoặc Git. Sau khi chạy, xóa biến mật khẩu khỏi phiên shell nếu đã đặt thủ công.
 
-## Đã kiểm tra và còn lại
+## Giao diện và cấu hình phát triển
 
-Build API sạch; 20 bài MSTest hiện có đạt (gồm 4 ca chính sách tài nguyên); model EF khớp migrations. Các luồng quản trị và IDOR trường khác đã được thử thủ công trên database riêng, rồi database thử được xóa. Lệnh bootstrap production mới được xác nhận nhánh thiếu thông tin đăng nhập; chưa chạy tạo tài khoản trên database thật. Script kiểm tra phiên hết hạn đã viết nhưng chưa chạy xác nhận.
+Frontend có trang đăng nhập/đăng xuất, màn Trường học/Bộ môn, Người dùng và Phân quyền. Bộ/Trường/Giáo viên chỉ thấy các thao tác phù hợp với vai trò; BE vẫn kiểm quyền cho mọi yêu cầu trực tiếp. Giao diện chọn bộ môn khi tạo hoặc gán quyền Giáo viên/Trưởng Bộ Môn, và chuyển về trang đăng nhập với thông báo khi API quản trị trả `401` sau khi phiên hết hạn. Hướng dẫn chạy BE bằng Visual Studio và FE bằng VS Code nằm trong `Frontend/README.md`; `.env.local` chỉ lưu địa chỉ BE tại máy phát triển và không được commit.
 
-Giao diện đăng nhập/quản trị được chừa lại theo yêu cầu. Chính sách tài nguyên M3 đã có, nhưng Question, Blueprint và Jobs chưa có API hoặc bản ghi tài nguyên để gọi chính sách sau khi tải tài nguyên thật từ DB; vì vậy các bài test IDOR trực tiếp vào ba API đó chỉ thực hiện được khi các API tương ứng xuất hiện. Quyền kỳ thi cấp Bộ cũng cần bảng gán người tham gia từng kỳ thi trước khi mở nội dung kỳ thi; chính sách trường hiện tại mặc định từ chối phạm vi này.
+## Kiểm tra đã thực hiện
+
+- `npm run build` cho Frontend thành công; `dotnet test AiExamBank.slnx --no-build` đạt 64/64 bài. API build đã đạt ở lần kiểm tra trước; khi Visual Studio đang chạy API, tránh build đè tệp thực thi bị khóa.
+- Script auth smoke xác nhận anonymous `401`, thiếu CSRF `400`, sai mật khẩu `401`, đăng nhập `204`, `/auth/me` `200`, đăng xuất `204` rồi `/auth/me` `401`. Script expiry smoke với phiên 2 giây xác nhận sau 4 giây `/auth/me` trả `401`.
+- Trên database thử riêng `AiExamBankM3Smoke`, bootstrap MinistryAdmin một lần; tạo hai trường A/B, tài khoản SchoolAdmin A và Teacher thuộc bộ môn A. Trên UI, Bộ thấy hai trường, SchoolAdmin A chỉ thấy A, Teacher không thấy menu quản trị. Yêu cầu API trực tiếp của SchoolAdmin A đến trường B và của Teacher đến `/api/v1/admin/schools` đều trả `403`; tài khoản không đăng nhập trả `401`.
+- SchoolAdmin A tạo Teacher, gán rồi thu hồi vai trò Trưởng Bộ Môn thành công trên UI. Các kiểm tra API thủ công trước đó cũng xác nhận không thể tự nâng lên MinistryAdmin hoặc tạo người dùng ở trường B (`403`). Database thử vẫn giữ lại để kiểm tra tiếp; không chứa mật khẩu trong Git.
+
+## Phụ thuộc tích hợp
+
+Chính sách tài nguyên M3 đã có; owner Question (M4), Blueprint (M1) và Jobs (M5) cần gọi kiểm quyền sau khi tải tài nguyên thật từ database, rồi cùng M3 chạy ca truy cập khác trường/bộ môn. Jobs hiện có API và cơ chế xác thực phạm vi riêng; không được coi đó là bằng chứng đã tích hợp RBAC M3. Quyền kỳ thi cấp Bộ cần bảng gán người tham gia từng kỳ thi trước khi mở nội dung kỳ thi; chính sách trường hiện tại mặc định từ chối phạm vi này. M3 không tạo API tạm thay phần việc của các owner khác.

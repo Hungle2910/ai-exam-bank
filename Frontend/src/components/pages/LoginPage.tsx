@@ -10,7 +10,7 @@ import clsx from 'clsx';
    ============================================================ */
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -61,7 +61,7 @@ export default function LoginPage() {
         {/* Form */}
         <form className="login-form" onSubmit={handleSubmit} noValidate>
           {/* Error Alert */}
-          {error && (
+          {(error || sessionExpired) && (
             <div style={{
               display: 'flex',
               alignItems: 'flex-start',
@@ -74,7 +74,9 @@ export default function LoginPage() {
               animation: 'fade-in 0.2s ease',
             }}>
               <AlertCircle size={16} style={{ color: 'var(--danger-500)', marginTop: 1, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: 'var(--danger-700)', fontWeight: 500 }}>{error}</span>
+              <span style={{ fontSize: 13, color: 'var(--danger-700)', fontWeight: 500 }}>
+                {error || 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'}
+              </span>
             </div>
           )}
 

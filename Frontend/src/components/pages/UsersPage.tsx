@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Plus, Search, Users, Shield, RefreshCw, MoreHorizontal, UserCheck, UserX } from 'lucide-react';
+import { Plus, Search, Users, Shield, RefreshCw, MoreHorizontal, UserCheck, UserX, Copy } from 'lucide-react';
 import { useAuth, AppRole } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import clsx from 'clsx';
@@ -11,6 +11,7 @@ import clsx from 'clsx';
    ============================================================ */
 
 interface School { id: string; name: string; }
+interface Department { id: string; name: string; }
 interface RoleInfo { role: AppRole; departmentId: string | null; }
 interface AppUser {
   id: string;
@@ -37,14 +38,15 @@ const ROLE_BADGE: Record<AppRole, string> = {
   Teacher: 'badge-green',
 };
 
-const ASSIGNABLE_ROLES: AppRole[] = ['SchoolAdmin', 'DepartmentHead', 'Teacher'];
+const assignableRoles = (primaryRole: AppRole | null): AppRole[] =>
+  primaryRole === 'MinistryAdmin' ? ['SchoolAdmin'] : ['DepartmentHead', 'Teacher'];
 
 /* ============================================================
    USERS PAGE
    ============================================================ */
 
 export default function UsersPage() {
-  const { csrfToken, primaryRole } = useAuth();
+  const { csrfToken, primaryRole, apiFetch } = useAuth();
   const { success, error: showError } = useToast();
 
   const [schools, setSchools] = useState<School[]>([]);
@@ -54,27 +56,11 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Load schools
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch('/api/v1/admin/schools', { credentials: 'include' });
-        if (res.ok) {
-          const data: School[] = await res.json();
-          setSchools(data);
-          if (data.length > 0) setSelectedSchool(data[0].id);
-        }
-      } catch { /* ignore */ }
-    };
-    load();
-  }, []);
-
-  // Load users when school changes
   const fetchUsers = useCallback(async (schoolId: string) => {
     if (!schoolId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/admin/schools/${schoolId}/users`, { credentials: 'include' });
+      const res = await apiFetch(`/api/v1/admin/schools/${schoolId}/users`);
       if (res.ok) {
         setUsers(await res.json());
       } else {
@@ -85,11 +71,25 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [showError]);
+  }, [apiFetch, showError]);
 
+  // Load schools and the first school's users.
   useEffect(() => {
-    if (selectedSchool) fetchUsers(selectedSchool);
-  }, [selectedSchool, fetchUsers]);
+    const load = async () => {
+      try {
+        const res = await apiFetch('/api/v1/admin/schools');
+        if (res.ok) {
+          const data: School[] = await res.json();
+          setSchools(data);
+          if (data.length > 0) {
+            setSelectedSchool(data[0].id);
+            await fetchUsers(data[0].id);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    void load();
+  }, [apiFetch, fetchUsers]);
 
   const filtered = users.filter(u =>
     u.userName.toLowerCase().includes(search.toLowerCase())
@@ -107,7 +107,11 @@ export default function UsersPage() {
             className="form-select"
             style={{ width: 260 }}
             value={selectedSchool}
-            onChange={e => setSelectedSchool(e.target.value)}
+            onChange={e => {
+              setSelectedSchool(e.target.value);
+              setUsers([]);
+              void fetchUsers(e.target.value);
+            }}
             id="school-selector"
             aria-label="Select school"
           >
@@ -173,8 +177,19 @@ export default function UsersPage() {
                       <UserAvatar name={u.userName} />
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{u.userName}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>
-                          {u.id.slice(0, 12)}…
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--gray-400)' }}>
+                          <span title={u.id}>{u.id.slice(0, 12)}…</span>
+                          <button type="button" className="btn btn-ghost btn-sm" aria-label={`Sao chép ID của ${u.userName}`}
+                            title="Sao chép User ID" onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(u.id);
+                                success('Đã sao chép User ID');
+                              } catch {
+                                showError('Không thể sao chép User ID');
+                              }
+                            }}>
+                            <Copy size={12} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -212,6 +227,7 @@ export default function UsersPage() {
           schools={schools}
           defaultSchoolId={selectedSchool}
           csrfToken={csrfToken}
+          primaryRole={primaryRole}
           onClose={() => setShowCreateModal(false)}
           onCreated={() => {
             setShowCreateModal(false);
@@ -279,28 +295,54 @@ interface CreateUserModalProps {
   schools: School[];
   defaultSchoolId: string;
   csrfToken: string | null;
+  primaryRole: AppRole | null;
   onClose: () => void;
   onCreated: () => void;
 }
 
-function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreated }: CreateUserModalProps) {
+function CreateUserModal({ schools, defaultSchoolId, csrfToken, primaryRole, onClose, onCreated }: CreateUserModalProps) {
+  const { apiFetch } = useAuth();
+  const roles = assignableRoles(primaryRole);
   const [form, setForm] = useState({
     userName: '',
     password: '',
     confirmPassword: '',
-    role: 'Teacher' as AppRole,
+    role: roles[0],
     schoolId: defaultSchoolId,
+    departmentId: '',
   });
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(roles[0] !== 'SchoolAdmin');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!form.schoolId || form.role === 'SchoolAdmin') return;
+    let active = true;
+    apiFetch(`/api/v1/admin/schools/${form.schoolId}/departments`)
+      .then(async response => {
+        if (!response.ok) throw new Error('Không thể tải bộ môn');
+        return response.json() as Promise<Department[]>;
+      })
+      .then(items => { if (active) setDepartments(items); })
+      .catch(() => { if (active) setErrors(previous => ({ ...previous, departmentId: 'Không thể tải bộ môn' })); })
+      .finally(() => { if (active) setLoadingDepartments(false); });
+    return () => { active = false; };
+  }, [apiFetch, form.schoolId, form.role]);
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.userName.trim() || form.userName.length < 3) e.userName = 'Tên đăng nhập tối thiểu 3 ký tự';
     if (form.userName.length > 256) e.userName = 'Tối đa 256 ký tự';
+    if (form.userName && !/^[a-zA-Z0-9._@+\-]+$/.test(form.userName))
+      e.userName = 'Chỉ dùng chữ không dấu, số và các ký tự . - _ @ +; không dùng khoảng trắng';
     if (!form.password || form.password.length < 8) e.password = 'Mật khẩu tối thiểu 8 ký tự';
+    else if (!/[A-Z]/.test(form.password) || !/[a-z]/.test(form.password) ||
+      !/[0-9]/.test(form.password) || !/[^a-zA-Z0-9]/.test(form.password))
+      e.password = 'Cần chữ hoa, chữ thường, số và ký tự đặc biệt';
     if (form.password !== form.confirmPassword) e.confirmPassword = 'Mật khẩu không khớp';
     if (!form.schoolId) e.schoolId = 'Vui lòng chọn trường';
+    if (form.role !== 'SchoolAdmin' && !form.departmentId) e.departmentId = 'Vui lòng chọn bộ môn';
     return e;
   };
 
@@ -312,7 +354,7 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/admin/schools/${form.schoolId}/users`, {
+      const res = await apiFetch(`/api/v1/admin/schools/${form.schoolId}/users`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
@@ -320,6 +362,7 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
           userName: form.userName.trim(),
           password: form.password,
           role: form.role,
+          departmentId: form.role === 'SchoolAdmin' ? null : form.departmentId,
         }),
       });
 
@@ -329,7 +372,14 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
         setErrors({ userName: 'Tên đăng nhập này đã tồn tại' });
       } else if (res.status === 400) {
         const data = await res.json().catch(() => null);
-        setErrors({ general: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại' });
+        const codes: string[] = data?.errors?.account ?? [];
+        if (codes.includes('InvalidUserName')) {
+          setErrors({ userName: 'Tên đăng nhập không hợp lệ: chỉ dùng chữ không dấu, số và . - _ @ +' });
+        } else if (codes.some(code => code.startsWith('Password'))) {
+          setErrors({ password: 'Mật khẩu cần ít nhất 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt' });
+        } else {
+          setErrors({ general: 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại' });
+        }
       } else {
         setErrors({ general: 'Đã có lỗi xảy ra. Vui lòng thử lại' });
       }
@@ -367,6 +417,7 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label" htmlFor="new-username">Tên đăng nhập <span className="required">*</span></label>
               <input id="new-username" className={clsx('form-input', errors.userName && 'error')} placeholder="VD: gv.nguyen.van.a" value={form.userName} onChange={e => setField('userName', e.target.value)} autoFocus />
+              <div className="form-hint">Tên đăng nhập dùng chữ không dấu, số và . - _ @ +</div>
               {errors.userName && <div className="form-error">⚠ {errors.userName}</div>}
             </div>
 
@@ -387,7 +438,12 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
             {/* School */}
             <div className="form-group">
               <label className="form-label" htmlFor="user-school">Trường <span className="required">*</span></label>
-              <select id="user-school" className={clsx('form-select', errors.schoolId && 'error')} value={form.schoolId} onChange={e => setField('schoolId', e.target.value)}>
+              <select id="user-school" className={clsx('form-select', errors.schoolId && 'error')} value={form.schoolId} onChange={e => {
+                setField('schoolId', e.target.value);
+                setField('departmentId', '');
+                setDepartments([]);
+                setLoadingDepartments(true);
+              }}>
                 {schools.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               {errors.schoolId && <div className="form-error">⚠ {errors.schoolId}</div>}
@@ -396,12 +452,27 @@ function CreateUserModal({ schools, defaultSchoolId, csrfToken, onClose, onCreat
             {/* Role */}
             <div className="form-group">
               <label className="form-label" htmlFor="user-role">Vai trò <span className="required">*</span></label>
-              <select id="user-role" className="form-select" value={form.role} onChange={e => setField('role', e.target.value)}>
-                {ASSIGNABLE_ROLES.map(r => (
+              <select id="user-role" className="form-select" value={form.role} onChange={e => {
+                setField('role', e.target.value);
+                setField('departmentId', '');
+                setDepartments([]);
+                setLoadingDepartments(e.target.value !== 'SchoolAdmin');
+              }}>
+                {roles.map(r => (
                   <option key={r} value={r}>{ROLE_LABEL[r]}</option>
                 ))}
               </select>
             </div>
+            {form.role !== 'SchoolAdmin' && <div className="form-group" style={{ gridColumn: '1/-1' }}>
+              <label className="form-label" htmlFor="user-department">Bộ môn <span className="required">*</span></label>
+              <select id="user-department" className={clsx('form-select', errors.departmentId && 'error')}
+                value={form.departmentId} onChange={e => setField('departmentId', e.target.value)} disabled={loadingDepartments}>
+                <option value="">— Chọn bộ môn —</option>
+                {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+              {departments.length === 0 && !loadingDepartments && <div className="form-hint">Chưa có bộ môn. Vào Trường học → Bộ môn để thêm.</div>}
+              {errors.departmentId && <div className="form-error">⚠ {errors.departmentId}</div>}
+            </div>}
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose} id="btn-cancel-user">Hủy</button>
