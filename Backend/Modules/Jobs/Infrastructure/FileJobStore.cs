@@ -437,6 +437,22 @@ public sealed class FileJobStore : IJobStore, IDisposable
             currentAttempt.FinishedAt = now;
             currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
 
+            // Khi Circuit Breaker đang ngắt mạch (Open), job bị từ chối trước khi gọi tới AI Provider.
+            // Do đó hoàn lại AttemptCount (không tiêu hao ngân sách retry), giữ job ở trạng thái Pending
+            // và dời AvailableAt theo thời gian cooldown của breaker (60 giây) để thử lại sau khi breaker mở lại / HalfOpen.
+            if (string.Equals(errorCode, AwsErrorCodes.CircuitBreakerOpen, StringComparison.OrdinalIgnoreCase))
+            {
+                job.Status = JobStatus.Pending;
+                job.AttemptCount = Math.Max(0, job.AttemptCount - 1);
+                job.AvailableAt = now.AddSeconds(60);
+                job.ErrorCode = errorCode;
+                job.SafeErrorMessage = sanitizedMessage;
+                job.UpdatedAt = now;
+
+                SaveToDisk();
+                return true;
+            }
+
             // Phân loại lỗi và áp dụng Bounded Exponential Backoff + Jitter
             var category = ErrorClassifier.Classify(errorCode);
             var isTerminal = category == ErrorCategory.Terminal;

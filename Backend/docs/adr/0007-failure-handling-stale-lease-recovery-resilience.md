@@ -59,7 +59,7 @@ Following [ADR 0005](0005-durable-worker-retry-idempotency.md) for retry backoff
 
 ## Validation Evidence
 
-- **Unit & Resilience Test Suite:** 124/124 tests passed across `AiExamBank.Modules.Jobs.Tests` (141/141 tests across solution), including 40 dedicated resilience and failure handling tests in `FailureHandlingAndResilienceTests.cs`.
+- **Unit & Resilience Test Suite:** 126/126 tests passed across `AiExamBank.Modules.Jobs.Tests` (143/143 tests across solution), including 42 dedicated resilience and failure handling tests in `FailureHandlingAndResilienceTests.cs`.
 - **Failure Drill Runbook:** Standardized recovery procedures documented in [M5_04_FAILURE_DRILL_RUNBOOK.md](../M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md).
 - **Redacted Benchmark Artifact:** Redacted illustrative failure drill data recorded in [drill_evidence.json](../M5_04/drill_evidence.json) with version `job-engine/v1.2`.
 

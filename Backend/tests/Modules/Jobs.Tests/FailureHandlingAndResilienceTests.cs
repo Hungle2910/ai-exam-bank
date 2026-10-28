@@ -545,5 +545,96 @@ public sealed class FailureHandlingAndResilienceTests
         Assert.IsNotNull(result.ResultId);
     }
 
+    [TestMethod]
+    public async Task FailJobAsync_circuit_breaker_open_reimburses_attempt_and_does_not_exhaust_retry_budget_in_memory()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var store = new InMemoryJobStore(clock: () => now);
+        var request = JobRequest.Create("ExamGeneration", "s3://payload", "user-01", SchoolScope, "idem-cb-1", "corr-cb-1");
+        var job = await store.EnqueueAsync(request, "fp-cb-1");
+
+        // Lần 1: Claim và Fail với CircuitBreakerOpen
+        var claim1 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim1);
+        var fail1 = await store.FailJobAsync(job.Id, claim1.LeaseToken, AwsErrorCodes.CircuitBreakerOpen, "Circuit breaker is open", isTransient: true);
+        Assert.IsTrue(fail1);
+
+        var jobAfter1 = await store.GetByIdAsync(job.Id);
+        Assert.IsNotNull(jobAfter1);
+        Assert.AreEqual(JobStatus.Pending, jobAfter1.Status);
+        Assert.AreEqual(0, jobAfter1.AttemptCount, "Attempt count must be reimbursed/reverted on circuit breaker rejection.");
+        Assert.AreEqual(now.AddSeconds(60), jobAfter1.AvailableAt);
+
+        // Lần 2: Giả lập thời gian trôi qua 60s để claim lại
+        now = now.AddSeconds(61);
+        var claim2 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim2);
+        var fail2 = await store.FailJobAsync(job.Id, claim2.LeaseToken, AwsErrorCodes.CircuitBreakerOpen, "Circuit breaker is open", isTransient: true);
+        Assert.IsTrue(fail2);
+
+        var jobAfter2 = await store.GetByIdAsync(job.Id);
+        Assert.IsNotNull(jobAfter2);
+        Assert.AreEqual(JobStatus.Pending, jobAfter2.Status);
+        Assert.AreEqual(0, jobAfter2.AttemptCount);
+
+        // Lần 3: Giả lập trôi qua 60s nữa và lại bị từ chối lần 3
+        now = now.AddSeconds(61);
+        var claim3 = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim3);
+        var fail3 = await store.FailJobAsync(job.Id, claim3.LeaseToken, AwsErrorCodes.CircuitBreakerOpen, "Circuit breaker is open", isTransient: true);
+        Assert.IsTrue(fail3);
+
+        var jobAfter3 = await store.GetByIdAsync(job.Id);
+        Assert.IsNotNull(jobAfter3);
+        // 3 lần liên tiếp bị CircuitBreakerOpen không được tiêu hao budget và KHÔNG được chuyển sang Failed RETRY_BUDGET_EXHAUSTED
+        Assert.AreEqual(JobStatus.Pending, jobAfter3.Status);
+        Assert.AreEqual(0, jobAfter3.AttemptCount, "Attempt count must remain 0 despite 3 circuit breaker deferrals.");
+        Assert.AreNotEqual("RETRY_BUDGET_EXHAUSTED", jobAfter3.ErrorCode);
+        Assert.AreEqual(AwsErrorCodes.CircuitBreakerOpen, jobAfter3.ErrorCode);
+
+        // Lịch sử attempts vẫn ghi nhận đầy đủ 3 lượt để đảm bảo khả năng audit
+        var attempts = await store.GetAttemptsAsync(job.Id);
+        Assert.HasCount(3, attempts);
+        Assert.IsTrue(attempts.All(a => a.Status == AttemptStatus.Failed && a.ErrorCode == AwsErrorCodes.CircuitBreakerOpen));
+    }
+
+    [TestMethod]
+    public async Task FailJobAsync_circuit_breaker_open_reimburses_attempt_in_file_job_store()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ai_exam_bank_test_cb_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var store = new FileJobStore(tempDir, clock: () => now);
+            var request = JobRequest.Create("ExamGeneration", "s3://payload", "user-01", SchoolScope, "idem-cb-file", "corr-cb-file");
+            var job = await store.EnqueueAsync(request, "fp-cb-file");
+
+            for (int i = 0; i < 3; i++)
+            {
+                var claim = await store.ClaimNextJobAsync("worker-1", TimeSpan.FromMinutes(2));
+                Assert.IsNotNull(claim, $"Claim {i + 1} must succeed.");
+                var failed = await store.FailJobAsync(job.Id, claim.LeaseToken, AwsErrorCodes.CircuitBreakerOpen, "Circuit breaker is open", isTransient: true);
+                Assert.IsTrue(failed);
+                now = now.AddSeconds(61);
+            }
+
+            var jobAfter = await store.GetByIdAsync(job.Id);
+            Assert.IsNotNull(jobAfter);
+            Assert.AreEqual(JobStatus.Pending, jobAfter.Status);
+            Assert.AreEqual(0, jobAfter.AttemptCount, "FileJobStore must also reimburse attempt count on circuit breaker rejection.");
+            Assert.AreEqual(AwsErrorCodes.CircuitBreakerOpen, jobAfter.ErrorCode);
+
+            var attempts = await store.GetAttemptsAsync(job.Id);
+            Assert.HasCount(3, attempts);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                try { Directory.Delete(tempDir, recursive: true); } catch { }
+            }
+        }
+    }
+
     #endregion
 }
