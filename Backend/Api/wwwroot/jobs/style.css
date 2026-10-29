@@ -958,3 +958,21 @@ body {
     color: var(--color-cyan);
 }
 
+.btn-disabled, .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
+}
+
+.actionable-advice-banner {
+    margin: 0.75rem 0;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-left: 4px solid var(--color-cyan, #06b6d4);
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: #e2e8f0;
+}
+

@@ -676,8 +676,8 @@ public sealed class JobEngineExecutionTests
     public async Task Exam_generation_and_csv_import_handlers_are_registered_and_executable()
     {
         var registry = new JobRegistry();
-        registry.Register(new ExamGenerationJobHandler());
-        registry.Register(new CsvImportJobHandler());
+        registry.Register(new ExamGenerationJobHandler(allowFailureSimulation: true));
+        registry.Register(new CsvImportJobHandler(allowFailureSimulation: true));
 
         Assert.IsTrue(registry.HasHandler("ExamGeneration"));
         Assert.IsTrue(registry.HasHandler("CsvImport"));

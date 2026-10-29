@@ -149,8 +149,56 @@ public sealed class JobService : IJobPublisher, IJobTracker
             throw new UnauthorizedAccessException("Requester is not authorized to retry this job.");
         }
 
+        // Kiểm tra trạng thái tác vụ: chỉ cho phép retry khi tác vụ đã kết thúc (Failed hoặc Cancelled)
+        if (job.Status == JobStatus.Running || job.Status == JobStatus.Pending)
+        {
+            throw new InvalidOperationException($"Cannot retry a job that is currently {job.Status.ToString().ToLowerInvariant()}.");
+        }
+
+        if (job.Status == JobStatus.Completed)
+        {
+            throw new InvalidOperationException("Cannot retry a job that has already completed successfully.");
+        }
+
+        // Chặn retry đối với các tác vụ lỗi vĩnh viễn (Permanent)
+        if (!IsEligibleForRetry(job))
+        {
+            throw new JobNotRetryEligibleException($"Job '{jobRef.Value}' is not eligible for retry because it failed with permanent error '{job.ErrorCode}'.");
+        }
+
         var retriedJob = await _store.RetryJobAsync(jobRef.Value, requesterId, reason, cancellationToken);
         return MapToDto(retriedJob);
+    }
+
+    /// <summary>
+    /// Đánh giá điều kiện cho phép thử lại (Retry Eligibility).
+    /// Áp dụng nhất quán giữa DTO hiển thị và kiểm tra nghiệp vụ khi gọi API Retry.
+    /// </summary>
+    public static bool IsEligibleForRetry(BackgroundJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        if (job.Status != JobStatus.Failed && job.Status != JobStatus.Cancelled)
+        {
+            return false;
+        }
+
+        // Tác vụ Cancelled không có mã lỗi hoặc mã lỗi không phải Permanent được phép thử lại
+        if (job.Status == JobStatus.Cancelled)
+        {
+            return string.IsNullOrWhiteSpace(job.ErrorCode) ||
+                   ErrorClassifier.Classify(job.ErrorCode) != ErrorCategory.Permanent;
+        }
+
+        // Với tác vụ Failed: chỉ cho phép thử lại nếu mã lỗi KHÔNG phải lỗi vĩnh viễn (Permanent).
+        // Cho phép thử lại tác vụ cạn ngân sách retry tự động (RETRY_BUDGET_EXHAUSTED) hoặc lỗi tạm thời.
+        // Các mã lỗi không xác định sẽ mặc định bị coi là Permanent theo ErrorClassifier và bị từ chối.
+        if (string.IsNullOrWhiteSpace(job.ErrorCode))
+        {
+            return false;
+        }
+
+        return ErrorClassifier.Classify(job.ErrorCode) != ErrorCategory.Permanent;
     }
 
     /// <inheritdoc />
@@ -178,13 +226,23 @@ public sealed class JobService : IJobPublisher, IJobTracker
         return await _store.GetAttemptsAsync(jobRef.Value, cancellationToken);
     }
 
-    private static JobStatusDto MapToDto(BackgroundJob job) =>
-        new(
+    private static JobStatusDto MapToDto(BackgroundJob job)
+    {
+        var isEligible = IsEligibleForRetry(job);
+
+        var actionableReason = string.IsNullOrWhiteSpace(job.ErrorCode) && string.IsNullOrWhiteSpace(job.SafeErrorMessage)
+            ? null
+            : AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
+
+        return new(
             JobRef.Create(job.Id),
             job.Type,
             job.Status,
             job.ProgressPercentage,
             job.ResultId,
             job.ErrorCode,
-            job.SafeErrorMessage);
+            job.SafeErrorMessage,
+            isEligible,
+            actionableReason);
+    }
 }

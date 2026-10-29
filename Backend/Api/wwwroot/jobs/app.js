@@ -356,8 +356,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isCompleted && job.resultId) {
                 detailHtml = `<span class="text-emerald" title="${escapeHtml(job.resultId)}">Kết quả: ${escapeHtml(job.resultId)}</span>`;
             } else if (isFailed) {
-                detailHtml = `<span class="result-cell has-error" onclick="window.viewJobDetail('${job.jobId}')" title="Bấm để xem chi tiết lỗi">
-                    ⚠️ [${escapeHtml(job.errorCode || 'FAILED')}]: ${escapeHtml(job.safeMessage || 'Lỗi không xác định')}
+                const errorPreview = job.actionableReason 
+                    ? `⚠️ [${escapeHtml(job.errorCode || 'FAILED')}]: ${escapeHtml(job.safeMessage || 'Lỗi')} — 💡 ${escapeHtml(job.actionableReason)}`
+                    : `⚠️ [${escapeHtml(job.errorCode || 'FAILED')}]: ${escapeHtml(job.safeMessage || 'Lỗi không xác định')}`;
+                detailHtml = `<span class="result-cell has-error" onclick="window.viewJobDetail('${job.jobId}')" title="Bấm để xem chi tiết lỗi và hướng dẫn khắc phục">
+                    ${errorPreview}
                 </span>`;
             } else if (isCancelled) {
                 detailHtml = `<span class="text-muted">Tác vụ đã bị hủy</span>`;
@@ -370,12 +373,20 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (isCompleted) {
                 actionHtml = `<button class="btn btn-xs btn-success-outline" onclick="window.viewJobDetail('${job.jobId}')">Xem KQ</button>`;
             } else if (isFailed) {
+                const canRetry = job.isRetryEligible !== false;
+                const retryBtn = canRetry
+                    ? `<button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ thất bại">🔄 Thử lại</button>`
+                    : `<button class="btn btn-xs btn-secondary btn-disabled" disabled title="Không thể thử lại: ${escapeHtml(job.actionableReason || 'Lỗi vĩnh viễn hoặc đã hết số lượt thử')}">🚫 Không thể thử lại</button>`;
                 actionHtml = `
-                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ thất bại">🔄 Thử lại</button>
+                    ${retryBtn}
                     <button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Xem Lỗi</button>`;
             } else if (isCancelled) {
+                const canRetry = job.isRetryEligible !== false;
+                const retryBtn = canRetry
+                    ? `<button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ đã hủy">🔄 Thử lại</button>`
+                    : `<button class="btn btn-xs btn-secondary btn-disabled" disabled title="Không thể thử lại">🚫 Không thể thử lại</button>`;
                 actionHtml = `
-                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')" title="Thử lại tác vụ đã hủy">🔄 Thử lại</button>
+                    ${retryBtn}
                     <button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Chi tiết</button>`;
             } else {
                 actionHtml = `<button class="btn btn-xs btn-secondary" onclick="window.viewJobDetail('${job.jobId}')">Chi tiết</button>`;
@@ -416,6 +427,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.retryJob = async (jobId) => {
         const job = jobsList.find(j => j.jobId === jobId);
+        if (job && job.isRetryEligible === false) {
+            showToast(`Tác vụ không đủ điều kiện thử lại: ${job.actionableReason || 'Lỗi vĩnh viễn hoặc đã vượt quá số lần thử.'}`, 'warning');
+            return;
+        }
+
         const reason = prompt('Nhập lý do thử lại (tùy chọn):', 'Thử lại tác vụ từ Dashboard');
         if (reason === null) return; // Người dùng ấn Cancel
 
@@ -495,12 +511,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let errorBannerHtml = '';
         if (job.status === 'Failed') {
+            const adviceHtml = job.actionableReason
+                ? `<div class="actionable-advice-banner">
+                    <strong>💡 Hướng Dẫn Khắc Phục:</strong><br />
+                    ${escapeHtml(job.actionableReason)}
+                   </div>`
+                : '';
+            const retryNotice = job.isRetryEligible === false
+                ? `<div style="margin-top: 0.5rem; font-size: 0.75rem; color: #fda4af; font-weight: 500;">
+                    🚫 Tác vụ này không đủ điều kiện thử lại (lỗi vĩnh viễn hoặc đã vượt quá số lần thử tối đa).
+                   </div>`
+                : '';
             errorBannerHtml = `
                 <div class="error-banner">
                     <h4>Mã lỗi: ${escapeHtml(job.errorCode || 'UNKNOWN_ERROR')}</h4>
                     <p><strong>Thông báo an toàn:</strong> ${escapeHtml(job.safeMessage || 'Không có thông điệp cụ thể.')}</p>
-                    <p style="margin-top: 0.5rem; font-size: 0.72rem; color: #fda4af;">
-                        * Dữ liệu đã được lọc redaction bảo vệ PII và đề thi gốc.
+                    ${adviceHtml}
+                    ${retryNotice}
+                    <p style="margin-top: 0.5rem; font-size: 0.72rem; color: #94a3b8;">
+                        * Dữ liệu đã được khử trùng bảo vệ mã bí mật AWS và thông tin nhạy cảm (Zero-Leak).
                     </p>
                 </div>`;
         }
@@ -598,9 +627,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="attempts-section">
                             <div class="attempts-section-title">
                                 <span>Lịch Sử Thực Thi (${attempts.length} lượt)</span>
-                                ${job.status === 'Failed' || job.status === 'Cancelled' ? `
-                                    <button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')">🔄 Thử lại</button>
-                                ` : ''}
+                                ${job.status === 'Failed' || job.status === 'Cancelled' ? (
+                                    job.isRetryEligible !== false
+                                        ? `<button class="btn btn-xs btn-primary-outline" onclick="window.retryJob('${job.jobId}')">🔄 Thử lại</button>`
+                                        : `<button class="btn btn-xs btn-secondary btn-disabled" disabled title="Không thể thử lại">🚫 Không thể thử lại</button>`
+                                ) : ''}
                             </div>
                             <div class="attempts-list">
                                 ${itemsHtml}
