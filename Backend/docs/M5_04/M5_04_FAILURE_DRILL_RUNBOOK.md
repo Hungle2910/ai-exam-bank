@@ -245,6 +245,8 @@ components:
 
 ## ⚙️ 4. Thông Số Cấu Hình Hệ Thống (Configuration Reference)
 
+> `CircuitBreaker.*` và `Retry.*` là các hằng số trong mã, không phải khóa cấu hình. Cần build lại ứng dụng để thay đổi các giá trị này.
+
 | Tham Số Cấu Hình | Giá Trị Mặc Định | Ý Nghĩa Kỹ Thuật |
 |---|---|---|
 | `LeaseDuration` | `120 giây` | Thời hạn tối đa cho một lượt cấp phép thực thi trước khi bị coi là stale lease nếu không gia hạn heartbeat. |
@@ -256,3 +258,5 @@ components:
 | `Retry.BaseDelay` | `30 giây` | Thời gian chờ cơ sở ban đầu cho thuật toán Exponential Backoff. |
 | `Retry.MaxDelay` | `15 phút` | Thời gian chờ tối đa cho một lần hoãn chạy lại tác vụ. |
 | `Retry.JitterFactor` | `±20%` | Biên độ ngẫu nhiên dãn cách lượt request, triệt tiêu giông bão yêu cầu (Thundering Herd). |
+| `Jobs:AllowFailureSimulation` | `false` | Chỉ có hiệu lực trong môi trường `Development`; cho phép các payload `simulate-*` phục vụ failure drill. |
+

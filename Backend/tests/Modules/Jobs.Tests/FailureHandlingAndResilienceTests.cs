@@ -601,11 +601,11 @@ public sealed class FailureHandlingAndResilienceTests
     [TestMethod]
     public async Task FailJobAsync_circuit_breaker_open_reimburses_attempt_in_file_job_store()
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "ai_exam_bank_test_cb_" + Guid.NewGuid().ToString("N"));
+        var tempFile = Path.Combine(Path.GetTempPath(), $"ai_exam_bank_test_cb_{Guid.NewGuid():N}.json");
         try
         {
             var now = DateTimeOffset.UtcNow;
-            var store = new FileJobStore(tempDir, clock: () => now);
+            using var store = new FileJobStore(tempFile, clock: () => now);
             var request = JobRequest.Create("ExamGeneration", "s3://payload", "user-01", SchoolScope, "idem-cb-file", "corr-cb-file");
             var job = await store.EnqueueAsync(request, "fp-cb-file");
 
@@ -629,9 +629,9 @@ public sealed class FailureHandlingAndResilienceTests
         }
         finally
         {
-            if (Directory.Exists(tempDir))
+            if (File.Exists(tempFile))
             {
-                try { Directory.Delete(tempDir, recursive: true); } catch { }
+                try { File.Delete(tempFile); } catch { }
             }
         }
     }
