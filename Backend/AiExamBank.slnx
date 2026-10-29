@@ -35,6 +35,9 @@
   <Folder Name="/tests/Architecture.Tests/">
     <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Persistence.Tests/">
+    <Project Path="tests/Persistence.Tests/AiExamBank.Persistence.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Modules/" />
   <Folder Name="/tests/Modules/Exams.Tests/">
     <Project Path="tests/Modules/Exams.Tests/AiExamBank.Modules.Exams.Tests.csproj" />

@@ -7,7 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="AiExamBank.Persistence.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Modules\Identity\AiExamBank.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\Modules\Questions\AiExamBank.Modules.Questions.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />

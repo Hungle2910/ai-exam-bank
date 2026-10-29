@@ -20,4 +20,5 @@ public static class QuestionErrorCodes
     public const string SourceTooLong = "QUESTION_SOURCE_TOO_LONG";
     public const string SubjectNotFound = "QUESTION_SUBJECT_NOT_FOUND";
     public const string TopicNotFound = "QUESTION_TOPIC_NOT_FOUND";
+    public const string SubjectImmutable = "QUESTION_SUBJECT_IMMUTABLE";
 }

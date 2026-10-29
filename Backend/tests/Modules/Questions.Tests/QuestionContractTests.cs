@@ -119,4 +119,30 @@ public sealed class QuestionContractTests
         Assert.IsFalse(new CatalogResolution(SubjectId, null, [notFound]).IsResolved);
         Assert.IsFalse(new CatalogResolution(null, null, []).IsResolved);
     }
+
+    [TestMethod]
+    public void QuestionSearchQuery_bounds_page_and_page_size_so_the_offset_cannot_overflow()
+    {
+        var actor = Guid.NewGuid();
+        var school = Guid.NewGuid();
+
+        var query = QuestionSearchQuery.Create(actor, school, page: QuestionSearchQuery.MaxPage, pageSize: QuestionSearchQuery.MaxPageSize);
+
+        Assert.IsLessThan(int.MaxValue, (long)(query.Page - 1) * query.PageSize);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => QuestionSearchQuery.Create(actor, school, page: 0));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => QuestionSearchQuery.Create(actor, school, page: int.MaxValue));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => QuestionSearchQuery.Create(actor, school, pageSize: QuestionSearchQuery.MaxPageSize + 1));
+    }
+
+    [TestMethod]
+    public void QuestionSearchQuery_trims_text_and_treats_blank_text_as_no_filter()
+    {
+        var actor = Guid.NewGuid();
+        var school = Guid.NewGuid();
+
+        Assert.AreEqual("đạo hàm", QuestionSearchQuery.Create(actor, school, text: "  đạo hàm ").Text);
+        Assert.IsNull(QuestionSearchQuery.Create(actor, school, text: "   ").Text);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+            () => QuestionSearchQuery.Create(actor, school, text: new string('x', QuestionSearchQuery.MaxTextLength + 1)));
+    }
 }
