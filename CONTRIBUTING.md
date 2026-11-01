@@ -22,14 +22,13 @@ Owner tự test relevant paths; peer reviewer kiểm code/domain invariants, fai
 
 Chạy `python -m unittest discover -s tests/repository -v` và `python tools/check_repository.py` trước PR. Checker chỉ kiểm tracked files; stage files mới trước khi chạy. Workflow `Repository quality` chạy trên PR và main; không dùng badge này để claim product tests hoặc AWS deployment đã pass.
 
-Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date, resolved conversations, linear history và không force-push/delete. CODEOWNERS hiện fallback @Hungle2910; required code-owner approval chưa bật cho đến khi có ít nhất hai owners độc lập phù hợp. Thêm per-module owners khi accounts được xác nhận. Tác giả không tự duyệt PR của mình. Không bypass protections để thay thế người review còn thiếu.
+Main yêu cầu PR, một independent approval, required `Repository quality` check trên code up-to-date và resolved conversations. @Lancelot-sys25 điều phối review/merge; @Hungle2910 giữ quyền admin và review PR của @Lancelot-sys25 khi cần. Tác giả không tự duyệt PR của mình. Không bypass protections để thay thế người review còn thiếu.
 
-## Bot review rollout
+## Human review and merge
 
-See [bot review and manual author merge](docs/BOT_REVIEW.md) for installation,
-verification, independent-human exceptions and daily workflow. The author clicks
-Squash and merge after approval and CI. Bot-only approval is not active until
-rollout gates pass.
+See [human review and merge](docs/REVIEW_AND_MERGE.md) for reviewer ownership
+and the merge workflow. The designated reviewer checks the current change and
+merges after approval, CI and branch protection requirements pass.
 
 ## Documentation and evidence
 
