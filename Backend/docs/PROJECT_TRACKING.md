@@ -24,7 +24,7 @@ Board structure tham khảo [AutoWash Pro Delivery](https://github.com/users/har
 | Blocker / Risk | Actual blocker và known risk được tách nghĩa; không gọi mọi risk là blocker |
 | Start Date / Target Date | Planning baseline khi đã chốt; không auto-close từ ngày trôi qua |
 | Milestone | Weekly exit gate, gồm 5 member work packages |
-| Linked PRs / Reviewers | PR/evidence và peer reviewer nếu có; owner tự merge vào `dev` sau bot/CI, `main` cần reviewer độc lập |
+| Linked PRs / Reviewers | PR/evidence và reviewer độc lập; cả `dev` và `main` cần human approval cùng required CI trước khi merge |
 
 ## Saved views
 
@@ -37,7 +37,7 @@ Nếu chưa chốt ngày bắt đầu, dates để trống và Roadmap theo date
 1. Backlog: scoped nhưng chưa ready hoặc upstream còn thiếu.
 2. Ready: owner hiểu scope/acceptance criteria, dependencies đủ và permissions/config cần thiết có sẵn.
 3. In progress: có branch/work log; comment tiến độ khi có meaningful change.
-4. In review: PR link, test/evidence, docs, actual effort; owner xử lý bot/CI findings và mời peer reviewer khi rủi ro cao.
+4. In review: PR link, test/evidence, docs, actual effort; owner xử lý nhận xét của reviewer và lỗi CI, mời reviewer độc lập.
 5. Done: acceptance + DoD đạt, required checks xanh, owner xác nhận và merge; issue close và board cập nhật nhất quán. Promotion lên `main` cần human approval độc lập.
 6. Blocked: ghi điều kiện cụ thể, upstream owner/issue và next action; không bỏ task khỏi completion denominator.
 
