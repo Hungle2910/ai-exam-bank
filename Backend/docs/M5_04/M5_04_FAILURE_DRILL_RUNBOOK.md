@@ -13,10 +13,10 @@
 ## 📋 1. Checklist Diễn Tập Sự Cố (Failure Drill Checklist)
 
 ### 1.1 Pre-Flight Checklist (Chuẩn bị trước diễn tập)
-- [x] **SDK & Runtime:** Kiểm tra runtime .NET 10 và Worker daemon sẵn sàng (`AiExamBank.Worker` hoặc In-Process Worker).
-- [x] **IAM Roles & Permissions:** Worker sở hữu quyền gọi `bedrock:InvokeModel` và đọc/ghi bucket S3 `ai-exam-bank-corpus-*`.
-- [x] **Durable Store:** Thư mục lưu trữ tác vụ bền vững khả dụng (`%LOCALAPPDATA%/AiExamBank/Jobs` hoặc Windows Named Mutex).
-- [x] **Zero Information Leak:** Cơ chế khử trùng lỗi `AwsErrorMapping.SanitizeForClient` đang hoạt động (chặn 100% stack trace và secret tokens).
+- [ ] **SDK & Runtime:** Xác nhận runtime .NET 10 và Worker daemon sẵn sàng trong môi trường diễn tập (`AiExamBank.Worker` hoặc In-Process Worker).
+- [ ] **IAM Roles & Permissions:** Xác nhận Worker có quyền gọi `bedrock:InvokeModel` và đọc/ghi bucket S3 `ai-exam-bank-corpus-*`.
+- [ ] **Durable Store:** Xác nhận thư mục lưu trữ tác vụ bền vững khả dụng trong môi trường diễn tập (`%LOCALAPPDATA%/AiExamBank/Jobs` hoặc Windows Named Mutex).
+- [x] **Safe client errors (local test):** `AwsErrorMapping.SanitizeForClient` chỉ trả về thông điệp cố định theo mã lỗi; Jobs.Tests đã vượt qua 126/126. Cần kiểm tra lại trên staging trước live drill.
 
 ### 1.2 Execution Checklist (Các bước diễn tập - Mẫu quy trình)
 - [ ] **Drill 1 - Bedrock Throttling:** Gửi request sinh đề vượt ngưỡng hạn ngạch AI. Xác nhận hệ thống phân loại `Transient`, dời lịch thử lại có jitter, không làm rơi job (Chưa thực hiện trên live AWS — chờ môi trường Staging).
