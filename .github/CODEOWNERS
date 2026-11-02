@@ -1,4 +1,4 @@
-# Gia Hưng is the confirmed repository maintainer.
-# Add per-module owners when their GitHub usernames and write access are confirmed.
-# This fallback is not a substitute for independent review of the maintainer's PRs.
-* @Hungle2910
+# @Lancelot-sys25 coordinates review and merges; @Hungle2910 is the admin backup.
+# An author cannot approve their own pull request.
+* @Lancelot-sys25 @Hungle2910
+/.github/CODEOWNERS @Lancelot-sys25 @Hungle2910
