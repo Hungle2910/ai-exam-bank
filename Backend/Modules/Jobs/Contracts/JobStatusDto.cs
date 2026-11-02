@@ -11,6 +11,8 @@ namespace AiExamBank.Modules.Jobs.Contracts;
 /// <param name="ResultId">Mã định danh kết quả sinh ra nếu tác vụ thành công.</param>
 /// <param name="ErrorCode">Mã lỗi an toàn nếu tác vụ thất bại.</param>
 /// <param name="SafeMessage">Thông điệp an toàn cho người dùng (đã loại bỏ thông tin nhạy cảm và PII).</param>
+/// <param name="IsRetryEligible">Cho biết tác vụ có đủ điều kiện để người dùng bấm thử lại hay không.</param>
+/// <param name="ActionableReason">Lời khuyên hoặc hướng dẫn hành động thân thiện cho người dùng dựa trên mã lỗi.</param>
 public sealed record JobStatusDto(
     JobRef Job,
     string JobType,
@@ -18,4 +20,6 @@ public sealed record JobStatusDto(
     int? ProgressPercentage,
     string? ResultId,
     string? ErrorCode,
-    string? SafeMessage);
+    string? SafeMessage,
+    bool? IsRetryEligible = null,
+    string? ActionableReason = null);
