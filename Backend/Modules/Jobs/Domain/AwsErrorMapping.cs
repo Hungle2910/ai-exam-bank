@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace AiExamBank.Modules.Jobs.Domain;
 
 /// <summary>
@@ -87,44 +85,16 @@ public static class AwsErrorMapping
             return message;
         }
 
-        if (!string.IsNullOrWhiteSpace(fallbackMessage))
-        {
-            return SanitizeForClient(fallbackMessage, errorCode);
-        }
-
+        // Provider/worker messages are untrusted, even when the caller names them "safe".
+        // Unknown codes use a fixed message instead of forwarding raw diagnostics.
         return "Tác vụ gặp lỗi trong quá trình xử lý. Vui lòng liên hệ Quản trị viên nếu sự cố tiếp diễn.";
     }
 
-    private static readonly Regex SuspiciousPatternsRegex = new(
-        @"(?:at\s+[A-Za-z0-9_.]+\()|" +                   // Stack trace like "at AiExamBank..." or "at System..."
-        @"(?:\bat\s+(?:System|AiExamBank|Microsoft)\.)|" + // Stack trace prefix
-        @"(?:\b[A-Za-z0-9_]*Exception\b)|" +              // Exception keyword (e.g. InvalidOperationException)
-        @"(?:Stack trace:)|" +                             // Stack trace literal
-        @"(?:arn:aws[a-z0-9-]*:)|" +                       // AWS ARN across any partition (aws, aws-cn, aws-us-gov)
-        @"(?-i:\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)|" +          // AWS Access Key or Temporary Session Key (ASIA), phân biệt hoa thường
-        @"(?:SecretAccessKey)|" +                          // AWS secret key marker
-        @"(?:[a-zA-Z]:\\[^""'\r\n]+)|" +                   // Windows path like C:\app\...
-        @"(?:/(?:home|var|tmp|Users|etc|app|opt|usr|srv|mnt|root)/)", // Linux/Unix path
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     /// <summary>
-    /// Làm sạch thông điệp lỗi trước khi trả về API hoặc UI, loại bỏ triệt để stack trace,
-    /// đường dẫn file nhạy cảm, AWS ARN, Access Keys và Credentials (CWE-209).
+    /// Chỉ trả về thông điệp cố định theo mã lỗi; không đưa raw provider diagnostics ra API/UI.
     /// </summary>
     public static string SanitizeForClient(string? rawMessage, string? errorCode = null)
     {
-        if (string.IsNullOrWhiteSpace(rawMessage))
-        {
-            return GetActionableMessage(errorCode);
-        }
-
-        // Nếu thông điệp chứa các dấu hiệu của Stack Trace, đường dẫn hệ thống hoặc AWS internal details
-        if (SuspiciousPatternsRegex.IsMatch(rawMessage))
-        {
-            return GetActionableMessage(errorCode);
-        }
-
-        // Giới hạn độ dài thông điệp lỗi tối đa 250 ký tự
-        return rawMessage.Length > 250 ? rawMessage[..247] + "..." : rawMessage;
+        return GetActionableMessage(errorCode);
     }
 }

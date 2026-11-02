@@ -2,7 +2,7 @@
 
 - **Tác giả:** Gia Bảo (@TranGiaBao2005) — Role M5: Reliability & ML Evaluation Engineer
 - **Mã Task / Issue:** [#20](https://github.com/Hungle2910/ai-exam-bank/issues/20) · **Sprint:** Tuần W04
-- **Trạng thái:** Hoàn thành 100% (Tác giả báo cáo: 126/126 tests trong Jobs.Tests và 143/143 tests toàn solution vượt qua; xác thực qua lệnh `dotnet test Backend/AiExamBank.slnx --configuration Release` ngày 28/10/2026) · **Nhánh Git:** `feat/M5-04-failure-handling`
+- **Trạng thái:** Runtime mô phỏng và kiểm thử local hoàn thành; tích hợp AWS thực và staging drill còn chờ. 126/126 Jobs.Tests đã vượt qua sau bản sửa review. · **Nhánh Git:** `feat/M5-04-failure-handling`
 - **Phiên bản:** Release `v1.2.0-rc1` · Schema `job-engine/v1.2`
 - **Tài liệu tham chiếu:** [ADR 0005](../adr/0005-durable-worker-retry-idempotency.md), [ADR 0007](../adr/0007-failure-handling-stale-lease-recovery-resilience.md), [M5_04_FAILURE_DRILL_RUNBOOK.md](M5_04_FAILURE_DRILL_RUNBOOK.md), [drill_evidence.json](drill_evidence.json)
 
@@ -20,7 +20,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 ### 1.2 Giải pháp kiến trúc
 1. **Stale Lease Recovery Loop:** Thu hồi tự động các job bị mất tín hiệu Heartbeat quá hạn (> 2 phút lease), giải phóng tài nguyên và đưa về `Pending` (nếu còn lượt thử) hoặc `Failed` (kèm mã lỗi `RETRY_BUDGET_EXHAUSTED` và lý do rõ ràng).
 2. **Error Mapping Taxonomy cho AWS:** Phân loại tường minh các lỗi từ AWS Bedrock, AWS S3, và RAG Knowledge Base thành `Transient` (tự động retry) hoặc `Permanent` (dừng ngay, khóa nút retry vô ích).
-3. **Actionable Reason & Zero-Leak Security:** Chuyển đổi mã lỗi kỹ thuật thành thông điệp người dùng thân thiện (`SafeErrorMessage`), loại bỏ 100% stack trace, IAM token, credential khỏi phản hồi API và giao diện UI.
+3. **Actionable Reason & Safe Error Messages:** Chuyển đổi mã lỗi kỹ thuật thành thông điệp người dùng cố định (`SafeErrorMessage`); không chuyển tiếp raw provider diagnostics ra API và giao diện UI.
 4. **AI Provider Circuit Breaker:** Cơ chế ngắt mạch tạm thời khi phát hiện 5 lỗi liên tiếp từ AI Provider, chuyển sang trạng thái `Open` trong 60 giây để hệ thống phục hồi.
 5. **Retry Eligibility trên Status UI:** Nút `[🔄 Thử lại]` tự động kiểm tra điều kiện (Eligibility): cho phép bấm nếu là lỗi Transient, vô hiệu hóa (disabled) kèm giải thích nếu là lỗi Permanent.
 
@@ -64,9 +64,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
   - `HalfOpen`: Cho phép 1 yêu cầu chạy thử (Probe). Nếu thành công ➔ Reset về `Closed` (lỗi = 0). Nếu thất bại ➔ Quay lại `Open` thêm 60 giây.
 
 ### 3.3 Đảm Bảo An Ninh Thông Tin (Zero Information Leak)
-- Phương thức `AwsErrorMapping.SanitizeForClient(string rawMessage, string errorCode)`:
-  - Tuyệt đối không chứa chuỗi `at System.`, `Exception:`, `C:\`, `arn:aws:`, `AKIA...`.
-  - Nếu phát hiện nội dung nghi vấn là stack trace hoặc secret, tự động thay thế bằng `ActionableReason` tương ứng của `ErrorCode`.
+- Phương thức `AwsErrorMapping.SanitizeForClient(string rawMessage, string errorCode)` chỉ trả về thông điệp cố định theo `ErrorCode`; mã chưa biết dùng thông điệp chung. Raw diagnostics không được gửi cho client.
 
 ### 3.4 Giao Diện Status UI (`/jobs/`)
 - Cung cấp badge trạng thái rõ nét:
@@ -95,7 +93,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
     - *Retrieval & Storage:* `RAG_RETRIEVAL_EMPTY` (Permanent), `AWS_S3_FILE_NOT_FOUND` (Permanent).
     - *Schema & AI Output:* `AI_MALFORMED_OUTPUT` (Permanent), `INVALID_CSV_SCHEMA` (Permanent), `ROW_VALIDATION_ERROR` (Permanent).
   - **Expose actionable reason:** Bổ sung trường `ActionableReason` vào `JobStatusDto` và `JobApiResponse` cung cấp chỉ dẫn rõ ràng, thân thiện cho người dùng cuối (ví dụ: yêu cầu admin tăng quota Bedrock, kiểm tra quyền S3, kiểm tra định dạng CSV).
-  - **Zero Information Leak (CWE-209):** Triển khai `AwsErrorMapping.SanitizeForClient` loại bỏ toàn bộ stack trace (`at System...`), AWS secret tokens, ARN, và đường dẫn file hệ thống trước khi trả ra client.
+  - **Safe client errors (CWE-209):** `AwsErrorMapping.SanitizeForClient` chỉ dùng thông điệp cố định theo mã lỗi, tránh đưa stack trace, token, ARN hoặc đường dẫn từ provider ra client.
 
 - [x] **3. UI partial/failed attempts và retry eligibility, tránh indefinite spinner**
   - **Tránh indefinite spinner:** Nhờ `RecoverExpiredLeasesAsync` và cơ chế phát hiện stale lease, các job bị crash process không còn kẹt ở trạng thái `Running` vô hạn mà được chuyển về trạng thái rõ ràng (`Pending` hoặc `Failed`).
@@ -112,7 +110,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
 - [x] **2. Relevant API/UI/failure/permission cases pass; results linked below.**  
   *(Chi tiết kiểm chứng: Mục 5.2 & 126/126 tests passed trong Jobs.Tests, 143/143 tests passed toàn solution, 0 failures, chạy `dotnet test Backend/AiExamBank.slnx --configuration Release` ngày 28/10/2026).*
 - [ ] **3. Live AWS evidence attached for AWS MUST requirements; mock is not deployment proof.**  
-  *(Trạng thái: Chưa thực hiện trên live AWS — chờ môi trường Staging. Hiện tại đã hoàn thiện bộ hợp đồng Bedrock/S3 SDK exception mapping, công cụ run_failure_drills.py và kịch bản diễn tập M5_04_FAILURE_DRILL_RUNBOOK.md).*
+  *(Trạng thái: Chưa thực hiện trên live AWS — chờ môi trường Staging. Hiện tại có mã lỗi và handler mô phỏng Bedrock/S3, công cụ run_failure_drills.py và kịch bản diễn tập M5_04_FAILURE_DRILL_RUNBOOK.md; ánh xạ exception từ AWS SDK thực chưa được nối vào runtime).*
 
 ### 📑 Documentation & Evidence Checklist (Đã Bàn Giao & Đủ Điều Kiện Nghiệm Thu)
 - [x] **1. failure drill scripts/checklist và recovery examples.**  
@@ -125,7 +123,7 @@ Hệ thống xử lý ngầm (Durable Background Job Engine) khi vận hành th�
   *(Cơ chế RecoverExpiredLeasesAsync thu hồi stale running job sau 2 phút; phân loại Transient vs Permanent rõ ràng, max 3 attempts chuyển Failed).*
 - [x] **2. Scope/validation/authorization/domain invariants hold; no hard-coded secret or unresolved task blocker.**  
   *(Zero-Trust token authorization, chặn IDOR cross-scope 403, kiểm tra GUID hợp lệ, khử trùng CWE-209 loại bỏ toàn bộ stack trace/keys/ARNs, build 0 error/0 warning).*
-- [x] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**  
+- [ ] **3. PR peer-reviewed, relevant checks pass, migrations/config reproducible, docs/evidence linked.**
   *(Nhánh `feat/M5-04-failure-handling` sẵn sàng PR, 126/126 tests trong Jobs.Tests pass, repo hygiene 0 issue, config tham số rõ ràng trong Runbook, liên kết đầy đủ ADR 0007 và drill_evidence.json).*
 - [x] **4. Actual Hours and checklist updated; issue and Project status reflect verified progress.**  
   *(Estimate: 20h · Actual Hours: 18h. Toàn bộ 4 nhóm checklists và Memory Skill được cập nhật 100%).*
@@ -160,7 +158,7 @@ Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requir
 1. **Hợp đồng AWS Provider (AWS Service Contract):**
    - **Amazon Bedrock:** Model ID `anthropic.claude-3-5-sonnet-20241022-v2:0` (yêu cầu quyền `bedrock:InvokeModel`).
    - **Amazon S3:** Bucket `ai-exam-bank-corpus-*` lưu trữ file tài liệu và câu hỏi CSV (quyền `s3:GetObject`, `s3:PutObject`).
-   - **Mã lỗi SDK chính thức được ánh xạ chuẩn:**
+   - **Mã lỗi SDK dự kiến sẽ ánh xạ khi tích hợp AWS thực:**
      - `Amazon.BedrockRuntime.Model.ThrottlingException` ➔ `AWS_BEDROCK_THROTTLED`
      - `Amazon.BedrockRuntime.Model.AccessDeniedException` ➔ `AWS_BEDROCK_ACCESS_DENIED`
      - `Amazon.BedrockRuntime.Model.ModelTimeoutException` ➔ `AWS_BEDROCK_MODEL_TIMEOUT`
@@ -197,5 +195,5 @@ Nhằm đáp ứng yêu cầu *“Live AWS evidence attached for AWS MUST requir
 | Phân Nhóm Yêu Cầu | Kết Quả Bàn Giao Cụ Thể (Delivered Artifacts) | Trạng Thái |
 |---|---|---|
 | **Backend / Frontend / DB-data** | - **Resilience Policies:** Bounded Exponential Backoff + Jitter (`BackoffJitterCalculator`), Circuit Breaker (`InMemoryCircuitBreaker`), Stale lease recovery loop (`RecoverExpiredLeasesAsync`).<br>- **Failed-job UI:** Status UI (`/jobs/`) với badge lỗi, preview lỗi, drawer attempts, banner hướng dẫn `.actionable-advice-banner`, và tự động vô hiệu hóa nút `[🚫 Không thể thử lại]` khi không đủ điều kiện.<br>- **Error code & Lease recovery data:** Mở rộng DTO/Domain với `IsRetryEligible`, `ActionableReason`, `SafeErrorMessage`, `LeaseExpiresAt`, `AttemptStatus.Abandoned`, mã lỗi `STALE_LEASE_RECOVERED`. | ✅ ĐÃ BÀN GIAO 100% |
-| **AWS / Integration** | - **Capture Bedrock/S3 errors & provider metrics:** Ánh xạ đầy đủ `AWS_BEDROCK_THROTTLED`, `AWS_BEDROCK_QUOTA_EXCEEDED`, `AWS_BEDROCK_ACCESS_DENIED`, `AWS_BEDROCK_MODEL_TIMEOUT`, `AWS_S3_ACCESS_DENIED`, `AWS_S3_FILE_NOT_FOUND`, `AWS_S3_SLOW_DOWN`; đo lường `ExecutionDurationMs` và lịch sử attempts.<br>- **Tuyệt đối không mở ML endpoint:** Toàn bộ tác vụ gọi AI Bedrock được cô lập bên trong Durable Job Worker, không tạo bất kỳ endpoint public nào để gọi mô hình trực tiếp. | ✅ ĐÃ BÀN GIAO 100% |
-| **Security** | - **Zero Information Leak (CWE-209):** Khử trùng 100% stack trace (`at System...`), ARN (`arn:aws:...`), đường dẫn tệp cục bộ (`C:\...`) và AWS credentials (`AKIA...`) qua `AwsErrorMapping.SanitizeForClient`.<br>- **Authorization & Scope Invariant:** Kiểm tra quyền qua `ClaimsPrincipal` trên server, ngăn chặn triệt để IDOR / Scope Bypass (CWE-639, CWE-862). User ngoài scope hoàn toàn không đọc được nội dung đề thi, source corpus, hay metadata tác vụ (`403 Forbidden`). | ✅ ĐÃ BÀN GIAO 100% |
+| **AWS / Integration** | - **Mô phỏng Bedrock/S3 errors:** Định nghĩa mã lỗi cho Bedrock/S3 và đo lường `ExecutionDurationMs` cùng lịch sử attempts. Adapter AWS SDK và staging drill thực còn chờ.<br>- **Endpoint:** Không tạo endpoint public gọi mô hình trực tiếp. | ⏳ CÒN TÍCH HỢP AWS THỰC |
+| **Security** | - **Client error messages (CWE-209):** `AwsErrorMapping.SanitizeForClient` chỉ đưa thông điệp cố định theo mã lỗi ra API/UI, không chuyển tiếp raw provider diagnostics.<br>- **Authorization & Scope Invariant:** Kiểm tra quyền qua `ClaimsPrincipal` trên server; user ngoài scope không đọc được metadata tác vụ (`403 Forbidden`). | ✅ ĐÃ KIỂM TRA LOCAL |

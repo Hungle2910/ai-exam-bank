@@ -96,18 +96,25 @@ public sealed class FailureHandlingAndResilienceTests
     }
 
     [TestMethod]
-    public void AwsErrorMapping_preserves_benign_asia_timezone_and_sanitizes_extended_unix_paths()
+    public void AwsErrorMapping_never_forwards_untrusted_provider_messages()
     {
-        // 1. Chuỗi lành tính chứa timezone Asia/Ho_Chi_Minh phải được giữ nguyên
-        const string benignMessage = "Tác vụ chạy tại múi giờ Asia/Ho_Chi_Minh hợp lệ.";
-        var preserved = AwsErrorMapping.SanitizeForClient(benignMessage, errorCode: null);
-        Assert.AreEqual(benignMessage, preserved, "Benign timezone Asia/Ho_Chi_Minh must not be falsely sanitized as AWS access key.");
-
-        // 2. Đường dẫn /opt/app/... phải bị lọc khử trùng
         const string optPathMessage = "Lỗi đọc cấu hình tại /opt/app/config.json";
         var sanitized = AwsErrorMapping.SanitizeForClient(optPathMessage, AwsErrorCodes.S3FileNotFound);
         Assert.IsFalse(sanitized.Contains("/opt/app", StringComparison.OrdinalIgnoreCase));
         Assert.IsTrue(sanitized.Contains("Không tìm thấy file", StringComparison.OrdinalIgnoreCase));
+
+        const string credentialMessage = "Bearer sk-example-secret; Server=db;Password=private-password";
+        var knownCode = AwsErrorMapping.SanitizeForClient(credentialMessage, AwsErrorCodes.BedrockModelTimeout);
+        var unknownCode = AwsErrorMapping.SanitizeForClient(credentialMessage, "PROVIDER_UNKNOWN");
+        foreach (var message in new[] { knownCode, unknownCode })
+        {
+            Assert.IsFalse(message.Contains("sk-example-secret", StringComparison.Ordinal));
+            Assert.IsFalse(message.Contains("private-password", StringComparison.Ordinal));
+            Assert.IsFalse(message.Contains("Server=db", StringComparison.Ordinal));
+        }
+
+        Assert.IsTrue(knownCode.Contains("quá thời gian", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(unknownCode.Contains("liên hệ Quản trị viên", StringComparison.OrdinalIgnoreCase));
     }
 
     #endregion
