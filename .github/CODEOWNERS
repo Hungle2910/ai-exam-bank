@@ -1,6 +1,6 @@
-# Ownership routes optional peer review; dev author merge is gated by bot/CI.
-# Main promotion still requires an independent human approval.
-* @Hungle2910 @Lancelot-sys25
+# @Lancelot-sys25 coordinates human review and merges; @Hungle2910 is admin backup.
+# Module owners below remain available for specialist review.
+* @Lancelot-sys25 @Hungle2910
 /.github/ @Hungle2910 @HuuPhuoc-NH
 /Backend/Api/ @Hungle2910 @Lancelot-sys25
 /Backend/Modules/Identity/ @Lancelot-sys25 @Hungle2910

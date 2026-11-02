@@ -1,0 +1,110 @@
+{
+  "engineVersion": "job-engine/v1.2",
+  "releaseTag": "v1.2.0-rc1",
+  "drillExecutionTimeUtc": "2026-10-27T16:52:53.255937+00:00",
+  "evidenceType": "Illustrative Simulated Benchmark",
+  "simulated": true,
+  "liveAws": false,
+  "executionEnvironment": "Local Unit & Resilience Test Suite",
+  "drills": [
+    {
+      "drillId": "DRILL-01-THROTTLING",
+      "title": "Amazon Bedrock API Throttling & Rate-Limit Backoff",
+      "simulatedError": "Amazon.BedrockRuntime.Model.ThrottlingException: Rate limit exceeded",
+      "sanitizedErrorCode": "AWS_BEDROCK_THROTTLED",
+      "actionableReason": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại.",
+      "attemptStateBefore": {
+        "attempt": 1,
+        "status": "Started",
+        "workerId": "worker-aws-apse1-01"
+      },
+      "attemptStateAfter": {
+        "attempt": 1,
+        "status": "Failed",
+        "errorCode": "AWS_BEDROCK_THROTTLED",
+        "safeErrorMessage": "Dịch vụ AI đang quá tải lượt yêu cầu. Hệ thống đang tự động giãn cách và thử lại."
+      },
+      "jobStateAfter": {
+        "status": "Pending",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "backoffDelaySeconds": 30,
+        "isRetryEligible": false,
+        "dataLoss": false
+      }
+    },
+    {
+      "drillId": "DRILL-02-STALE-LEASE-RECOVERY",
+      "title": "Worker Process Hard Crash (Process Kill / OOM / Host Reboot)",
+      "simulatedFailure": "Stop-Process -Force on worker process during active execution",
+      "recoveryMechanism": "RecoverExpiredLeasesAsync (LeaseExpiresAt < UtcNow)",
+      "actionableReason": "Tiến trình xử lý bị mất kết nối đột ngột. Tác vụ đã được tự động cấp cứu và khôi phục.",
+      "abandonedAttempt": {
+        "attemptNumber": 1,
+        "status": "Abandoned",
+        "workerId": "worker-crash-test-01",
+        "executionDurationMs": 120450
+      },
+      "recoveredJobState": {
+        "status": "Pending",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "errorCode": "STALE_LEASE_RECOVERED",
+        "retryReason": "Tự động phục hồi sau khi Worker bị mất tín hiệu Heartbeat.",
+        "indefiniteSpinnerResolved": true,
+        "dataLoss": false
+      }
+    },
+    {
+      "drillId": "DRILL-03-CIRCUIT-BREAKER",
+      "title": "Extended Provider Outage & Circuit Breaker Tripping",
+      "thresholdRule": "5 consecutive AI failures within 60 seconds",
+      "circuitTransitions": [
+        {
+          "step": 1,
+          "state": "Closed",
+          "failures": 0,
+          "action": "Allow request"
+        },
+        {
+          "step": 2,
+          "state": "Closed",
+          "failures": 4,
+          "action": "Allow request"
+        },
+        {
+          "step": 3,
+          "state": "Open",
+          "failures": 5,
+          "action": "Trip circuit; reject all incoming with CIRCUIT_BREAKER_OPEN"
+        },
+        {
+          "step": 4,
+          "state": "HalfOpen",
+          "cooldownSeconds": 60,
+          "action": "Allow 1 probe request"
+        },
+        {
+          "step": 5,
+          "state": "Closed",
+          "probeResult": "Success",
+          "action": "Reset failures to 0, resume normal traffic"
+        }
+      ],
+      "actionableReason": "Dịch vụ AI đang tạm ngưng do phát hiện sự cố liên tiếp. Hệ thống sẽ tự động khôi phục sau ít phút.",
+      "quotaProtected": true
+    },
+    {
+      "drillId": "DRILL-04-ZERO-INFORMATION-LEAK",
+      "title": "Zero Information Leak Sanitization (CWE-209)",
+      "rawDiagnosticInput": "System.Exception: S3 failure at C:\\app\\aws\\secret_keys.cs:42 (AKIA****REDACTED) arn:aws:iam::123456789012:role/Dev",
+      "sanitizedClientOutput": "Không có quyền truy cập kho lưu trữ tài liệu đám mây Amazon S3.",
+      "sanitizationChecks": {
+        "stackTraceMasked": true,
+        "internalPathsMasked": true,
+        "awsAccessKeysMasked": true,
+        "awsArnsMasked": true
+      }
+    }
+  ]
+}
