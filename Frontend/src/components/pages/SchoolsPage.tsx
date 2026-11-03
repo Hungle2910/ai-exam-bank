@@ -28,7 +28,7 @@ interface Department {
    ============================================================ */
 
 export default function SchoolsPage() {
-  const { csrfToken } = useAuth();
+  const { csrfToken, primaryRole, apiFetch } = useAuth();
   const { success, error: showError } = useToast();
 
   const [schools, setSchools] = useState<School[]>([]);
@@ -39,9 +39,8 @@ export default function SchoolsPage() {
   const [showDepartments, setShowDepartments] = useState<string | null>(null);
 
   const fetchSchools = useCallback(async () => {
-    setLoading(true);
     try {
-      const res = await fetch('/api/v1/admin/schools', { credentials: 'include' });
+      const res = await apiFetch('/api/v1/admin/schools');
       if (res.ok) {
         const data = await res.json();
         setSchools(data);
@@ -53,9 +52,28 @@ export default function SchoolsPage() {
     } finally {
       setLoading(false);
     }
-  }, [showError]);
+  }, [apiFetch, showError]);
 
-  useEffect(() => { fetchSchools(); }, [fetchSchools]);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await apiFetch('/api/v1/admin/schools');
+        if (res.ok) {
+          const data: School[] = await res.json();
+          if (active) setSchools(data);
+        } else if (active) {
+          showError('Không thể tải danh sách trường');
+        }
+      } catch {
+        if (active) showError('Lỗi kết nối máy chủ');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [apiFetch, showError]);
 
   const filtered = schools.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase())
@@ -69,20 +87,20 @@ export default function SchoolsPage() {
         <div className="page-actions">
           <button
             className="btn btn-secondary"
-            onClick={fetchSchools}
+            onClick={() => { setLoading(true); void fetchSchools(); }}
             id="btn-refresh-schools"
           >
             <RefreshCw size={14} />
             Làm mới
           </button>
-          <button
+          {primaryRole === 'MinistryAdmin' && <button
             className="btn btn-primary"
             onClick={() => setShowCreateModal(true)}
             id="btn-create-school"
           >
             <Plus size={14} />
             Thêm trường
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -238,6 +256,7 @@ function SchoolRowMenu({ schoolId, csrfToken, onRefresh }: { schoolId: string; c
    ============================================================ */
 
 function DepartmentSubTable({ schoolId, csrfToken }: { schoolId: string; csrfToken: string | null }) {
+  const { apiFetch } = useAuth();
   const [depts, setDepts] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -246,18 +265,18 @@ function DepartmentSubTable({ schoolId, csrfToken }: { schoolId: string; csrfTok
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch(`/api/v1/admin/schools/${schoolId}/departments`, { credentials: 'include' });
+        const res = await apiFetch(`/api/v1/admin/schools/${schoolId}/departments`);
         if (res.ok) setDepts(await res.json());
       } catch { /* ignore */ }
       finally { setLoading(false); }
     };
     load();
-  }, [schoolId]);
+  }, [apiFetch, schoolId]);
 
   const addDept = async (name: string) => {
     if (!csrfToken) return;
     try {
-      const res = await fetch(`/api/v1/admin/schools/${schoolId}/departments`, {
+      const res = await apiFetch(`/api/v1/admin/schools/${schoolId}/departments`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
@@ -359,6 +378,7 @@ function CreateSchoolModal({ csrfToken, onClose, onCreated }: {
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { apiFetch } = useAuth();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errMsg, setErrMsg] = useState('');
@@ -371,7 +391,7 @@ function CreateSchoolModal({ csrfToken, onClose, onCreated }: {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/admin/schools', {
+      const res = await apiFetch('/api/v1/admin/schools', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },

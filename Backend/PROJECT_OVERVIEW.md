@@ -108,7 +108,7 @@ The checker inspects tracked files, local Markdown file links, forbidden environ
 - Private backend/DB, least-privilege IAM, runtime roles, controlled SSM access and safe secret delivery.
 - Durable recovery, measured query performance, logs/metrics with bounded retention, alert delivery proof and tested restores.
 - Region-specific cost estimates, token/attempt limits, resource tagging and cleanup of idle ML/NAT/storage resources.
-- PRs into `dev` require repository CI, application build/smoke and CodeRabbit checks; authors manually merge after resolving findings. `dev → main` promotion requires an independent human approval. Actions are pinned, dependencies are tracked with Dependabot and ownership is documented. Product tests and deploy checks join CI with their implementations.
+- PRs into `dev` require repository CI, application build/smoke and an independent human approval; @Lancelot-sys25 coordinates review and merge. `dev → main` promotion also requires an independent human approval. Actions are pinned, dependencies are tracked with Dependabot and ownership is documented. Product tests and deploy checks join CI with their implementations.
 
 Design review follows the six pillars of the [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html). This is an engineering baseline, not an AWS certification or claim of production readiness. [AWS strategy](docs/AWS_STRATEGY.md) · [Current controls and remaining gates](docs/REPOSITORY_REVIEW.md).
 

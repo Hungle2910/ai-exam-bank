@@ -26,7 +26,7 @@ Import thuộc M2 và gọi domain writer của M4. Approval/audit/UI thuộc M3
 | Nguyen Thien Phuc | M4 / Thiên Phúc | [@flwndyy](https://github.com/flwndyy) | 10/10 |
 | Tran Gia Bao | M5 / Gia Bảo | [@TranGiaBao2005](https://github.com/TranGiaBao2005) | 10/10 |
 
-Bốn thành viên M2–M5 đã được cấp quyền Write trên Project và đã chấp nhận lời mời repo. Cả 50 issue gốc có GitHub Assignee tương ứng; công việc bảo trì bổ sung được theo dõi riêng. Owner field vẫn giữ họ tên để các view hiện có hoạt động. CODEOWNERS định tuyến peer reviewer theo module, nhưng PR vào `dev` không bắt buộc human approval: owner tự merge sau khi bot/CI đạt và conversations được giải quyết. Với thay đổi rủi ro cao, nên mời peer review; PR phát hành `dev → main` vẫn cần người khác duyệt độc lập.
+Bốn thành viên M2–M5 đã được cấp quyền Write trên Project và đã chấp nhận lời mời repo. Cả 50 issue gốc có GitHub Assignee tương ứng; công việc bảo trì bổ sung được theo dõi riêng. Owner field vẫn giữ họ tên để các view hiện có hoạt động. CODEOWNERS định tuyến peer reviewer theo module. PR vào `dev` và PR phát hành `dev → main` đều cần human approval độc lập, required CI đạt và conversations được giải quyết trước khi merge.
 
 ## Capacity and role fit
 

@@ -141,6 +141,90 @@ def test_job_types_in_status_and_list(port):
     print("Job type response tests passed for ExamGeneration and CsvImport.")
 
 
+def test_job_retry_permanent_error_returns_409(port):
+    """Verify that retrying a job that failed with a permanent error (AWS_BEDROCK_ACCESS_DENIED)
+    returns HTTP 409 Conflict with code JOB_NOT_RETRY_ELIGIBLE."""
+    enqueue_url = f"http://127.0.0.1:{port}/api/v1/jobs"
+    payload = json.dumps({
+        "jobType": "ExamGeneration",
+        "payloadReference": "s3://bucket/simulate-bedrock-access-denied.json",
+        "scopeKind": "School",
+        "scopeResourceId": "school-hn-01",
+        "idempotencyKey": f"smoke-perm-retry-{int(time.time_ns())}"
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        enqueue_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer smoke-test-token-hn",
+            "X-User-Id": "smoke-tester",
+            "X-Scope-Id": "school-hn-01"
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=5) as response:
+        if response.status != 202:
+            raise RuntimeError(f"Job enqueue failed with HTTP {response.status}")
+        data = json.load(response)
+        job_id = data.get("jobId")
+
+    # Wait for the job to reach Failed with AWS_BEDROCK_ACCESS_DENIED
+    status_url = f"http://127.0.0.1:{port}/api/v1/jobs/{job_id}"
+    deadline = time.monotonic() + 15
+    failed = False
+    while time.monotonic() < deadline:
+        status_req = urllib.request.Request(
+            status_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": "Bearer smoke-test-token-hn",
+                "X-User-Id": "smoke-tester",
+                "X-Scope-Id": "school-hn-01"
+            }
+        )
+        with urllib.request.urlopen(status_req, timeout=5) as status_resp:
+            job_data = json.load(status_resp)
+            if job_data.get("status") == "Failed":
+                if job_data.get("errorCode") != "AWS_BEDROCK_ACCESS_DENIED":
+                    raise RuntimeError(f"Expected errorCode AWS_BEDROCK_ACCESS_DENIED, got: {job_data.get('errorCode')}")
+                failed = True
+                break
+        time.sleep(0.3)
+
+    if not failed:
+        raise RuntimeError(f"Job {job_id} did not reach Failed state within 15 seconds.")
+
+    # Call POST /api/v1/jobs/{job_id}/retry
+    retry_url = f"http://127.0.0.1:{port}/api/v1/jobs/{job_id}/retry"
+    retry_req = urllib.request.Request(
+        retry_url,
+        data=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer smoke-test-token-hn",
+            "X-User-Id": "smoke-tester",
+            "X-Scope-Id": "school-hn-01"
+        },
+        method="POST"
+    )
+
+    try:
+        urllib.request.urlopen(retry_req, timeout=5)
+        raise RuntimeError(f"Retry on permanent failed job {job_id} succeeded unexpectedly.")
+    except urllib.error.HTTPError as error:
+        if error.code != 409:
+            raise RuntimeError(f"Expected HTTP 409 Conflict, got HTTP {error.code}")
+        problem = json.load(error)
+        if problem.get("code") != "JOB_NOT_RETRY_ELIGIBLE":
+            raise RuntimeError(f"Expected code JOB_NOT_RETRY_ELIGIBLE, got: {problem}")
+        print("Job retry ineligible HTTP 409 test passed for AWS_BEDROCK_ACCESS_DENIED.")
+
+
 def test_invalid_scope_returns_400(port):
     """Verify that whitespace resource ID and invalid scope kind enum return HTTP 400 Bad Request."""
     # 1. Whitespace scopeResourceId using valid credentials
@@ -885,6 +969,7 @@ def main():
     environment["ASPNETCORE_ENVIRONMENT"] = "Development"
     environment["DOTNET_ENVIRONMENT"] = "Development"
     environment["Jobs__StorePath"] = str(smoke_store.resolve())
+    environment["Jobs__AllowFailureSimulation"] = "true"
     process = subprocess.Popen(
         ["dotnet", str(ASSEMBLY)],
         cwd=ROOT,
@@ -942,6 +1027,7 @@ def main():
         test_status_ui_assets_load_without_errors(port)
         test_job_enqueue_and_completion(port)
         test_job_types_in_status_and_list(port)
+        test_job_retry_permanent_error_returns_409(port)
 
         worker_store = ROOT / "bin" / "smoke_standalone_worker_store.json"
         worker_store.parent.mkdir(parents=True, exist_ok=True)
