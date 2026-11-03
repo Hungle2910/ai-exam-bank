@@ -114,6 +114,321 @@ namespace AiExamBank.Persistence.Migrations
                     b.ToTable("Departments", (string)null);
                 });
 
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LatestRevision")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId");
+
+                    b.HasIndex("SchoolId", "SubjectId", "UpdatedAtUtc");
+
+                    b.ToTable("Questions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Questions_LatestRevision", "[LatestRevision] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionOptionEntity", b =>
+                {
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(1)
+                        .HasColumnType("nvarchar(1)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("QuestionId", "Revision", "Label");
+
+                    b.ToTable("QuestionOptions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_QuestionOptions_Label", "[Label] IN ('A', 'B', 'C', 'D')");
+                        });
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionRevisionEntity", b =>
+                {
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrectOption")
+                        .IsRequired()
+                        .HasMaxLength(1)
+                        .HasColumnType("nvarchar(1)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Difficulty")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid?>("ImportBatchId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("ImportRowNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("SourceText")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Stem")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("QuestionId", "Revision");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ImportBatchId", "ImportRowNumber")
+                        .IsUnique()
+                        .HasFilter("[ImportBatchId] IS NOT NULL");
+
+                    b.HasIndex("QuestionId", "SubjectId");
+
+                    b.HasIndex("TopicId", "SubjectId");
+
+                    b.HasIndex("TopicId", "Difficulty", "Status");
+
+                    b.ToTable("QuestionRevisions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_QuestionRevisions_CorrectOption", "[CorrectOption] IN ('A', 'B', 'C', 'D')");
+
+                            t.HasCheckConstraint("CK_QuestionRevisions_Difficulty", "[Difficulty] IN ('Easy', 'Medium', 'Hard')");
+
+                            t.HasCheckConstraint("CK_QuestionRevisions_ImportRow", "([ImportBatchId] IS NULL AND [ImportRowNumber] IS NULL AND [Origin] <> 'Import') OR ([ImportBatchId] IS NOT NULL AND [ImportRowNumber] >= 1 AND [Origin] = 'Import')");
+
+                            t.HasCheckConstraint("CK_QuestionRevisions_Origin", "[Origin] IN ('Manual', 'Import', 'AiDraft', 'Seed')");
+
+                            t.HasCheckConstraint("CK_QuestionRevisions_Revision", "[Revision] >= 1");
+
+                            t.HasCheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'ReviewRequired', 'Approved', 'Rejected')");
+                        });
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.SchoolSubjectEntity", b =>
+                {
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("SchoolId", "SubjectId");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.HasIndex("SubjectId");
+
+                    b.HasIndex("DepartmentId", "SchoolId");
+
+                    b.ToTable("SchoolSubjects", (string)null);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.SubjectEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Subjects", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("8ab2a612-3558-435f-9e60-ef3f8e24a8a8"),
+                            Code = "MATH",
+                            Name = "Toán"
+                        },
+                        new
+                        {
+                            Id = new Guid("1d9f0a75-b153-4626-a9c4-6d4830641c6a"),
+                            Code = "PHYS",
+                            Name = "Vật lý"
+                        },
+                        new
+                        {
+                            Id = new Guid("4d779815-9f88-4ba2-a3e4-0b6916a4407b"),
+                            Code = "CHEM",
+                            Name = "Hóa học"
+                        });
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.TopicEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubjectId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Topics", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("223f2355-059b-4195-80e0-6056ea6115f6"),
+                            Code = "MATH.DERIV_APP",
+                            Name = "Ứng dụng đạo hàm để khảo sát hàm số",
+                            SubjectId = new Guid("8ab2a612-3558-435f-9e60-ef3f8e24a8a8")
+                        },
+                        new
+                        {
+                            Id = new Guid("699edf31-9caf-43ae-8e38-603bcdf3ba4d"),
+                            Code = "MATH.INTEGRAL",
+                            Name = "Nguyên hàm và tích phân",
+                            SubjectId = new Guid("8ab2a612-3558-435f-9e60-ef3f8e24a8a8")
+                        },
+                        new
+                        {
+                            Id = new Guid("fbd23806-f00a-48d2-abc0-84790d72452a"),
+                            Code = "MATH.OXYZ",
+                            Name = "Phương pháp tọa độ trong không gian",
+                            SubjectId = new Guid("8ab2a612-3558-435f-9e60-ef3f8e24a8a8")
+                        },
+                        new
+                        {
+                            Id = new Guid("7e1d4f7a-bf13-4c8a-9db5-8f34f51f1fd9"),
+                            Code = "PHYS.IDEAL_GAS",
+                            Name = "Khí lí tưởng",
+                            SubjectId = new Guid("1d9f0a75-b153-4626-a9c4-6d4830641c6a")
+                        },
+                        new
+                        {
+                            Id = new Guid("6d4e7dd8-e7ce-4f69-808a-c8f4bd22b514"),
+                            Code = "PHYS.MAGNETIC",
+                            Name = "Từ trường",
+                            SubjectId = new Guid("1d9f0a75-b153-4626-a9c4-6d4830641c6a")
+                        },
+                        new
+                        {
+                            Id = new Guid("7ecd1b83-2cb8-4026-9e8e-89d2dd0fb171"),
+                            Code = "PHYS.NUCLEAR",
+                            Name = "Vật lí hạt nhân và phóng xạ",
+                            SubjectId = new Guid("1d9f0a75-b153-4626-a9c4-6d4830641c6a")
+                        },
+                        new
+                        {
+                            Id = new Guid("f5da0e27-7b7e-4a06-951f-049c29f0596f"),
+                            Code = "CHEM.ESTER_LIPID",
+                            Name = "Ester – Lipid",
+                            SubjectId = new Guid("4d779815-9f88-4ba2-a3e4-0b6916a4407b")
+                        },
+                        new
+                        {
+                            Id = new Guid("24b94d5e-208b-471a-9b1f-f8ee87241cdd"),
+                            Code = "CHEM.CARBOHYDRATE",
+                            Name = "Carbohydrate",
+                            SubjectId = new Guid("4d779815-9f88-4ba2-a3e4-0b6916a4407b")
+                        },
+                        new
+                        {
+                            Id = new Guid("e8d1686c-50ad-4b59-866d-2eb558286919"),
+                            Code = "CHEM.ELECTROCHEM",
+                            Name = "Pin điện và điện phân",
+                            SubjectId = new Guid("4d779815-9f88-4ba2-a3e4-0b6916a4407b")
+                        });
+                });
+
             modelBuilder.Entity("AiExamBank.Persistence.RoleAssignmentAuditEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -282,6 +597,85 @@ namespace AiExamBank.Persistence.Migrations
                     b.HasOne("AiExamBank.Persistence.SchoolEntity", null)
                         .WithMany()
                         .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.SchoolSubjectEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SchoolId", "SubjectId", "DepartmentId")
+                        .HasPrincipalKey("SchoolId", "SubjectId", "DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionOptionEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Questions.QuestionRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId", "Revision")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionRevisionEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.QuestionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId", "SubjectId")
+                        .HasPrincipalKey("Id", "SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.TopicEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TopicId", "SubjectId")
+                        .HasPrincipalKey("Id", "SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.SchoolSubjectEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.SchoolEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.SubjectEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.DepartmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId", "SchoolId")
+                        .HasPrincipalKey("Id", "SchoolId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.TopicEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Questions.SubjectEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
