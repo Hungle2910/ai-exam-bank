@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Plus, Search, RefreshCw, Database, Pencil, History, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from '@/contexts/ToastContext';
@@ -30,6 +30,7 @@ interface QuestionDetail extends QuestionItem {
 interface Paged { items: QuestionItem[]; page: number; pageSize: number; total: number }
 interface Filters { subjectId: string; topicId: string; difficulty: '' | Difficulty; status: '' | QStatus; text: string }
 interface ServerError { code: string; field: string; message: string }
+interface ListResult { key: string; data: Paged | null; error: string | null }
 
 const PAGE_SIZE = 20;
 const LABELS = 'ABCD';
@@ -109,14 +110,14 @@ const describe = (e: unknown, what: string) =>
 
 export default function QuestionsPage() {
   const { success } = useToast();
-  const { user } = useAuth();
-  const latestLoad = useRef(0);
+  const { user, apiFetch } = useAuth();
   const [catalog, setCatalog] = useState<CatalogSubject[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogTick, setCatalogTick] = useState(0);
   const [mockStore, setMockStore] = useState<QuestionDetail[]>(MOCK_QUESTIONS);
-  const [data, setData] = useState<Paged | null>(null);
+  const [result, setResult] = useState<ListResult | null>(null);
   const [isMock, setIsMock] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
@@ -124,34 +125,44 @@ export default function QuestionsPage() {
   const [history, setHistory] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchOrMock<CatalogSubject[]>('/api/v1/catalog', MOCK_CATALOG).then(r => setCatalog(r.data)).catch(() => setCatalog([]));
-  }, []);
+    let cancelled = false;
+    fetchOrMock<CatalogSubject[]>('/api/v1/catalog', MOCK_CATALOG, apiFetch)
+      .then(r => { if (!cancelled) { setCatalog(r.data); setCatalogError(null); } })
+      // Keep the last good catalog: a failed refresh must not take the subject/topic choices away.
+      .catch(e => { if (!cancelled) setCatalogError(describe(e, 'tải danh mục môn học và chủ đề')); });
+    return () => { cancelled = true; };
+  }, [apiFetch, catalogTick]);
+  const retryCatalog = () => { setCatalogError(null); setCatalogTick(t => t + 1); };
 
   useEffect(() => {
     const timer = setTimeout(() => { setFilters(f => f.text === searchInput ? f : { ...f, text: searchInput }); setPage(1); }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const load = useCallback(async () => {
-    // Only the newest request may update the page: an older, slower response must not overwrite it.
-    const requestId = ++latestLoad.current;
-    setLoading(true); setError(null);
+  const query = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (filters.subjectId) params.set('subjectId', filters.subjectId);
     if (filters.topicId) params.set('topicId', filters.topicId);
     if (filters.difficulty) params.set('difficulty', filters.difficulty);
     if (filters.status) params.set('status', filters.status);
     if (filters.text.trim()) params.set('q', filters.text.trim());
-    try {
-      const r = await fetchOrMock<Paged>(`/api/v1/questions?${params}`, mockPage(mockStore, filters, page));
-      if (requestId !== latestLoad.current) return;
-      setData(r.data); setIsMock(r.isMock);
-    } catch (e) {
-      if (requestId !== latestLoad.current) return;
-      setData(null); setError(describe(e, 'tải danh sách câu hỏi'));
-    } finally { if (requestId === latestLoad.current) setLoading(false); }
-  }, [filters, page, mockStore]);
-  useEffect(() => { load(); }, [load]);
+    return params.toString();
+  }, [filters, page]);
+  const requestKey = `${query}#${reloadTick}`;
+
+  useEffect(() => {
+    // Cleanup drops the response of a superseded request, so an older, slower one cannot overwrite the page.
+    let cancelled = false;
+    fetchOrMock<Paged>(`/api/v1/questions?${query}`, mockPage(mockStore, filters, page), apiFetch)
+      .then(r => { if (!cancelled) { setResult({ key: requestKey, data: r.data, error: null }); setIsMock(r.isMock); } })
+      .catch(e => { if (!cancelled) setResult({ key: requestKey, data: null, error: describe(e, 'tải danh sách câu hỏi') }); });
+    return () => { cancelled = true; };
+  }, [query, requestKey, filters, page, mockStore, apiFetch]);
+
+  const load = () => setReloadTick(t => t + 1);
+  const loading = result?.key !== requestKey;
+  const data = result?.data ?? null;
+  const error = loading ? null : result?.error ?? null;
 
   const topics = catalog.find(s => s.id === filters.subjectId)?.topics ?? [];
   const setFilter = (patch: Partial<Filters>) => { setFilters(f => ({ ...f, ...patch })); setPage(1); };
@@ -179,6 +190,13 @@ export default function QuestionsPage() {
           {canCreate && <button className="btn btn-primary" onClick={() => setEditing('new')} id="btn-create-question"><Plus size={14} />Thêm câu hỏi</button>}
         </div>
       </div>
+
+      {catalogError && (
+        <div role="alert" style={{ background: 'var(--danger-50)', border: '1px solid var(--danger-200)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--danger-700)', marginBottom: 12 }}>
+          ⚠ {catalogError}. Chưa thể lọc theo môn/chủ đề hoặc thêm câu hỏi.{' '}
+          <button className="btn btn-secondary btn-sm" onClick={retryCatalog} id="btn-retry-catalog">Thử lại</button>
+        </div>
+      )}
 
       <div className="table-container">
         <div className="table-toolbar" style={{ flexWrap: 'wrap', gap: 10 }}>
@@ -268,32 +286,35 @@ export default function QuestionsPage() {
    ============================================================ */
 
 function useDetail(id: string | null, isMock: boolean, mockStore: QuestionDetail[]) {
-  const [detail, setDetail] = useState<QuestionDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(id !== null);
-
-  const load = useCallback(async () => {
-    if (id === null) return;
-    setLoading(true); setError(null);
-    try {
-      if (isMock) {
-        const found = mockStore.find(q => q.id === id);
-        if (!found) throw new ApiError(404, 'not found');
-        setDetail(found);
-      } else {
-        const res = await fetch(`/api/v1/questions/${id}`, { credentials: 'include' });
-        if (!res.ok) throw new ApiError(res.status, `API lỗi ${res.status}`);
-        setDetail(await res.json() as QuestionDetail);
-      }
-    } catch (e) {
-      setError(e instanceof ApiError && e.status === 404 ? 'Không tìm thấy câu hỏi' : describe(e, 'tải câu hỏi'));
-    } finally { setLoading(false); }
-  }, [id, isMock, mockStore]);
+  const { apiFetch } = useAuth();
   // The store is read once per open; later edits to the sample data must not reset a form in progress.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [id, isMock]);
+  const [store] = useState(mockStore);
+  const [tick, setTick] = useState(0);
+  const [result, setResult] = useState<{ key: string; detail: QuestionDetail | null; error: string | null } | null>(null);
+  const key = `${id}#${isMock}#${tick}`;
 
-  return { detail, error, loading, reload: load };
+  useEffect(() => {
+    if (id === null) return;
+    let cancelled = false;
+    const fetchDetail = async (): Promise<QuestionDetail> => {
+      if (isMock) {
+        const found = store.find(q => q.id === id);
+        if (!found) throw new ApiError(404, 'not found');
+        return found;
+      }
+      const res = await apiFetch(`/api/v1/questions/${id}`, { credentials: 'include' });
+      if (!res.ok) throw new ApiError(res.status, `API lỗi ${res.status}`);
+      return await res.json() as QuestionDetail;
+    };
+    fetchDetail().then(
+      detail => { if (!cancelled) setResult({ key, detail, error: null }); },
+      e => { if (!cancelled) setResult({ key, detail: null, error: e instanceof ApiError && e.status === 404 ? 'Không tìm thấy câu hỏi' : describe(e, 'tải câu hỏi') }); },
+    );
+    return () => { cancelled = true; };
+  }, [id, isMock, key, store, apiFetch]);
+
+  const settled = result?.key === key ? result : null;
+  return { detail: settled?.detail ?? null, error: settled?.error ?? null, loading: id !== null && !settled, reload: () => setTick(t => t + 1) };
 }
 
 /* ============================================================
@@ -326,7 +347,7 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
   initial: QuestionDetail | null; catalog: CatalogSubject[]; isMock: boolean;
   onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onReload: () => void;
 }) {
-  const { csrfToken } = useAuth();
+  const { csrfToken, apiFetch } = useAuth();
   const isNew = initial === null;
   const [stem, setStem] = useState(initial?.stem ?? '');
   const [options, setOptions] = useState<string[]>(initial?.options ?? ['', '', '', '']);
@@ -375,7 +396,7 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
         return;
       }
 
-      const res = await fetch(isNew ? '/api/v1/questions' : `/api/v1/questions/${initial.id}`, {
+      const res = await apiFetch(isNew ? '/api/v1/questions' : `/api/v1/questions/${initial.id}`, {
         method: isNew ? 'POST' : 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
