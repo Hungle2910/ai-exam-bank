@@ -63,7 +63,9 @@ public sealed record JobApiResponse(
     int? ProgressPercentage,
     string? ResultId,
     string? ErrorCode,
-    string? SafeMessage);
+    string? SafeMessage,
+    bool? IsRetryEligible = null,
+    string? ActionableReason = null);
 
 /// <summary>
 /// Định nghĩa các HTTP Endpoints quản lý và tra cứu tác vụ ngầm thuộc chuẩn M5-02.
@@ -227,7 +229,9 @@ public static class JobEndpoints
                     status.ProgressPercentage,
                     status.ResultId,
                     status.ErrorCode,
-                    status.SafeMessage));
+                    status.SafeMessage,
+                    status.IsRetryEligible,
+                    status.ActionableReason));
             }
             catch (KeyNotFoundException)
             {
@@ -340,7 +344,9 @@ public static class JobEndpoints
                     j.ProgressPercentage,
                     j.ResultId,
                     j.ErrorCode,
-                    j.SafeMessage)).ToList();
+                    j.SafeMessage,
+                    j.IsRetryEligible,
+                    j.ActionableReason)).ToList();
 
                 return Results.Ok(response);
             }
@@ -497,7 +503,9 @@ public static class JobEndpoints
                     retriedStatus.ProgressPercentage,
                     retriedStatus.ResultId,
                     retriedStatus.ErrorCode,
-                    retriedStatus.SafeMessage));
+                    retriedStatus.SafeMessage,
+                    retriedStatus.IsRetryEligible,
+                    retriedStatus.ActionableReason));
             }
             catch (KeyNotFoundException)
             {
@@ -520,6 +528,18 @@ public static class JobEndpoints
                     extensions: new Dictionary<string, object?>
                     {
                         ["code"] = "SCOPED_ACCESS_DENIED",
+                        ["traceId"] = httpContext.TraceIdentifier
+                    });
+            }
+            catch (JobNotRetryEligibleException notEligibleEx)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Job Not Retry Eligible",
+                    detail: notEligibleEx.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["code"] = "JOB_NOT_RETRY_ELIGIBLE",
                         ["traceId"] = httpContext.TraceIdentifier
                     });
             }

@@ -176,7 +176,9 @@ public sealed class JobEngineExecutionTests
             Assert.IsTrue(await store.FailJobAsync(job.Value, first.LeaseToken, "TIMEOUT", "Please retry.", isTransient: true));
             var failed = await service.GetJobStatusAsync(job, "user-1", SchoolScope);
             Assert.AreEqual("TIMEOUT", failed.ErrorCode);
-            Assert.AreEqual("Please retry.", failed.SafeMessage);
+            Assert.IsNotNull(failed.SafeMessage);
+            Assert.IsFalse(failed.SafeMessage.Contains("Please retry.", StringComparison.Ordinal));
+            Assert.IsTrue(failed.SafeMessage.Contains("Quản trị viên", StringComparison.OrdinalIgnoreCase));
 
             now = now.AddMinutes(1);
             var retry = await store.ClaimNextJobAsync("worker-2", TimeSpan.FromMinutes(2));
@@ -676,8 +678,8 @@ public sealed class JobEngineExecutionTests
     public async Task Exam_generation_and_csv_import_handlers_are_registered_and_executable()
     {
         var registry = new JobRegistry();
-        registry.Register(new ExamGenerationJobHandler());
-        registry.Register(new CsvImportJobHandler());
+        registry.Register(new ExamGenerationJobHandler(allowFailureSimulation: true));
+        registry.Register(new CsvImportJobHandler(allowFailureSimulation: true));
 
         Assert.IsTrue(registry.HasHandler("ExamGeneration"));
         Assert.IsTrue(registry.HasHandler("CsvImport"));

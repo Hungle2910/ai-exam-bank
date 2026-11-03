@@ -137,7 +137,7 @@ Môi trường AWS development/staging/production là các deployment có config
 | Web/E2E | Teacher → draft/import → reviewer → blueprint → AI draft → final snapshot; negative auth/source-scope paths | M1–M5 |
 | AWS staging | Private reachability, SSM, IAM least privilege, backup/restore, alarm delivery, cost/teardown, rollback trên exact SHA | M2 + all owners |
 
-Mỗi PR code thêm test có ý nghĩa cho hành vi mới và mở rộng CI cùng project thật: restore locked → build warnings-as-errors → module/integration tests → smoke → migration verification → artifact/deploy checks. `dev` hiện bắt buộc `Repository quality`, `Application build and smoke`, `CodeRabbit` và resolved conversations; tác giả tự merge sau khi bot thật sự review. Promotion `dev → main` cần human approval độc lập và kiểm SHA/CI. Check xanh của foundation **không chứng minh** product logic, AWS deployment hoặc readiness.
+Mỗi PR code thêm test có ý nghĩa cho hành vi mới và mở rộng CI cùng project thật: restore locked → build warnings-as-errors → module/integration tests → smoke → migration verification → artifact/deploy checks. `dev` hiện bắt buộc `Repository quality`, `Application build and smoke`, một human approval độc lập và resolved conversations; @Lancelot-sys25 điều phối review/merge. Promotion `dev → main` cần human approval độc lập và kiểm SHA/CI. Check xanh của foundation **không chứng minh** product logic, AWS deployment hoặc readiness.
 
 ## 8. Thứ tự triển khai và điều kiện hoàn thành thiết kế
 
