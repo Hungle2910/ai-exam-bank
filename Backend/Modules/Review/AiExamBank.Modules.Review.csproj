@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Questions\AiExamBank.Modules.Questions.csproj" />
+    <ProjectReference Include="..\Identity\AiExamBank.Modules.Identity.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

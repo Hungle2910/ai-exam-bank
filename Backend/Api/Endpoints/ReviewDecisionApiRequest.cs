@@ -9,6 +9,9 @@ public sealed record ReviewDecisionApiRequest(
 {
     public string? GetValidationError()//kiểm tra dữ liệu người dùng gửi trước khi xử lý quyết định duyệt:
     {
+        if (ExpectedVersion < 1)
+            return "ExpectedVersion must be positive.";
+
         if (!Enum.IsDefined(Decision))//chặn giá trị khác Approve và Reject
             return "Decision must be Approve or Reject.";
 
