@@ -1,8 +1,10 @@
 using AiExamBank.Modules.Review.Contracts;
+using System.Text.Json.Serialization;
 
 namespace AiExamBank.Api.Endpoints;
 
 public sealed record ReviewDecisionApiRequest(
+    [property: JsonConverter(typeof(JsonStringEnumConverter<ReviewDecision>))]
     ReviewDecision Decision,//duyệt hay từ chối.
     string? Reason,//lý do, bắt buộc khi từ chối.
     long ExpectedVersion)//phiên bản mà người duyệt đang xem, để sau này phát hiện dữ liệu đã đổi và trả 409.

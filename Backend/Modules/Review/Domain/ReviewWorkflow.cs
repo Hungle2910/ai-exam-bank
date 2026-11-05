@@ -12,7 +12,8 @@ public sealed record ReviewRevisionSnapshot(
     QuestionRevisionRef Revision,
     Guid SchoolId,
     Guid DepartmentId,
-    Guid AuthorUserId,
+    Guid OwnerUserId,
+    Guid RevisionAuthorUserId,
     RevisionReviewState State,
     long Version);
 
@@ -42,7 +43,7 @@ public static class ReviewWorkflow
 
         if (actorUserId == Guid.Empty || expectedVersion < 1)
             return Failed(ReviewTransitionFailure.InvalidRequest);
-        if (!ResourceAccessPolicy.CanAccess(actorUserId, Resource(snapshot, false),
+        if (!ResourceAccessPolicy.CanAccess(actorUserId, Resource(snapshot, snapshot.OwnerUserId, false),
                 ResourceAction.Edit, currentAssignments))
             return Failed(ReviewTransitionFailure.Forbidden);
         if (snapshot.State != RevisionReviewState.Draft ||
@@ -72,7 +73,9 @@ public static class ReviewWorkflow
 
         // Check reviewer scope and self-review independently of the current state.
         // A scoped reviewer gets Conflict for a revision already decided by someone else.
-        if (!ResourceAccessPolicy.CanAccess(request.ReviewerId, Resource(snapshot, true),
+        if (request.ReviewerId == snapshot.OwnerUserId ||
+            !ResourceAccessPolicy.CanAccess(request.ReviewerId,
+                Resource(snapshot, snapshot.RevisionAuthorUserId, true),
                 ResourceAction.Review, currentAssignments))
             return Failed(ReviewTransitionFailure.Forbidden);
         if (snapshot.Revision != request.Revision ||
@@ -89,9 +92,10 @@ public static class ReviewWorkflow
         });
     }
 
-    private static SchoolResource Resource(ReviewRevisionSnapshot snapshot, bool submitted) =>
+    private static SchoolResource Resource(
+        ReviewRevisionSnapshot snapshot, Guid ownerUserId, bool submitted) =>
         new(ResourceKind.Question, snapshot.SchoolId, snapshot.DepartmentId,
-            snapshot.AuthorUserId, submitted);
+            ownerUserId, submitted);
 
     private static ReviewTransitionResult Failed(ReviewTransitionFailure failure) => new(null, failure);
     private static ReviewTransitionResult Succeeded(ReviewRevisionSnapshot snapshot) => new(snapshot, null);

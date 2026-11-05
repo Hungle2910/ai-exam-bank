@@ -3,7 +3,7 @@
 ## Current implementation and dependency
 
 `ReviewWorkflow` in the Review module now checks the transition, current role scope,
-author identity, revision identity and expected version without depending on an HTTP
+question owner, revision author, revision identity and expected version without depending on an HTTP
 request. Its input **must** be a snapshot loaded from the persisted question revision,
 not scope or status supplied by the browser. `ReviewDecisionApiRequest` validates the
 decision payload. No submit/pending/decision route or database transaction is wired yet:
@@ -13,7 +13,7 @@ feature branch. These examples are the proposed M3/M4 integration contract.
 | Current state | Action | New state | Required checks |
 |---|---|---|---|
 | `Draft` | Submit | `ReviewRequired` | Teacher owns the question in the assigned school/department; revision and version match. |
-| `ReviewRequired` | Approve | `Approved` | DepartmentHead in the same school/department, not the author; revision and version match. |
+| `ReviewRequired` | Approve | `Approved` | DepartmentHead in the same school/department, neither question owner nor revision author; revision and version match. |
 | `ReviewRequired` | Reject | `Rejected` | Same checks as Approve; non-blank reason required. |
 
 The `ReviewRequired` code value corresponds to `PENDING_REVIEW` in the original
@@ -75,7 +75,7 @@ before wiring the route. Do not silently cast the rowversion to a number.
 
 ## Evidence and remaining work
 
-Five `ReviewWorkflowTests` pass for valid transitions, owner/scope/self-review,
+Six `ReviewWorkflowTests` pass for valid transitions, owner/scope/self-review,
 missing reject reason, stale revision/version and a second sequential decision.
 These are pure domain tests, not proof of database concurrency or live API behavior.
 After M4-02 is merged into `dev`: map persisted status to the agreed state,

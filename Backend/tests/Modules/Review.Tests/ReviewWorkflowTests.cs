@@ -70,6 +70,30 @@ public sealed class ReviewWorkflowTests
     }
 
     [TestMethod]
+    public void Question_owner_and_revision_author_are_checked_separately()
+    {
+        var revisionAuthor = Guid.NewGuid();
+        var draft = Snapshot(RevisionReviewState.Draft, 1) with
+        {
+            RevisionAuthorUserId = revisionAuthor
+        };
+        var ownerRole = RoleAssignment.Create(author, AppRole.Teacher, school, department);
+        var authorRole = RoleAssignment.Create(revisionAuthor, AppRole.Teacher, school, department);
+
+        Assert.IsTrue(ReviewWorkflow.Submit(draft, author, 1, [ownerRole]).Succeeded);
+        Assert.AreEqual(ReviewTransitionFailure.Forbidden,
+            ReviewWorkflow.Submit(draft, revisionAuthor, 1, [authorRole]).Failure);
+
+        var pending = draft with { State = RevisionReviewState.ReviewRequired, Version = 2 };
+        Assert.AreEqual(ReviewTransitionFailure.Forbidden,
+            ReviewWorkflow.Decide(pending, Decision(pending, revisionAuthor, ReviewDecision.Approve, 2),
+                [RoleAssignment.Create(revisionAuthor, AppRole.DepartmentHead, school, department)]).Failure);
+        Assert.AreEqual(ReviewTransitionFailure.Forbidden,
+            ReviewWorkflow.Decide(pending, Decision(pending, author, ReviewDecision.Approve, 2),
+                [RoleAssignment.Create(author, AppRole.DepartmentHead, school, department)]).Failure);
+    }
+
+    [TestMethod]
     public void Reject_requires_reason_and_decision_requires_current_revision_and_version()
     {
         var pending = Snapshot(RevisionReviewState.ReviewRequired, 2);
@@ -102,7 +126,7 @@ public sealed class ReviewWorkflowTests
     }
 
     private ReviewRevisionSnapshot Snapshot(RevisionReviewState state, long version) =>
-        new(QuestionRevisionRef.Create(Guid.NewGuid(), 1), school, department, author, state, version);
+        new(QuestionRevisionRef.Create(Guid.NewGuid(), 1), school, department, author, author, state, version);
 
     private RoleAssignment Head() => RoleAssignment.Create(reviewer, AppRole.DepartmentHead, school, department);
 
