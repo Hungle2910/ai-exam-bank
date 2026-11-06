@@ -78,7 +78,14 @@ before wiring the route. Do not silently cast the rowversion to a number.
 Six `ReviewWorkflowTests` pass for valid transitions, owner/scope/self-review,
 missing reject reason, stale revision/version and a second sequential decision.
 These are pure domain tests, not proof of database concurrency or live API behavior.
+The Review page now has a pending/detail UI baseline: it requests the proposed
+pending endpoint, sends a decision with revision and expected version, and reloads
+on a 409. Three frontend tests cover API unavailability, decision payload and stale
+response. It does not display mock review decisions or claim a server-side transition.
+The pending response shape and version token must be reconciled with M4 before the
+UI can be used against real data.
+
 After M4-02 is merged into `dev`: map persisted status to the agreed state,
 implement the transaction and routes, add integration tests with two concurrent
-reviewers and 403/409 responses, then build the pending/detail UI baseline. AWS
+reviewers and 403/409 responses, then verify the UI with the real endpoint. AWS
 and live database evidence remain pending.

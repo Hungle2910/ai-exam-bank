@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { ClipboardCheck, Check, X, RefreshCw, Search, Clock, Database } from 'lucide-react';
+import { ClipboardCheck, Check, X, RefreshCw, Search, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
+import { formatDateTime } from '@/lib/fetchOrMock';
 
 /* ============================================================
-   TYPES & MOCK
+   TYPES
    ============================================================ */
 
 type ReviewStatus = 'REVIEW_REQUIRED' | 'APPROVED' | 'REJECTED';
@@ -17,6 +17,7 @@ type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 interface ReviewItem {
   id: string;
   revision: number;
+  version: number;
   content: string;
   options: string[];
   correctIndex: number;
@@ -28,26 +29,12 @@ interface ReviewItem {
   submittedAt: string;
   status: ReviewStatus;
   source: 'MANUAL' | 'IMPORT' | 'AI';
-  rejectReason?: string;
 }
-
-const MOCK: ReviewItem[] = [
-  { id: 'q-1001', revision: 2, content: 'Đạo hàm của hàm số y = x³ − 3x + 2 là?', options: ['3x² − 3', '3x² + 3', 'x² − 3', '3x − 3'], correctIndex: 0, subject: 'Toán', topic: 'Đạo hàm', difficulty: 'EASY', points: 0.25, author: 'gv.nguyen.van.a', submittedAt: '2026-10-16T08:12:00Z', status: 'REVIEW_REQUIRED', source: 'MANUAL' },
-  { id: 'q-1002', revision: 1, content: 'Nguyên tố nào có độ âm điện lớn nhất?', options: ['O', 'Cl', 'F', 'N'], correctIndex: 2, subject: 'Hóa học', topic: 'Bảng tuần hoàn', difficulty: 'MEDIUM', points: 0.25, author: 'gv.tran.thi.b', submittedAt: '2026-10-16T09:40:00Z', status: 'REVIEW_REQUIRED', source: 'AI' },
-  { id: 'q-1003', revision: 3, content: 'Một vật dao động điều hòa với phương trình x = 5cos(4πt) cm. Chu kỳ dao động là?', options: ['0,25 s', '0,5 s', '2 s', '4 s'], correctIndex: 1, subject: 'Vật lý', topic: 'Dao động cơ', difficulty: 'MEDIUM', points: 0.25, author: 'gv.le.van.c', submittedAt: '2026-10-15T14:05:00Z', status: 'REVIEW_REQUIRED', source: 'IMPORT' },
-  { id: 'q-1004', revision: 1, content: 'Số nghiệm thực của phương trình log₂(x² − 1) = 3 là?', options: ['0', '1', '2', '3'], correctIndex: 2, subject: 'Toán', topic: 'Logarit', difficulty: 'HARD', points: 0.5, author: 'gv.nguyen.van.a', submittedAt: '2026-10-15T10:22:00Z', status: 'APPROVED', source: 'MANUAL' },
-  { id: 'q-1005', revision: 1, content: 'Tác phẩm "Vợ chồng A Phủ" của tác giả nào?', options: ['Kim Lân', 'Tô Hoài', 'Nam Cao', 'Nguyễn Tuân'], correctIndex: 1, subject: 'Ngữ văn', topic: 'Văn học hiện đại', difficulty: 'EASY', points: 0.25, author: 'gv.pham.d', submittedAt: '2026-10-14T16:48:00Z', status: 'REJECTED', source: 'AI', rejectReason: 'Thiếu trích dẫn nguồn tài liệu' },
-];
 
 const DIFF_LABEL: Record<Difficulty, [string, string]> = {
   EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
 };
 const SOURCE_LABEL = { MANUAL: ['Thủ công', 'badge-gray'], IMPORT: ['CSV', 'badge-teal'], AI: ['AI Draft', 'badge-purple'] } as const;
-const STATUS_TABS: { key: ReviewStatus; label: string }[] = [
-  { key: 'REVIEW_REQUIRED', label: 'Chờ duyệt' },
-  { key: 'APPROVED', label: 'Đã duyệt' },
-  { key: 'REJECTED', label: 'Đã trả lại' },
-];
 
 /* ============================================================
    PAGE
@@ -57,9 +44,8 @@ export default function ReviewPage() {
   const { csrfToken } = useAuth();
   const { success, error: showError } = useToast();
   const [items, setItems] = useState<ReviewItem[]>([]);
-  const [isMock, setIsMock] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<ReviewStatus>('REVIEW_REQUIRED');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -68,16 +54,28 @@ export default function ReviewPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetchOrMock<ReviewItem[]>('/api/v1/reviews', MOCK);
-    setItems(r.data);
-    setIsMock(r.isMock);
-    setLoading(false);
+    try {
+      const response = await fetch('/api/v1/reviews/pending?page=1&pageSize=20', { credentials: 'include' });
+      if (!response.ok) throw new Error(`Review API returned ${response.status}`);
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) throw new Error('Invalid review response');
+      setItems(data as ReviewItem[]);
+      setLoadError(false);
+    } catch {
+      setItems([]);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const visible = items.filter(i =>
-    i.status === tab &&
+    i.status === 'REVIEW_REQUIRED' &&
     (i.content.toLowerCase().includes(search.toLowerCase()) || i.subject.toLowerCase().includes(search.toLowerCase())),
   );
   const selected = items.find(i => i.id === selectedId) ?? visible[0] ?? null;
@@ -87,19 +85,15 @@ export default function ReviewPage() {
     if (!approve && !reason.trim()) { showError('Vui lòng nhập lý do trả lại'); return; }
     setBusy(true);
     try {
-      if (!isMock) {
-        const res = await fetch(`/api/v1/reviews/${selected.id}/${approve ? 'approve' : 'reject'}`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
-          body: JSON.stringify({ revision: selected.revision, reason: approve ? undefined : reason.trim() }),
-        });
-        if (res.status === 409) { showError('Câu hỏi đã được người khác xử lý. Đang tải lại…'); await load(); return; }
-        if (!res.ok) { showError('Không thể lưu quyết định'); return; }
-      }
-      setItems(prev => prev.map(i => i.id === selected.id
-        ? { ...i, status: approve ? 'APPROVED' : 'REJECTED', rejectReason: approve ? undefined : reason.trim() }
-        : i));
+      const res = await fetch(`/api/v1/reviews/${encodeURIComponent(selected.id)}/revisions/${selected.revision}/decision`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
+        body: JSON.stringify({ decision: approve ? 'Approve' : 'Reject', reason: approve ? undefined : reason.trim(), expectedVersion: selected.version }),
+      });
+      if (res.status === 409) { showError('Câu hỏi đã được người khác xử lý. Đang tải lại…'); await load(); return; }
+      if (!res.ok) { showError('Không thể lưu quyết định'); return; }
+      await load();
       success(approve ? 'Đã duyệt câu hỏi' : 'Đã trả lại câu hỏi');
       setRejecting(false); setReason(''); setSelectedId(null);
     } catch {
@@ -109,26 +103,14 @@ export default function ReviewPage() {
     }
   };
 
-  const countOf = (s: ReviewStatus) => items.filter(i => i.status === s).length;
-
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Chờ duyệt</h1>
         <p className="page-subtitle">Xem xét, phê duyệt hoặc trả lại các revision câu hỏi</p>
         <div className="page-actions">
-          {isMock && <span className="badge badge-amber"><Database size={12} />Dữ liệu mẫu</span>}
           <button className="btn btn-secondary" onClick={load} id="btn-refresh-review"><RefreshCw size={14} /></button>
         </div>
-      </div>
-
-      <div className="tabs">
-        {STATUS_TABS.map(t => (
-          <div key={t.key} className={clsx('tab-item', tab === t.key && 'active')}
-            onClick={() => { setTab(t.key); setSelectedId(null); setRejecting(false); }} id={`tab-review-${t.key}`}>
-            {t.label}<span className="tab-count">{countOf(t.key)}</span>
-          </div>
-        ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: 20, alignItems: 'start' }} className="review-grid">
@@ -142,6 +124,8 @@ export default function ReviewPage() {
           </div>
           {loading ? (
             <div style={{ padding: 16 }}>{[0, 1, 2].map(i => <div key={i} className="skeleton" style={{ height: 64, marginBottom: 10, borderRadius: 8 }} />)}</div>
+          ) : loadError ? (
+            <div className="table-empty"><div className="table-empty-text">Không tải được hàng chờ duyệt. Vui lòng thử lại.</div></div>
           ) : visible.length === 0 ? (
             <div className="table-empty">
               <div className="table-empty-icon"><ClipboardCheck /></div>
@@ -216,12 +200,6 @@ export default function ReviewPage() {
               <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 20 }}>
                 Tác giả <strong style={{ color: 'var(--gray-700)' }}>{selected.author}</strong> · gửi lúc {formatDateTime(selected.submittedAt)}
               </div>
-
-              {selected.status === 'REJECTED' && selected.rejectReason && (
-                <div style={{ background: 'var(--danger-50)', border: '1px solid var(--danger-200)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--danger-700)' }}>
-                  Lý do trả lại: {selected.rejectReason}
-                </div>
-              )}
 
               {selected.status === 'REVIEW_REQUIRED' && (
                 <div style={{ borderTop: '1px solid var(--gray-100)', paddingTop: 18 }}>
