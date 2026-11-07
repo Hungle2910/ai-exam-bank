@@ -25,6 +25,7 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
     protected override void OnModelCreating(ModelBuilder modelBuilder) //liên kết mỗi vai trò với một người dùng và lưu tên vai trò dạng chữ
     {
         base.OnModelCreating(modelBuilder);
+        AiExamBank.Persistence.Exams.BlueprintModel.ApplyBlueprints(modelBuilder);
 
         modelBuilder.Entity<SchoolEntity>(entity =>
         {
