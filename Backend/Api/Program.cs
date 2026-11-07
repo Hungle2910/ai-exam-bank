@@ -36,6 +36,8 @@ builder.Services.AddDbContext<AiExamBankDbContext>(options =>
 builder.Services.AddScoped<ResourceAuthorizationService>();
 builder.Services.AddQuestionBank();
 builder.Services.AddScoped<AiExamBank.Persistence.Exams.BlueprintStore>();
+builder.Services.AddScoped<AiExamBank.Modules.Exams.Application.ExamSelectionService>();
+builder.Services.AddScoped<AiExamBank.Persistence.Exams.ExamGenerationStore>();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
@@ -103,6 +105,7 @@ var allowFailureSimulation = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("Jobs:AllowFailureSimulation");
 
 builder.Services.AddSingleton<IJobHandler, SampleJobHandler>();
+builder.Services.AddSingleton<IJobHandler, AiExamBank.Api.Exams.ApprovedExamSelectionHandler>();
 builder.Services.AddSingleton<IJobHandler>(sp => new ExamGenerationJobHandler(
     sp.GetRequiredService<IAiProviderCircuitBreaker>(),
     allowFailureSimulation: allowFailureSimulation));
@@ -119,7 +122,10 @@ builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
 builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
 if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))
+{
     builder.Services.AddHostedService<JobWorkerHostedService>();
+    builder.Services.AddHostedService<AiExamBank.Api.Exams.ExamOutboxDispatcher>();
+}
 
 var app = builder.Build();
 
@@ -186,6 +192,7 @@ app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
 
 app.MapQuestionEndpoints();
 app.MapBlueprintEndpoints();
+app.MapExamSelection();
 app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
 app.MapSchoolAdministrationEndpoints();
