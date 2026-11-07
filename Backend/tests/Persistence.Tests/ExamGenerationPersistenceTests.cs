@@ -46,6 +46,41 @@ public sealed class ExamGenerationPersistenceTests
         Assert.AreEqual(1m, saved.Gaps[0].MissingPoints);
         Assert.IsFalse(await store.Accessible(user.Id, Guid.NewGuid()).AnyAsync());
 
+        var citation = AiExamBank.Modules.Knowledge.Contracts.SourceCitation.Create("fixture-source", "page 1");
+        var drafts = Enumerable.Range(1, 2).Select(i => new ValidatedAiDraft(McqContent.Create(new(
+            $"Draft fixture {i}?", ["One", "Two", "Three", "Four"], "A", "EASY", QuestionTaxonomySeed.MathId,
+            QuestionTopic.Create(topic.Id, QuestionTaxonomySeed.MathId), "fixture-source | page 1")), citation)).ToArray();
+        DraftSlotResult[] outputs = [new(0, "fixture-correlation", "REVIEW_REQUIRED", null, drafts)];
+        var draftJob = Guid.NewGuid();
+        var draftStore = new ExamDraftStore(db, new QuestionWriter(db, TimeProvider.System));
+        await Assert.ThrowsExactlyAsync<KeyNotFoundException>(() => draftStore.SaveAsync(Guid.NewGuid(), school.Id, exam.Id, draftJob, outputs));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => draftStore.SaveAsync(user.Id, school.Id, exam.Id, draftJob,
+            [outputs[0] with { Drafts = drafts.Take(1).ToArray() }]));
+        var failingStore = new ExamDraftStore(db, new FailSecondWriter(new QuestionWriter(db, TimeProvider.System)));
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => failingStore.SaveAsync(user.Id, school.Id, exam.Id, draftJob, outputs));
+        Assert.AreEqual(0, await db.Questions.CountAsync(x => x.SchoolId == school.Id));
+        Assert.IsFalse(await db.Set<ExamDraftBatchEntity>().AnyAsync(x => x.ExamId == exam.Id));
+        var failedJob = Guid.NewGuid();
+        Assert.IsEmpty(await draftStore.SaveAsync(user.Id, school.Id, exam.Id, failedJob,
+            [new(0, "failed-correlation", "FAILED", "GENERATION_TIMEOUT", [])]));
+        Assert.AreEqual("FAILED", (await db.Set<ExamDraftSlotEntity>().SingleAsync(x => x.ExamId == exam.Id && x.JobId == failedJob)).Status);
+        await Assert.ThrowsExactlyAsync<KeyNotFoundException>(() => draftStore.SaveAsync(user.Id, Guid.NewGuid(), exam.Id, draftJob, outputs));
+        var links = await draftStore.SaveAsync(user.Id, school.Id, exam.Id, draftJob, outputs);
+        var repeated = await draftStore.SaveAsync(user.Id, school.Id, exam.Id, draftJob, outputs);
+        CollectionAssert.AreEqual(links.Select(x => x.QuestionId).ToArray(), repeated.Select(x => x.QuestionId).ToArray());
+        Assert.AreEqual(2, await db.Questions.CountAsync(x => x.SchoolId == school.Id));
+        foreach (var link in links)
+        {
+            var revision = await db.QuestionRevisions.SingleAsync(x => x.QuestionId == link.QuestionId && x.Revision == link.Revision);
+            Assert.AreEqual(QuestionStatus.Draft, revision.Status);
+            Assert.AreEqual(QuestionOrigin.AiDraft, revision.Origin);
+        }
+        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(() => draftStore.SaveAsync(user.Id, school.Id, exam.Id, draftJob,
+            [outputs[0] with { CorrelationId = "changed" }]));
+        await Assert.ThrowsExactlyAsync<DbUpdateConcurrencyException>(() => draftStore.SaveAsync(user.Id, school.Id, exam.Id, Guid.NewGuid(), outputs));
+        Assert.AreEqual("PARTIAL", (await db.Set<ExamGenerationEntity>().SingleAsync(x => x.Id == exam.Id)).Status);
+        Assert.IsFalse(await db.Set<ExamItemEntity>().AnyAsync(x => x.ExamId == exam.Id));
+
         // Test-only fixtures model the output of M3 approval; this is not an application approval path.
         var author = new AppUser { Id = Guid.NewGuid(), UserName = Guid.NewGuid().ToString(), SchoolId = school.Id };
         db.Add(author);
@@ -73,5 +108,17 @@ public sealed class ExamGenerationPersistenceTests
         CollectionAssert.AreEquivalent(approvedIds.ToArray(), selected.Items.Select(x => x.QuestionId).ToArray());
         Assert.IsTrue(selected.Items.All(x => x.Revision == 1));
         Assert.AreEqual(1m, selected.Items.Sum(x => x.Points));
+    }
+
+    private sealed class FailSecondWriter(IQuestionWriter inner) : IQuestionWriter
+    {
+        private int calls;
+        public Task<QuestionWriteResult> CreateDraftAsync(CreateQuestionCommand command, CancellationToken cancellationToken = default)
+        {
+            if (++calls == 2) throw new InvalidOperationException("Injected second-write failure.");
+            return inner.CreateDraftAsync(command, cancellationToken);
+        }
+        public Task<QuestionWriteResult> CreateRevisionAsync(CreateRevisionCommand command, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }
