@@ -36,6 +36,7 @@ builder.Services.AddDbContext<AiExamBankDbContext>(options =>
 builder.Services.AddScoped<ResourceAuthorizationService>();
 builder.Services.AddQuestionBank();
 builder.Services.AddQuestionBankOpenApi();
+builder.Services.AddScoped<AiExamBank.Persistence.Exams.BlueprintStore>();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
@@ -186,6 +187,7 @@ app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
     TypedResults.Ok(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
 
 app.MapQuestionEndpoints();
+app.MapBlueprintEndpoints();
 app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
 app.MapSchoolAdministrationEndpoints();

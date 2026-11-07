@@ -114,6 +114,97 @@ namespace AiExamBank.Persistence.Migrations
                     b.ToTable("Departments", (string)null);
                 });
 
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.BlueprintEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ArchivedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SchoolId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("TotalPoints")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("TotalQuestions")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId", "SchoolId", "UpdatedAtUtc");
+
+                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId");
+
+                    b.ToTable("Blueprints", (string)null);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.BlueprintSlotEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BlueprintId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Difficulty")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<decimal>("PointsPerQuestion")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuestionCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TopicId");
+
+                    b.HasIndex("BlueprintId", "TopicId", "Difficulty")
+                        .IsUnique();
+
+                    b.ToTable("BlueprintSlots", (string)null);
+                });
+
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -601,6 +692,37 @@ namespace AiExamBank.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.BlueprintEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.SchoolSubjectEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SchoolId", "SubjectId", "DepartmentId")
+                        .HasPrincipalKey("SchoolId", "SubjectId", "DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.BlueprintSlotEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Exams.BlueprintEntity", null)
+                        .WithMany("Slots")
+                        .HasForeignKey("BlueprintId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.TopicEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionEntity", b =>
                 {
                     b.HasOne("AiExamBank.Persistence.AppUser", null)
@@ -740,6 +862,11 @@ namespace AiExamBank.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.BlueprintEntity", b =>
+                {
+                    b.Navigation("Slots");
                 });
 #pragma warning restore 612, 618
         }
