@@ -205,6 +205,94 @@ namespace AiExamBank.Persistence.Migrations
                     b.ToTable("BlueprintSlots", (string)null);
                 });
 
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftBatchEntity", b =>
+                {
+                    b.Property<Guid>("ExamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("ExamId", "JobId");
+
+                    b.ToTable("ExamDraftBatches", (string)null);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftLinkEntity", b =>
+                {
+                    b.Property<Guid>("ExamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SlotIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceId")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SourceLocator")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("ExamId", "SlotIndex", "Ordinal");
+
+                    b.HasIndex("ExamId", "JobId", "SlotIndex");
+
+                    b.ToTable("ExamDraftLinks", (string)null);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftSlotEntity", b =>
+                {
+                    b.Property<Guid>("ExamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SlotIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("ExamId", "JobId", "SlotIndex");
+
+                    b.ToTable("ExamDraftSlots", (string)null);
+                });
+
             modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamGapEntity", b =>
                 {
                     b.Property<Guid>("ExamId")
@@ -844,6 +932,33 @@ namespace AiExamBank.Persistence.Migrations
                     b.HasOne("AiExamBank.Persistence.Questions.TopicEntity", null)
                         .WithMany()
                         .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftBatchEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Exams.ExamGenerationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ExamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftLinkEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Exams.ExamDraftSlotEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ExamId", "JobId", "SlotIndex")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Exams.ExamDraftSlotEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.Exams.ExamDraftBatchEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ExamId", "JobId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
