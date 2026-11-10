@@ -2,7 +2,7 @@
 
 **Status:** Đã kiểm chứng migration và API trên SQL Server cục bộ trong database review riêng; chưa kiểm chứng UI trên trình duyệt và chưa deploy. Xem mục 6 cho phần đã và chưa kiểm chứng. Liên quan: [domain M4-01](M4-01_QUESTION_DOMAIN.md), [wireframe](M4-01_QUESTION_BANK_WIREFRAME.md), [CSV contract M2-01](M2-01_deploy_network.md).
 
-Tất cả route nằm dưới `/api/v1`, yêu cầu đăng nhập (cookie) và token antiforgery `X-CSRF-TOKEN` cho `POST`/`PUT`. Trường học luôn lấy từ tài khoản đang đăng nhập, không nhận từ request. Trạng thái luôn do server quyết định; request không có trường `status`.
+OpenAPI 3.1 của các route dưới đây nằm ở [openapi/questions.json](openapi/questions.json), sinh từ endpoint thật (xem [openapi/README.md](openapi/README.md) để tạo lại). Tất cả route nằm dưới `/api/v1`, yêu cầu đăng nhập (cookie) và token antiforgery `X-CSRF-TOKEN` cho `POST`/`PUT`. Trường học luôn lấy từ tài khoản đang đăng nhập, không nhận từ request. Trạng thái luôn do server quyết định; request không có trường `status`.
 
 ## 1. Endpoint
 
@@ -125,6 +125,8 @@ Ràng buộc chính: khóa `(QuestionId, Revision)`, câu hỏi phải thuộc �
 | Áp migration lên SQL Server | Đạt trên database cục bộ riêng `AiExamBankM4Review20261103C` (2026-11-03); migration Identity và QuestionBank đều áp thành công. Chưa kiểm chứng trên staging |
 | Writer, catalog, truy vấn, API và IDOR trên database thật | Smoke API cục bộ đạt: tạo trường/bộ môn, gán môn, tạo Teacher qua SchoolAdmin, catalog 200, tạo DRAFT 201, lọc kết hợp và phân trang 200, detail 200, sửa tạo revision 2, baseRevision cũ 409, MinistryAdmin và Teacher trường khác không đọc được 404, Teacher trường khác không thấy trong list, ẩn danh 401. Chưa kiểm chứng race đồng thời hoặc import writer qua API |
 | UI nối API thật | Chưa chạy trên trình duyệt và chưa có recording. Frontend unit test 10/10 qua; Next.js production build hoàn thành biên dịch, kiểm tra TypeScript và sinh static pages |
+| Hai giáo viên hai bộ môn cùng một trường | Đạt trên SQL Server cục bộ (database `AiExamBankM4Smoke`, 2026-11-10), gọi API trực tiếp. Môn Toán gán cho bộ môn A, Vật lý gán cho bộ môn B. Catalog của mỗi người chỉ có môn của bộ môn mình. Giáo viên B: danh sách và tìm kiếm không thấy câu của A, xem 404, sửa 404, tạo vào môn Toán 403. Kiểm tra đối xứng cho giáo viên A với câu của B cũng đạt. Đây là script chạy tay, chưa là test trong repo |
+| OpenAPI | [openapi/questions.json](openapi/questions.json), 7 route, có ví dụ request và lỗi (thông báo lấy từ server thật). Bản sinh từ code đã so JSON thành công giữa API trước và sau khi chuyển response sang record có kiểu: giống từng byte với dữ liệu thật trên 8 GET. Chưa chạy bộ lint OpenAPI, và chưa có kiểm tra tự động bắt spec lệch khỏi code |
 | Bằng chứng AWS | Không áp dụng; M4-02 không gọi AI |
 
-Cần chạy trước khi đóng task: UI thật trên trình duyệt và quay recording; kiểm thêm scope giữa hai bộ môn cùng trường, race đồng thời và import writer. Taxonomy seed ở mục 5 vẫn cần owner xác nhận với tài liệu nguồn. Bằng chứng ở bảng trên là kiểm thử cục bộ, không thay thế staging.
+Cần chạy trước khi đóng task: UI thật trên trình duyệt và quay recording; kiểm thêm race đồng thời và import writer. Taxonomy seed ở mục 5 vẫn cần owner xác nhận với tài liệu nguồn. Bằng chứng ở bảng trên là kiểm thử cục bộ, không thay thế staging.

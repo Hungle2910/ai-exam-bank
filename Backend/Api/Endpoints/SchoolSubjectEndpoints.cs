@@ -16,9 +16,30 @@ internal static class SchoolSubjectEndpoints
 {
     public static void MapSchoolSubjectEndpoints(this WebApplication app)
     {
-        var admin = app.MapGroup("/api/v1/admin/schools/{schoolId:guid}/subjects").RequireAuthorization();
-        admin.MapGet("", ListAsync);
-        admin.MapPut("/{subjectId:guid}", AssignAsync);
+        var admin = app.MapGroup("/api/v1/admin/schools/{schoolId:guid}/subjects")
+            .RequireAuthorization()
+            .WithTags("School subjects");
+
+        admin.MapGet("", ListAsync)
+            .WithName("ListSchoolSubjects")
+            .WithSummary("Subjects the school teaches and the department that owns each")
+            .WithDescription("For a SchoolAdmin of that school or a MinistryAdmin. A school with no mapping has no subject to write questions for.")
+            .Produces<IReadOnlyList<SchoolSubjectResponse>>()
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized, StatusCodes.Status403Forbidden);
+
+        admin.MapPut("/{subjectId:guid}", AssignAsync)
+            .WithName("AssignSchoolSubject")
+            .WithSummary("Assign a subject to a department of the school")
+            .WithDescription("201 when the mapping is new, 200 when the subject is already assigned to that department or was moved. A subject can change department only while it has no questions (409 `SCHOOL_SUBJECT_HAS_QUESTIONS`). Requires the `X-CSRF-TOKEN` header.")
+            .Accepts<SchoolSubjectRequest>("application/json")
+            .Produces<SchoolSubjectMappingResponse>(StatusCodes.Status201Created)
+            .Produces<SchoolSubjectMappingResponse>()
+            .ProducesApiProblem(StatusCodes.Status409Conflict)
+            .ProducesEmptyStatuses(
+                StatusCodes.Status400BadRequest,
+                StatusCodes.Status401Unauthorized,
+                StatusCodes.Status403Forbidden,
+                StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> ListAsync(
@@ -34,7 +55,9 @@ internal static class SchoolSubjectEndpoints
                 (item, subject) => new { subjectId = subject.Id, subject.Code, subject.Name, item.DepartmentId })
             .OrderBy(item => item.Name)
             .ToListAsync(ct);
-        return Results.Ok(mappings);
+        return Results.Ok(mappings
+            .Select(item => new SchoolSubjectResponse(item.subjectId, item.Code, item.Name, item.DepartmentId))
+            .ToList());
     }
 
     private static async Task<IResult> AssignAsync(
@@ -112,7 +135,7 @@ internal static class SchoolSubjectEndpoints
             .Select(item => (Guid?)item.DepartmentId)
             .SingleOrDefaultAsync(ct);
 
-    private static object Mapping(Guid subjectId, Guid departmentId) => new { subjectId, departmentId };
+    private static SchoolSubjectMappingResponse Mapping(Guid subjectId, Guid departmentId) => new(subjectId, departmentId);
 
     private static IResult HasQuestions(HttpContext context) =>
         Conflict(context, "SCHOOL_SUBJECT_HAS_QUESTIONS", "The subject already has questions in its current department.");

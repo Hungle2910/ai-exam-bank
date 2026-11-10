@@ -35,6 +35,7 @@ builder.Services.AddDbContext<AiExamBankDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<ResourceAuthorizationService>();
 builder.Services.AddQuestionBank();
+builder.Services.AddQuestionBankOpenApi();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
@@ -147,6 +148,7 @@ app.MapJobEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
+    app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous();
     app.MapGet("/health/db", async (AiExamBankDbContext db) =>
         await db.Database.CanConnectAsync()
             ? Results.Ok(new { status = "connected" })

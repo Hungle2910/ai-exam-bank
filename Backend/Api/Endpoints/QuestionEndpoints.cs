@@ -14,12 +14,52 @@ internal static class QuestionEndpoints
 {
     public static void MapQuestionEndpoints(this WebApplication app)
     {
-        var api = app.MapGroup("/api/v1").RequireAuthorization();
-        api.MapGet("/catalog", GetCatalogAsync);
-        api.MapGet("/questions", SearchAsync);
-        api.MapGet("/questions/{id:guid}", GetAsync);
-        api.MapPost("/questions", CreateAsync);
-        api.MapPut("/questions/{id:guid}", UpdateAsync);
+        var api = app.MapGroup("/api/v1").RequireAuthorization().WithTags("Questions");
+
+        api.MapGet("/catalog", GetCatalogAsync)
+            .WithName("GetCatalog")
+            .WithSummary("Subjects and topics the caller can use")
+            .WithDescription("Subjects of the departments the caller teaches or heads, with their topics. `canWrite` is true only for a Teacher of the owning department; a DepartmentHead sees the subject to filter by it but cannot write.")
+            .Produces<IReadOnlyList<CatalogSubjectResponse>>()
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized, StatusCodes.Status403Forbidden);
+
+        api.MapGet("/questions", SearchAsync)
+            .WithName("SearchQuestions")
+            .WithSummary("List and filter questions")
+            .WithDescription("Only questions the caller may read are returned. `status` filters the latest revision of each question. `q` matches the stem or the question id. Results are ordered by last update, then id. The list never contains the answer key.")
+            .Produces<QuestionPageResponse>()
+            .ProducesApiProblem(StatusCodes.Status400BadRequest)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized, StatusCodes.Status403Forbidden);
+
+        api.MapGet("/questions/{id:guid}", GetAsync)
+            .WithName("GetQuestion")
+            .WithSummary("Latest revision with every revision's summary")
+            .WithDescription("A question that does not exist and one the caller may not read both return 404 `QUESTION_NOT_FOUND`, so existence is not disclosed.")
+            .Produces<QuestionDetailResponse>()
+            .ProducesApiProblem(StatusCodes.Status404NotFound)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
+
+        api.MapPost("/questions", CreateAsync)
+            .WithName("CreateQuestion")
+            .WithSummary("Create a question as revision 1 in status DRAFT")
+            .WithDescription("Requires the `X-CSRF-TOKEN` header. The school comes from the signed-in account and the status is decided by the server. The caller must be a Teacher of the department that owns the subject. A request without a valid CSRF token is rejected with an empty 400.")
+            .Accepts<QuestionRequest>("application/json")
+            .Produces<QuestionDetailResponse>(StatusCodes.Status201Created)
+            .ProducesApiProblem(StatusCodes.Status400BadRequest)
+            .ProducesApiProblem(StatusCodes.Status403Forbidden)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
+
+        api.MapPut("/questions/{id:guid}", UpdateAsync)
+            .WithName("UpdateQuestion")
+            .WithSummary("Create a new revision (DRAFT) of a question")
+            .WithDescription("Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `REVIEW_REQUIRED` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.")
+            .Accepts<QuestionRequest>("application/json")
+            .Produces<QuestionDetailResponse>()
+            .ProducesApiProblem(StatusCodes.Status400BadRequest)
+            .ProducesApiProblem(StatusCodes.Status403Forbidden)
+            .ProducesApiProblem(StatusCodes.Status404NotFound)
+            .ProducesApiProblem(StatusCodes.Status409Conflict)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
     }
 
     private static async Task<IResult> GetCatalogAsync(
@@ -30,14 +70,12 @@ internal static class QuestionEndpoints
         if (actor.SchoolId is not Guid schoolId) return Results.Forbid();
 
         var subjects = await catalog.ListAsync(actor.Id, schoolId, ct);
-        return Results.Ok(subjects.Select(subject => new
-        {
+        return Results.Ok(subjects.Select(subject => new CatalogSubjectResponse(
             subject.Id,
             subject.Code,
             subject.Name,
-            canWrite = subject.CanWrite,
-            topics = subject.Topics.Select(topic => new { topic.Id, topic.Code, topic.Name })
-        }));
+            subject.CanWrite,
+            subject.Topics.Select(topic => new CatalogTopicResponse(topic.Id, topic.Code, topic.Name)).ToList())).ToList());
     }
 
     private static async Task<IResult> SearchAsync(
@@ -73,24 +111,20 @@ internal static class QuestionEndpoints
         }
 
         var result = await queries.SearchAsync(query, ct);
-        return Results.Ok(new
-        {
-            items = result.Items.Select(item => new
-            {
-                id = item.QuestionId,
+        return Results.Ok(new QuestionPageResponse(
+            result.Items.Select(item => new QuestionSummaryResponse(
+                item.QuestionId,
                 item.Revision,
-                status = ApiNames.ToApi(item.Status),
-                stem = item.Stem,
-                subject = new { id = item.SubjectId, name = item.SubjectName },
-                topic = new { id = item.TopicId, name = item.TopicName },
-                difficulty = ApiNames.ToApi(item.Difficulty),
-                ownerUserId = item.OwnerUserId,
-                updatedAt = item.UpdatedAtUtc
-            }),
+                ApiNames.ToApi(item.Status),
+                item.Stem,
+                new NamedRef(item.SubjectId, item.SubjectName),
+                new NamedRef(item.TopicId, item.TopicName),
+                ApiNames.ToApi(item.Difficulty),
+                item.OwnerUserId,
+                item.UpdatedAtUtc)).ToList(),
             result.Page,
             result.PageSize,
-            result.Total
-        });
+            result.Total));
     }
 
     private static async Task<IResult> GetAsync(
@@ -178,7 +212,7 @@ internal static class QuestionEndpoints
                     {
                         ["code"] = "QUESTION_INVALID",
                         ["traceId"] = context.TraceIdentifier,
-                        ["errors"] = validation.Errors.Select(error => new { error.Code, error.Field, error.Message })
+                        ["errors"] = validation.Errors.Select(error => new QuestionFieldError(error.Code, error.Field, error.Message)).ToList()
                     });
                 return true;
             case QuestionAccessDeniedException:
@@ -202,30 +236,7 @@ internal static class QuestionEndpoints
             statusCode: status,
             extensions: new Dictionary<string, object?> { ["code"] = code, ["traceId"] = context.TraceIdentifier });
 
-    private static object ToResponse(QuestionDetail detail) => new
-    {
-        id = detail.QuestionId,
-        detail.Revision,
-        status = ApiNames.ToApi(detail.Status),
-        origin = ApiNames.ToApi(detail.Origin),
-        stem = detail.Stem,
-        options = detail.Options,
-        correctOption = detail.CorrectOption.ToString(),
-        subject = new { id = detail.SubjectId, name = detail.SubjectName },
-        topic = new { id = detail.TopicId, name = detail.TopicName },
-        difficulty = ApiNames.ToApi(detail.Difficulty),
-        source = detail.SourceText,
-        ownerUserId = detail.OwnerUserId,
-        updatedAt = detail.UpdatedAtUtc,
-        revisions = detail.Revisions.Select(revision => new
-        {
-            revision.Revision,
-            status = ApiNames.ToApi(revision.Status),
-            origin = ApiNames.ToApi(revision.Origin),
-            createdByUserId = revision.CreatedByUserId,
-            createdAt = revision.CreatedAtUtc
-        })
-    };
+    private static QuestionDetailResponse ToResponse(QuestionDetail detail) => QuestionDetailResponse.From(detail);
 }
 
 /// <summary>The body of POST and PUT. It carries content only; scope, status and origin are decided by the server.</summary>
