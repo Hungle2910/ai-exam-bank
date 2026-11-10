@@ -52,7 +52,7 @@ internal static class QuestionEndpoints
         api.MapPut("/questions/{id:guid}", UpdateAsync)
             .WithName("UpdateQuestion")
             .WithSummary("Create a new revision (DRAFT) of a question")
-            .WithDescription("Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `REVIEW_REQUIRED` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.")
+            .WithDescription("Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `PENDING_REVIEW` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.")
             .Accepts<QuestionRequest>("application/json")
             .Produces<QuestionDetailResponse>()
             .ProducesApiProblem(StatusCodes.Status400BadRequest)
@@ -266,7 +266,7 @@ internal static class ApiNames
     public static string ToApi(QuestionStatus status) => status switch
     {
         QuestionStatus.Draft => "DRAFT",
-        QuestionStatus.ReviewRequired => "REVIEW_REQUIRED",
+        QuestionStatus.PendingReview => "PENDING_REVIEW",
         QuestionStatus.Approved => "APPROVED",
         QuestionStatus.Rejected => "REJECTED",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
@@ -292,7 +292,7 @@ internal static class ApiNames
     public static QuestionStatus? ParseStatus(string? value) => value?.Trim().ToUpperInvariant() switch
     {
         "DRAFT" => QuestionStatus.Draft,
-        "REVIEW_REQUIRED" => QuestionStatus.ReviewRequired,
+        "PENDING_REVIEW" => QuestionStatus.PendingReview,
         "APPROVED" => QuestionStatus.Approved,
         "REJECTED" => QuestionStatus.Rejected,
         _ => null

@@ -45,7 +45,7 @@ internal sealed class QuestionAccess(AiExamBankDbContext db)
 
     public static SchoolResource ResourceOf(
         Guid schoolId, Guid departmentId, Guid ownerUserId, QuestionStatus latestStatus) =>
-        new(ResourceKind.Question, schoolId, departmentId, ownerUserId, latestStatus == QuestionStatus.ReviewRequired);
+        new(ResourceKind.Question, schoolId, departmentId, ownerUserId, latestStatus == QuestionStatus.PendingReview);
 
     public static IReadOnlyList<Guid> DepartmentsOf(IEnumerable<RoleAssignment> assignments, AppRole role) =>
         assignments.Where(assignment => assignment.Role == role && assignment.DepartmentId is not null)
@@ -60,5 +60,5 @@ internal sealed class QuestionAccess(AiExamBankDbContext db)
     public static Expression<Func<QuestionRow, bool>> VisibleTo(
         Guid actorUserId, IReadOnlyCollection<Guid> teacherDepartments, IReadOnlyCollection<Guid> headDepartments) =>
         row => (row.OwnerUserId == actorUserId && teacherDepartments.Contains(row.DepartmentId)) ||
-               (headDepartments.Contains(row.DepartmentId) && row.LatestStatus == QuestionStatus.ReviewRequired);
+               (headDepartments.Contains(row.DepartmentId) && row.LatestStatus == QuestionStatus.PendingReview);
 }

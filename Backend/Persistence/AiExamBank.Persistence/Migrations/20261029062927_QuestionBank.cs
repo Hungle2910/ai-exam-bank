@@ -139,7 +139,7 @@ namespace AiExamBank.Persistence.Migrations
                     table.CheckConstraint("CK_QuestionRevisions_ImportRow", "([ImportBatchId] IS NULL AND [ImportRowNumber] IS NULL AND [Origin] <> 'Import') OR ([ImportBatchId] IS NOT NULL AND [ImportRowNumber] >= 1 AND [Origin] = 'Import')");
                     table.CheckConstraint("CK_QuestionRevisions_Origin", "[Origin] IN ('Manual', 'Import', 'AiDraft', 'Seed')");
                     table.CheckConstraint("CK_QuestionRevisions_Revision", "[Revision] >= 1");
-                    table.CheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'ReviewRequired', 'Approved', 'Rejected')");
+                    table.CheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'PendingReview', 'Approved', 'Rejected')");
                     table.ForeignKey(
                         name: "FK_QuestionRevisions_AspNetUsers_CreatedByUserId",
                         column: x => x.CreatedByUserId,

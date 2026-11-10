@@ -67,7 +67,7 @@ Gửi duyệt và duyệt/trả lại thuộc luồng Review của M3, không th
 +----------------------------------------------------------------------------------+
 ```
 
-- Chỉ có **Lưu nháp**. Nút "Gửi duyệt" nằm ở luồng Review (M3) và gọi riêng sau khi lưu; client không tự đặt trạng thái. Mock hiện đặt `REVIEW_REQUIRED` từ client và cần bỏ.
+- Chỉ có **Lưu nháp**. Nút "Gửi duyệt" nằm ở luồng Review (M3) và gọi riêng sau khi lưu; client không tự đặt trạng thái. Mock hiện đặt `PENDING_REVIEW` từ client và cần bỏ.
 - Đổi môn thì xóa chủ đề đã chọn. Môn không đổi được sau khi câu hỏi đã tồn tại; editor khóa ô Môn khi sửa.
 - Lỗi theo từng ô lấy từ `errors[].field` của server (`stem`, `options[2]`, `correctOption`, `difficulty`, `topicId`, `source`); validate phía client chỉ để phản hồi nhanh, server vẫn quyết định.
 - Đếm ký tự theo giới hạn trong domain (nội dung 4.000, phương án 1.000, nguồn 2.000).
@@ -128,7 +128,7 @@ Mutation cần antiforgery token theo [ADR 0006](adr/0006-identity-session-and-a
 | Trường `points` trên câu hỏi, cột Điểm, ô nhập Điểm | Bỏ; điểm thuộc blueprint |
 | Môn và Chủ đề là ô nhập tự do | Dropdown theo catalog; chủ đề phụ thuộc môn |
 | Chủ đề mẫu Logarit, Dao động cơ, Bảng tuần hoàn | Thay theo taxonomy đã chốt ([mục 3](M4-01_QUESTION_DOMAIN.md)) |
-| Nút "Gửi duyệt" đặt `REVIEW_REQUIRED` từ client | Bỏ khỏi editor; gửi duyệt qua Review (M3) |
+| Nút "Gửi duyệt" đặt `PENDING_REVIEW` từ client | Bỏ khỏi editor; gửi duyệt qua Review (M3) |
 | Nút xóa với câu `DRAFT` | Chờ quyết định (mục 8) |
 | Lọc phía client trên toàn bộ mảng | Lọc và phân trang phía server |
 | Lịch sử chỉ liệt kê số revision | Thêm trạng thái, nguồn gốc, thời điểm từng revision |

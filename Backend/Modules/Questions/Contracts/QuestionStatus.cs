@@ -4,7 +4,7 @@ namespace AiExamBank.Modules.Questions.Contracts;
 public enum QuestionStatus
 {
     Draft = 1,
-    ReviewRequired = 2,
+    PendingReview = 2,
     Approved = 3,
     Rejected = 4
 }

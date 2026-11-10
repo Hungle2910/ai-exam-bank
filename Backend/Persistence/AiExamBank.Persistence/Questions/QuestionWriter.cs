@@ -87,7 +87,7 @@ internal sealed class QuestionWriter(AiExamBankDbContext db, TimeProvider timePr
             throw new QuestionAccessDeniedException("The actor may not edit this question.");
 
         // A newer draft would pull the question out of the reviewer's queue while it is being decided.
-        if (latestStatus == QuestionStatus.ReviewRequired)
+        if (latestStatus == QuestionStatus.PendingReview)
             throw new QuestionConflictException("The question is waiting for review and cannot be edited until it is decided.");
 
         if (question.LatestRevision != command.BaseRevision)

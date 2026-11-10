@@ -90,11 +90,11 @@
           {
             "name": "status",
             "in": "query",
-            "description": "Status of the latest revision: DRAFT, REVIEW_REQUIRED, APPROVED or REJECTED.",
+            "description": "Status of the latest revision: DRAFT, PENDING_REVIEW, APPROVED or REJECTED.",
             "schema": {
               "enum": [
                 "DRAFT",
-                "REVIEW_REQUIRED",
+                "PENDING_REVIEW",
                 "APPROVED",
                 "REJECTED"
               ],
@@ -368,7 +368,7 @@
           "Questions"
         ],
         "summary": "Create a new revision (DRAFT) of a question",
-        "description": "Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `REVIEW_REQUIRED` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.",
+        "description": "Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `PENDING_REVIEW` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.",
         "operationId": "UpdateQuestion",
         "parameters": [
           {
@@ -828,7 +828,7 @@
           "status": {
             "enum": [
               "DRAFT",
-              "REVIEW_REQUIRED",
+              "PENDING_REVIEW",
               "APPROVED",
               "REJECTED"
             ],
@@ -1037,7 +1037,7 @@
           "status": {
             "enum": [
               "DRAFT",
-              "REVIEW_REQUIRED",
+              "PENDING_REVIEW",
               "APPROVED",
               "REJECTED"
             ],
@@ -1087,7 +1087,7 @@
           "status": {
             "enum": [
               "DRAFT",
-              "REVIEW_REQUIRED",
+              "PENDING_REVIEW",
               "APPROVED",
               "REJECTED"
             ],

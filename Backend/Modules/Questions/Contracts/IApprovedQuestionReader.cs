@@ -51,7 +51,7 @@ public sealed record ApprovedQuestionCount(Guid TopicId, Difficulty Difficulty, 
 
 /// <summary>
 /// Read side for exam selection. It returns only revisions whose status is <see cref="QuestionStatus.Approved"/>;
-/// draft, review-required and rejected content is never visible through it. The caller authorizes the actor
+/// draft, pending-review and rejected content is never visible through it. The caller authorizes the actor
 /// against the blueprint; whether a teacher may read the shared bank is a pending M3 permission decision.
 /// </summary>
 public interface IApprovedQuestionReader

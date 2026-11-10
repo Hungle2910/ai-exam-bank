@@ -127,7 +127,7 @@ internal static class QuestionOpenApi
     }
 
     private static readonly string[] Difficulties = ["EASY", "MEDIUM", "HARD"];
-    private static readonly string[] Statuses = ["DRAFT", "REVIEW_REQUIRED", "APPROVED", "REJECTED"];
+    private static readonly string[] Statuses = ["DRAFT", "PENDING_REVIEW", "APPROVED", "REJECTED"];
     private static readonly string[] Origins = ["MANUAL", "IMPORT", "AI_DRAFT", "SEED"];
 
     private static Task DescribeSearchParameters(OpenApiOperation operation, OpenApiOperationTransformerContext context, CancellationToken ct)
@@ -140,7 +140,7 @@ internal static class QuestionOpenApi
             ["subjectId"] = "Only questions of this subject.",
             ["topicId"] = "Only questions of this topic.",
             ["difficulty"] = "EASY, MEDIUM or HARD.",
-            ["status"] = "Status of the latest revision: DRAFT, REVIEW_REQUIRED, APPROVED or REJECTED.",
+            ["status"] = "Status of the latest revision: DRAFT, PENDING_REVIEW, APPROVED or REJECTED.",
             ["q"] = "Text found in the stem, or a question id. At most 200 characters.",
             ["page"] = "1-based page number, at most 10000. Default 1.",
             ["pageSize"] = "Items per page, 1 to 100. Default 20.",

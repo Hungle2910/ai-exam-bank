@@ -100,9 +100,9 @@ Nhãn là do người soạn gán và người duyệt xác nhận. `DifficultyA
 
 ## 6. Trạng thái và bất biến
 
-Theo [ARCHITECTURE.md](ARCHITECTURE.md) đang merge trên `dev`: `DRAFT → REVIEW_REQUIRED → APPROVED/REJECTED`, và sửa nội dung `APPROVED` tạo revision `DRAFT` mới.
+Trạng thái: `DRAFT → PENDING_REVIEW → APPROVED/REJECTED`, và sửa nội dung `APPROVED` tạo revision `DRAFT` mới. Tên `PENDING_REVIEW` thống nhất với nhánh `feat/m3-03-review-api` của M3.
 
-> **Cần M3 xác nhận:** nhánh `feat/m3-03-review-api` (chưa merge) dùng `PENDING_REVIEW` thay cho `REVIEW_REQUIRED`. M4 dùng `REVIEW_REQUIRED` theo baseline đã merge cho đến khi M3 và M4 thống nhất một tên; không để hai bộ trạng thái cùng tồn tại.
+> [ARCHITECTURE.md](ARCHITECTURE.md) trên `dev` vẫn ghi `REVIEW_REQUIRED`; cần cập nhật theo tên mới khi M3-03 merge, để không có hai bộ trạng thái cùng tồn tại.
 
 Bất biến server cưỡng chế:
 
@@ -128,7 +128,7 @@ Mục tiêu: có dữ liệu để test CRUD, filter, import, blueprint và **ga
 - Mỗi môn: 9 ô (3 chủ đề × 3 độ khó).
   - 6 ô có 2 câu `APPROVED` (đủ).
   - 1 ô có 1 câu `APPROVED` (thiếu 1 so với nhu cầu 2).
-  - 2 ô có 0 câu `APPROVED` nhưng có câu `DRAFT`, `REVIEW_REQUIRED` hoặc `REJECTED` (để chứng minh selection chỉ lấy approved).
+  - 2 ô có 0 câu `APPROVED` nhưng có câu `DRAFT`, `PENDING_REVIEW` hoặc `REJECTED` (để chứng minh selection chỉ lấy approved).
 - Quy mô ước tính: khoảng 15–20 câu mỗi môn, khoảng 50 câu toàn bộ, nội dung lấy từ tài liệu nguồn.
 - Bảng ô thiếu được liệt kê trong file seed để M1-03 kiểm gap report có số thiếu chính xác.
 - Câu `APPROVED` trong seed bỏ qua luồng review nên `Origin=SEED`. Seed này **không chạy ở Production**.
@@ -170,7 +170,7 @@ Các mục 2-6 đã được người phụ trách duyệt theo phương án đ�
 |---|---|---|---|
 | 1 | Chủ đề ở mục 3 có khớp tài liệu nguồn không | Thiên Phúc | **Còn mở**; đối chiếu với tài liệu nguồn |
 | 2 | `SchoolSubjects` hay cột `SubjectId` trên `Departments` | Minh Phúc | Đã duyệt: dùng `SchoolSubjects` |
-| 3 | `REVIEW_REQUIRED` hay `PENDING_REVIEW` | Minh Phúc, Thiên Phúc | Đã duyệt: `REVIEW_REQUIRED` theo ARCHITECTURE.md |
+| 3 | `REVIEW_REQUIRED` hay `PENDING_REVIEW` | Minh Phúc, Thiên Phúc | Đã chốt: `PENDING_REVIEW`, theo nhánh M3-03 |
 | 4 | Quyền đọc bank trong bộ môn cho Teacher | Minh Phúc | Đã duyệt, nhưng quy tắc cụ thể (Teacher có đọc câu của đồng nghiệp trong bộ môn không) chưa được ghi lại; Thiên Phúc bổ sung vào mục 7 |
 | 5 | Cột CSV và cách tra tên môn/chủ đề | Hữu Phước | Đã duyệt: tra theo tên trong catalog của trường |
 | 6 | `TopicId` trong blueprint và cách M1 dùng seed | Gia Hưng | Đã duyệt: `TopicId` cố định theo seed |

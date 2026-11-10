@@ -12,7 +12,7 @@ import { ApiError, fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
    ============================================================ */
 
 type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-type QStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'APPROVED' | 'REJECTED';
+type QStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 type Origin = 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
 
 interface Ref { id: string; name: string }
@@ -40,7 +40,7 @@ const DIFF: Record<Difficulty, [string, string]> = {
   EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
 };
 const STATUS: Record<QStatus, [string, string]> = {
-  DRAFT: ['Nháp', 'badge-gray'], REVIEW_REQUIRED: ['Chờ duyệt', 'badge-blue'], APPROVED: ['Đã duyệt', 'badge-green'], REJECTED: ['Bị trả lại', 'badge-red'],
+  DRAFT: ['Nháp', 'badge-gray'], PENDING_REVIEW: ['Chờ duyệt', 'badge-blue'], APPROVED: ['Đã duyệt', 'badge-green'], REJECTED: ['Bị trả lại', 'badge-red'],
 };
 const ORIGIN: Record<Origin, string> = { MANUAL: 'Nhập tay', IMPORT: 'Import', AI_DRAFT: 'AI nháp', SEED: 'Dữ liệu mẫu' };
 
@@ -77,7 +77,7 @@ const MOCK_QUESTIONS: QuestionDetail[] = [
     'Hàm số y = x³ − 3x + 2 đồng biến trên khoảng nào?', ['(−∞; −1) và (1; +∞)', '(−1; 1)', '(−∞; 1)', '(−1; +∞)'], 'A', '2026-10-17T01:10:00Z'),
   mockQuestion('q-1002', { id: 'sub-math', name: 'Toán' }, { id: 'top-integral', name: 'Nguyên hàm và tích phân' }, 'EASY', 'APPROVED',
     'Giá trị của tích phân ∫₀¹ 2x dx bằng bao nhiêu?', ['0', '1', '2', '1/2'], 'B', '2026-10-16T09:40:00Z'),
-  mockQuestion('q-1003', { id: 'sub-phys', name: 'Vật lý' }, { id: 'top-gas', name: 'Khí lí tưởng' }, 'EASY', 'REVIEW_REQUIRED',
+  mockQuestion('q-1003', { id: 'sub-phys', name: 'Vật lý' }, { id: 'top-gas', name: 'Khí lí tưởng' }, 'EASY', 'PENDING_REVIEW',
     'Trong quá trình đẳng nhiệt của một lượng khí lí tưởng xác định, đại lượng nào không đổi?', ['Nhiệt độ', 'Áp suất', 'Thể tích', 'Khối lượng riêng'], 'A', '2026-10-16T08:12:00Z'),
   mockQuestion('q-1004', { id: 'sub-chem', name: 'Hóa học' }, { id: 'top-ester', name: 'Ester – Lipid' }, 'EASY', 'APPROVED',
     'Chất nào sau đây là ester?', ['CH₃COOC₂H₅', 'C₂H₅OH', 'CH₃COOH', 'CH₃CHO'], 'A', '2026-10-15T14:05:00Z'),
@@ -171,7 +171,7 @@ export default function QuestionsPage() {
   // A department head sees subjects to filter by them but cannot write; editing is for the owner outside review.
   const canCreate = isMock || catalog.some(s => s.canWrite);
   const canEdit = (q: QuestionItem) =>
-    q.status !== 'REVIEW_REQUIRED' && (isMock || (!!user && q.ownerUserId.toLowerCase() === user.id.toLowerCase()));
+    q.status !== 'PENDING_REVIEW' && (isMock || (!!user && q.ownerUserId.toLowerCase() === user.id.toLowerCase()));
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   const onSaved = (mockDetail?: QuestionDetail) => {

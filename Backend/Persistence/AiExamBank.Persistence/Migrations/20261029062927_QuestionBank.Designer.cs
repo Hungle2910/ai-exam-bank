@@ -270,7 +270,7 @@ namespace AiExamBank.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_QuestionRevisions_Revision", "[Revision] >= 1");
 
-                            t.HasCheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'ReviewRequired', 'Approved', 'Rejected')");
+                            t.HasCheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'PendingReview', 'Approved', 'Rejected')");
                         });
                 });
 

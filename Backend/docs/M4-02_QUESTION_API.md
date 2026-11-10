@@ -20,7 +20,7 @@ Hai route quản trị dành cho `SchoolAdmin` của trường đó hoặc `Mini
 
 ### `GET /questions`
 
-Tham số: `subjectId`, `topicId`, `difficulty` (`EASY`, `MEDIUM`, `HARD`), `status` (`DRAFT`, `REVIEW_REQUIRED`, `APPROVED`, `REJECTED`), `q`, `page` (từ 1), `pageSize` (mặc định 20, tối đa 100). Bộ lọc `status` áp dụng cho revision mới nhất của mỗi câu. `q` tìm trong nội dung hoặc khớp mã câu hỏi. Kết quả sắp theo thời điểm cập nhật mới nhất, rồi theo mã câu hỏi.
+Tham số: `subjectId`, `topicId`, `difficulty` (`EASY`, `MEDIUM`, `HARD`), `status` (`DRAFT`, `PENDING_REVIEW`, `APPROVED`, `REJECTED`), `q`, `page` (từ 1), `pageSize` (mặc định 20, tối đa 100). Bộ lọc `status` áp dụng cho revision mới nhất của mỗi câu. `q` tìm trong nội dung hoặc khớp mã câu hỏi. Kết quả sắp theo thời điểm cập nhật mới nhất, rồi theo mã câu hỏi.
 
 ```json
 {
@@ -65,7 +65,7 @@ Lỗi là Problem Details có `code` ổn định và `traceId`.
 | 400 | `QUESTION_BASE_REVISION_REQUIRED` | `PUT` thiếu `baseRevision` |
 | 403 | `QUESTION_FORBIDDEN` | Không có quyền ghi vào môn hoặc sửa câu hỏi này |
 | 404 | `QUESTION_NOT_FOUND` | Không tồn tại, hoặc người dùng không được đọc (không tiết lộ sự tồn tại) |
-| 409 | `QUESTION_CONFLICT` | `baseRevision` không còn là mới nhất, ghi đồng thời, hoặc câu hỏi đang chờ duyệt (`REVIEW_REQUIRED`) nên chưa sửa được |
+| 409 | `QUESTION_CONFLICT` | `baseRevision` không còn là mới nhất, ghi đồng thời, hoặc câu hỏi đang chờ duyệt (`PENDING_REVIEW`) nên chưa sửa được |
 
 Mã lỗi theo trường nằm trong `errors[].code`: `QUESTION_STEM_REQUIRED`, `QUESTION_STEM_TOO_LONG`, `QUESTION_OPTIONS_COUNT_INVALID`, `QUESTION_OPTION_REQUIRED`, `QUESTION_OPTION_TOO_LONG`, `QUESTION_OPTIONS_DUPLICATE`, `QUESTION_CORRECT_OPTION_REQUIRED`, `QUESTION_CORRECT_OPTION_INVALID`, `QUESTION_DIFFICULTY_INVALID`, `QUESTION_SUBJECT_REQUIRED`, `QUESTION_SUBJECT_NOT_FOUND`, `QUESTION_SUBJECT_IMMUTABLE`, `QUESTION_TOPIC_REQUIRED`, `QUESTION_TOPIC_NOT_FOUND`, `QUESTION_TOPIC_SUBJECT_MISMATCH`, `QUESTION_SOURCE_TOO_LONG`. `field` có dạng `stem`, `options[2]`, `correctOption`, `difficulty`, `subjectId`, `topicId`, `source`.
 
@@ -74,12 +74,12 @@ Mã lỗi theo trường nằm trong `errors[].code`: `QUESTION_STEM_REQUIRED`, 
 Quy tắc dùng `ResourceAccessPolicy` hiện có của M3, không nới thêm:
 
 - **Teacher** tạo câu hỏi cho môn thuộc bộ môn mình được phân công; đọc và sửa câu do chính mình sở hữu. Không sửa được khi revision mới nhất đang chờ duyệt, để câu không rút khỏi hàng đợi của người duyệt; sau khi có quyết định (duyệt hoặc trả lại) thì sửa tiếp bằng revision mới. Quy tắc này cần M3 xác nhận.
-- **DepartmentHead** đọc câu đã gửi duyệt (`REVIEW_REQUIRED`) trong bộ môn mình; không sửa.
+- **DepartmentHead** đọc câu đã gửi duyệt (`PENDING_REVIEW`) trong bộ môn mình; không sửa.
 - **SchoolAdmin**, **MinistryAdmin** không đọc hay sửa nội dung câu hỏi.
 - Quyền được đọc lại từ bảng phân quyền ở mỗi request, nên thu hồi vai trò có hiệu lực ngay.
 - Bộ lọc danh sách là cùng quy tắc của policy viết dạng điều kiện truy vấn; một test so khớp hai bên trên mọi tổ hợp vai trò, chủ sở hữu và trạng thái.
 
-Chưa có chuyển trạng thái nào trong module này. `REVIEW_REQUIRED`, `APPROVED`, `REJECTED` do luồng Review của M3 ghi.
+Chưa có chuyển trạng thái nào trong module này. `PENDING_REVIEW`, `APPROVED`, `REJECTED` do luồng Review của M3 ghi.
 
 ## 4. Hợp đồng writer cho Import (M2)
 
