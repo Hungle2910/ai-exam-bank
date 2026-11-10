@@ -6,7 +6,7 @@ using Microsoft.OpenApi;
 namespace AiExamBank.Api.Endpoints;
 
 /// <summary>
-/// OpenAPI for the question bank (M4-02) and the school-subject administration routes it depends on.
+/// OpenAPI for the question bank (M4-02, M4-03) and the school-subject administration routes it depends on.
 /// The document is generated from the mapped endpoints, so a route that is not mapped cannot be documented.
 /// It is served in Development at <c>/openapi/questions.json</c>; the committed copy under
 /// <c>Backend/docs/openapi/</c> is regenerated from the running API (see that folder's README).
@@ -45,10 +45,10 @@ internal static class QuestionOpenApi
     {
         document.Info = new OpenApiInfo
         {
-            Title = "AI Exam Bank - Question bank API (M4-02)",
+            Title = "AI Exam Bank - Question bank API (M4-02, M4-03)",
             Version = "v1",
             Description =
-                "Question bank CRUD with revisions, filtering and paging, plus the routes that assign a subject to a department.\n\n" +
+                "Question bank CRUD with immutable revisions, version history, filtering and paging, plus the routes that assign a subject to a department.\n\n" +
                 "**Authentication.** Sign in with `POST /auth/login` (outside this document); the session is an HttpOnly cookie. " +
                 "`POST` and `PUT` also need the `X-CSRF-TOKEN` header: call `GET /auth/csrf` after signing in and send the returned `token`.\n\n" +
                 "**Scope.** The school always comes from the signed-in account. A Teacher reads and edits only the questions they own, " +
@@ -108,6 +108,8 @@ internal static class QuestionOpenApi
                     Problem(409, "The question is at revision 2, not revision 1.", "QUESTION_CONFLICT"));
                 break;
             case "GetQuestion":
+            case "GetQuestionHistory":
+            case "GetQuestionRevision":
                 ProblemExample(operation, "404", "Unknown, or not readable by the caller",
                     Problem(404, "The question was not found.", "QUESTION_NOT_FOUND"));
                 break;
@@ -190,6 +192,15 @@ internal static class QuestionOpenApi
             SetEnum(schema, "origin", Origins);
             SetEnum(schema, "difficulty", Difficulties);
             SetEnum(schema, "correctOption", ["A", "B", "C", "D"]);
+        }
+        else if (model == typeof(QuestionRevisionDetailResponse))
+        {
+            SetEnum(schema, "status", Statuses);
+            SetEnum(schema, "origin", Origins);
+            SetEnum(schema, "difficulty", Difficulties);
+            SetEnum(schema, "correctOption", ["A", "B", "C", "D"]);
+            Describe(schema, "isLatest", "True for the revision the question currently points at.");
+            Describe(schema, "isApprovedInUse", "True for the newest approved revision, the one exam selection uses.");
         }
         else if (model == typeof(QuestionRevisionResponse))
         {

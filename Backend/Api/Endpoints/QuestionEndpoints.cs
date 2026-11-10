@@ -39,6 +39,22 @@ internal static class QuestionEndpoints
             .ProducesApiProblem(StatusCodes.Status404NotFound)
             .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
 
+        api.MapGet("/questions/{id:guid}/revisions", GetHistoryAsync)
+            .WithName("GetQuestionHistory")
+            .WithSummary("Every revision of a question with its content, newest first")
+            .WithDescription("Revisions are immutable: an edit is a new revision, so older entries never change. `isLatest` marks the revision the question points at; `isApprovedInUse` marks the newest approved revision, which exam selection uses even while a newer draft is waiting for review. Answer keys are included, so the caller needs the same read access as `GET /questions/{id}`; a question that does not exist and one the caller may not read both return 404.")
+            .Produces<QuestionHistoryResponse>()
+            .ProducesApiProblem(StatusCodes.Status404NotFound)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
+
+        api.MapGet("/questions/{id:guid}/revisions/{revision:int}", GetRevisionAsync)
+            .WithName("GetQuestionRevision")
+            .WithSummary("One revision with its content")
+            .WithDescription("404 `QUESTION_NOT_FOUND` when the question or the revision does not exist, or when the caller may not read the question.")
+            .Produces<QuestionRevisionDetailResponse>()
+            .ProducesApiProblem(StatusCodes.Status404NotFound)
+            .ProducesEmptyStatuses(StatusCodes.Status401Unauthorized);
+
         api.MapPost("/questions", CreateAsync)
             .WithName("CreateQuestion")
             .WithSummary("Create a question as revision 1 in status DRAFT")
@@ -137,6 +153,30 @@ internal static class QuestionEndpoints
         return detail is null
             ? Problem(context, StatusCodes.Status404NotFound, "QUESTION_NOT_FOUND", "The question was not found.")
             : Results.Ok(ToResponse(detail));
+    }
+
+    private static async Task<IResult> GetHistoryAsync(
+        Guid id, HttpContext context, UserManager<AppUser> userManager, IQuestionQueries queries, CancellationToken ct)
+    {
+        var actor = await userManager.GetUserAsync(context.User);
+        if (actor is null) return Results.Unauthorized();
+
+        var history = await queries.GetHistoryAsync(actor.Id, id, ct);
+        return history is null
+            ? Problem(context, StatusCodes.Status404NotFound, "QUESTION_NOT_FOUND", "The question was not found.")
+            : Results.Ok(QuestionHistoryResponse.From(history));
+    }
+
+    private static async Task<IResult> GetRevisionAsync(
+        Guid id, int revision, HttpContext context, UserManager<AppUser> userManager, IQuestionQueries queries, CancellationToken ct)
+    {
+        var actor = await userManager.GetUserAsync(context.User);
+        if (actor is null) return Results.Unauthorized();
+
+        var found = await queries.GetRevisionAsync(actor.Id, id, revision, ct);
+        return found is null
+            ? Problem(context, StatusCodes.Status404NotFound, "QUESTION_NOT_FOUND", "The question was not found.")
+            : Results.Ok(QuestionRevisionDetailResponse.From(found));
     }
 
     private static async Task<IResult> CreateAsync(

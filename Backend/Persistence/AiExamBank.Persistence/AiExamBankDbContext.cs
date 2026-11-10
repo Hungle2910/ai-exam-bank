@@ -22,6 +22,18 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
     public DbSet<QuestionRevisionEntity> QuestionRevisions => Set<QuestionRevisionEntity>();
     public DbSet<QuestionOptionEntity> QuestionOptions => Set<QuestionOptionEntity>();
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        QuestionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        QuestionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder) //liên kết mỗi vai trò với một người dùng và lưu tên vai trò dạng chữ
     {
         base.OnModelCreating(modelBuilder);

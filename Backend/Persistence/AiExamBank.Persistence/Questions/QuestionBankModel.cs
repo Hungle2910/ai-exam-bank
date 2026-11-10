@@ -51,12 +51,25 @@ internal static class QuestionBankModel
 
         modelBuilder.Entity<QuestionEntity>(entity =>
         {
-            entity.ToTable("Questions", table => table.HasCheckConstraint(
-                "CK_Questions_LatestRevision", "[LatestRevision] >= 1"));
+            entity.ToTable("Questions", table =>
+            {
+                // EF must know about the trigger: it changes how SQL Server accepts the UPDATE ... OUTPUT that reads the row version back.
+                table.HasTrigger("TR_Questions_Immutable");
+                table.HasCheckConstraint("CK_Questions_LatestRevision", "[LatestRevision] >= 1");
+            });
             entity.Property(x => x.RowVersion).IsRowVersion();
             entity.HasAlternateKey(x => new { x.Id, x.SubjectId });
             entity.HasIndex(x => new { x.SchoolId, x.SubjectId, x.UpdatedAtUtc });
-            entity.HasIndex(x => x.OwnerUserId);
+            // A teacher's own list: seek the owner, read newest first, stop after the page. The included columns answer the
+            // visibility test without touching the table.
+            entity.HasIndex(x => new { x.OwnerUserId, x.UpdatedAtUtc, x.Id })
+                .IsDescending(false, true, false)
+                .IncludeProperties(x => new { x.SchoolId, x.DepartmentId, x.SubjectId, x.LatestRevision });
+            // A department head's list, and the foreign key to SchoolSubjects: school, subject and department are all
+            // equalities, so the rows come out already ordered by last update.
+            entity.HasIndex(x => new { x.SchoolId, x.SubjectId, x.DepartmentId, x.UpdatedAtUtc, x.Id })
+                .IsDescending(false, false, false, true, false)
+                .IncludeProperties(x => new { x.OwnerUserId, x.LatestRevision });
             // The department must be the one that owns this subject in this school, so scope cannot drift from the catalog.
             entity.HasOne<SchoolSubjectEntity>().WithMany()
                 .HasForeignKey(x => new { x.SchoolId, x.SubjectId, x.DepartmentId })
@@ -71,6 +84,7 @@ internal static class QuestionBankModel
         {
             entity.ToTable("QuestionRevisions", table =>
             {
+                table.HasTrigger("TR_QuestionRevisions_Immutable");
                 table.HasCheckConstraint("CK_QuestionRevisions_Revision", "[Revision] >= 1");
                 table.HasCheckConstraint("CK_QuestionRevisions_CorrectOption", "[CorrectOption] IN ('A', 'B', 'C', 'D')");
                 table.HasCheckConstraint("CK_QuestionRevisions_Status", InList("Status", Enum.GetNames<QuestionStatus>()));
@@ -109,8 +123,11 @@ internal static class QuestionBankModel
 
         modelBuilder.Entity<QuestionOptionEntity>(entity =>
         {
-            entity.ToTable("QuestionOptions", table => table.HasCheckConstraint(
-                "CK_QuestionOptions_Label", "[Label] IN ('A', 'B', 'C', 'D')"));
+            entity.ToTable("QuestionOptions", table =>
+            {
+                table.HasTrigger("TR_QuestionOptions_Immutable");
+                table.HasCheckConstraint("CK_QuestionOptions_Label", "[Label] IN ('A', 'B', 'C', 'D')");
+            });
             entity.HasKey(x => new { x.QuestionId, x.Revision, x.Label });
             entity.Property(x => x.Label).HasMaxLength(1).IsRequired();
             entity.Property(x => x.Text).HasMaxLength(QuestionRules.MaxOptionLength).IsRequired();

@@ -1,0 +1,7 @@
+CASE 1 head queue, page 1 | 'QuestionRevisions'. scans 0, reads 244 | 'Questions'. scans 1, reads 1025
+CASE 2 head queue, topic+difficulty, page 1 | 'QuestionRevisions'. scans 0, reads 802 | 'Questions'. scans 1, reads 1025
+CASE 3 head queue count | 'Questions'. scans 1, reads 1025 | 'QuestionRevisions'. scans 1, reads 1668
+CASE 4 teacher own list, page 1 | 'QuestionRevisions'. scans 0, reads 68 | 'Questions'. scans 1, reads 1025
+CASE 5 teacher own list, deep page | 'QuestionRevisions'. scans 0, reads 3126 | 'Questions'. scans 1, reads 1025
+CASE 6 teacher own list, topic+difficulty, page 1 | 'QuestionRevisions'. scans 0, reads 195 | 'Questions'. scans 1, reads 1025
+CASE 7 teacher own count | 'QuestionRevisions'. scans 1, reads 1056 | 'Questions'. scans 1, reads 1025

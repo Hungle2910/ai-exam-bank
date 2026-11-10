@@ -1,0 +1,28 @@
+statement_start|runs|logical_reads|ms|rows_returned|plan_shape
+---------------|----|-------------|--|-------------|----------
+(@query_SchoolId uniqueidentifier,@headDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueidentifier,@difficulty nvarchar(16),@p|2|192306|163|0|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@_8__locals1_text_co|2|10597|31|0|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@p int,@p6 int)SELEC|4|6213|13|20|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@_8__locals1_text_co|2|6056|784|1|scan
+(@schoolId uniqueidentifier,@subjectId uniqueidentifier)SELECT [q].[TopicId], [q].[Difficulty], COUNT(*) AS [Count] FROM [QuestionRevisions] AS [q] IN|2|3865|155|3|scan
+(@query_SchoolId uniqueidentifier,@headDepartments1 uniqueidentifier,@subjectId uniqueidentifier)SELECT COUNT(*) FROM [Questions] AS [q] INNER JOIN [Q|2|2729|46|1|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@status nvarchar(16)|2|2729|31|1|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier)SELECT COUNT(*) FROM|4|2391|48|1|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueident|2|1752|11|20|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueident|2|1577|25|1|scan
+(@query_SchoolId uniqueidentifier,@headDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@p int,@p6 int)SELECT [q].[Id] AS [QuestionId], [q0].|2|1337|50|20|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueident|2|1303|16|1|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@status nvarchar(16)|2|1289|9|20|scan
+(@query_SchoolId uniqueidentifier,@actorUserId uniqueidentifier,@teacherDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueident|2|1224|12|20|scan
+(@p int,@query_SchoolId uniqueidentifier,@query_TopicId uniqueidentifier,@query_Difficulty nvarchar(16))SELECT TOP(@p) [q].[QuestionId], [q].[Revision|2|651|1|50|scan
+(@questionIds1 uniqueidentifier,@questionIds2 uniqueidentifier,@questionIds3 uniqueidentifier,@questionIds4 uniqueidentifier,@questionIds5 uniqueident|2|205|0|336|seek
+(@query_SchoolId uniqueidentifier,@headDepartments1 uniqueidentifier,@subjectId uniqueidentifier,@topicId uniqueidentifier,@difficulty nvarchar(16))SE|2|12|0|1|scan
+(@questionId uniqueidentifier,@latest_Revision int)SELECT [q].[Text] FROM [QuestionOptions] AS [q] WHERE [q].[QuestionId] = @questionId AND [q].[Revis|2|4|0|4|seek
+SELECT TOP(1) [q].[Id] FROM [Questions] AS [q] WHERE [q].[OwnerUserId] = '44444444-4444-4444-4444-000000000001' AND [q].[LatestRevision] = 4|2|4|0|1|scan
+(@questionId uniqueidentifier,@revision int)SELECT [q].[QuestionId], [q].[Revision], [q].[Label], [q].[Text] FROM [QuestionOptions] AS [q] WHERE [q].[|2|4|0|4|seek
+(@questionId uniqueidentifier)SELECT [q].[QuestionId], [q].[Revision], [q].[Label], [q].[Text] FROM [QuestionOptions] AS [q] WHERE [q].[QuestionId] = |2|4|0|16|seek
+(@questionId uniqueidentifier)SELECT [q].[QuestionId], [q].[Revision], [q].[CorrectOption], [q].[CreatedAtUtc], [q].[CreatedByUserId], [q].[Difficulty|4|3|0|4|seek
+(@questionId uniqueidentifier,@revision int)SELECT TOP(2) [q].[QuestionId], [q].[Revision], [q].[CorrectOption], [q].[CreatedAtUtc], [q].[CreatedByUse|2|3|0|1|seek
+(@questionId uniqueidentifier)SELECT MAX([q].[Revision]) FROM [QuestionRevisions] AS [q] WHERE [q].[QuestionId] = @questionId AND [q].[Status] = N'App|2|3|0|1|seek
+(@questionId uniqueidentifier,@question_LatestRevision int)SELECT TOP(2) [q].[Status] FROM [QuestionRevisions] AS [q] WHERE [q].[QuestionId] = @questi|6|3|0|1|seek
+(@questionId uniqueidentifier)SELECT TOP(2) [q].[Id], [q].[CreatedAtUtc], [q].[DepartmentId], [q].[LatestRevision], [q].[OwnerUserId], [q].[RowVersion|6|3|0|1|seek

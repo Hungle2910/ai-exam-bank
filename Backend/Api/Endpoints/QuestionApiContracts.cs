@@ -44,7 +44,8 @@ internal sealed record QuestionDetailResponse(
     string? Source,
     Guid OwnerUserId,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<QuestionRevisionResponse> Revisions)
+    IReadOnlyList<QuestionRevisionResponse> Revisions,
+    int? ApprovedRevision)
 {
     public static QuestionDetailResponse From(QuestionDetail detail) => new(
         detail.QuestionId,
@@ -65,7 +66,8 @@ internal sealed record QuestionDetailResponse(
             ApiNames.ToApi(revision.Status),
             ApiNames.ToApi(revision.Origin),
             revision.CreatedByUserId,
-            revision.CreatedAtUtc)).ToList());
+            revision.CreatedAtUtc)).ToList(),
+        detail.ApprovedRevision);
 }
 
 internal sealed record QuestionFieldError(string Code, string Field, string Message);
@@ -84,3 +86,53 @@ internal sealed record ApiProblem(
 internal sealed record SchoolSubjectResponse(Guid SubjectId, string Code, string Name, Guid DepartmentId);
 
 internal sealed record SchoolSubjectMappingResponse(Guid SubjectId, Guid DepartmentId);
+
+internal sealed record QuestionRevisionDetailResponse(
+    int Revision,
+    string Status,
+    string Origin,
+    string Stem,
+    IReadOnlyList<string> Options,
+    string CorrectOption,
+    NamedRef Topic,
+    string Difficulty,
+    string? Source,
+    Guid? ImportBatchId,
+    int? ImportRowNumber,
+    Guid CreatedByUserId,
+    DateTimeOffset CreatedAt,
+    bool IsLatest,
+    bool IsApprovedInUse)
+{
+    public static QuestionRevisionDetailResponse From(QuestionRevisionDetail revision) => new(
+        revision.Revision,
+        ApiNames.ToApi(revision.Status),
+        ApiNames.ToApi(revision.Origin),
+        revision.Stem,
+        revision.Options,
+        revision.CorrectOption.ToString(),
+        new NamedRef(revision.TopicId, revision.TopicName),
+        ApiNames.ToApi(revision.Difficulty),
+        revision.SourceText,
+        revision.ImportBatchId,
+        revision.ImportRowNumber,
+        revision.CreatedByUserId,
+        revision.CreatedAtUtc,
+        revision.IsLatest,
+        revision.IsApprovedInUse);
+}
+
+internal sealed record QuestionHistoryResponse(
+    Guid Id,
+    NamedRef Subject,
+    int LatestRevision,
+    int? ApprovedRevision,
+    IReadOnlyList<QuestionRevisionDetailResponse> Revisions)
+{
+    public static QuestionHistoryResponse From(QuestionHistory history) => new(
+        history.QuestionId,
+        new NamedRef(history.SubjectId, history.SubjectName),
+        history.LatestRevision,
+        history.ApprovedRevision,
+        history.Revisions.Select(QuestionRevisionDetailResponse.From).ToList());
+}

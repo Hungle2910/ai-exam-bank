@@ -149,16 +149,26 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerUserId");
+                    b.HasIndex("OwnerUserId", "UpdatedAtUtc", "Id")
+                        .IsDescending(false, true, false);
 
-                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId");
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("OwnerUserId", "UpdatedAtUtc", "Id"), new[] { "SchoolId", "DepartmentId", "SubjectId", "LatestRevision" });
 
                     b.HasIndex("SchoolId", "SubjectId", "UpdatedAtUtc");
 
+                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId", "UpdatedAtUtc", "Id")
+                        .IsDescending(false, false, false, true, false);
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("SchoolId", "SubjectId", "DepartmentId", "UpdatedAtUtc", "Id"), new[] { "OwnerUserId", "LatestRevision" });
+
                     b.ToTable("Questions", null, t =>
                         {
+                            t.HasTrigger("TR_Questions_Immutable");
+
                             t.HasCheckConstraint("CK_Questions_LatestRevision", "[LatestRevision] >= 1");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionOptionEntity", b =>
@@ -182,8 +192,12 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.ToTable("QuestionOptions", null, t =>
                         {
+                            t.HasTrigger("TR_QuestionOptions_Immutable");
+
                             t.HasCheckConstraint("CK_QuestionOptions_Label", "[Label] IN ('A', 'B', 'C', 'D')");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionRevisionEntity", b =>
@@ -257,6 +271,8 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.ToTable("QuestionRevisions", null, t =>
                         {
+                            t.HasTrigger("TR_QuestionRevisions_Immutable");
+
                             t.HasCheckConstraint("CK_QuestionRevisions_CorrectOption", "[CorrectOption] IN ('A', 'B', 'C', 'D')");
 
                             t.HasCheckConstraint("CK_QuestionRevisions_Difficulty", "[Difficulty] IN ('Easy', 'Medium', 'Hard')");
@@ -269,6 +285,8 @@ namespace AiExamBank.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'PendingReview', 'Approved', 'Rejected')");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.SchoolSubjectEntity", b =>
