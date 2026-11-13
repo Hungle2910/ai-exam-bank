@@ -54,9 +54,9 @@ Quyết định thiết kế:
 - Trạng thái nằm trên revision, không nằm trên `Questions`. "Bản đang dùng" cho đề thi được pin theo revision đã APPROVED.
 - Revision đã `APPROVED` không bao giờ bị UPDATE. Sửa nghĩa là tạo revision mới ở `DRAFT`.
 
-## 3. Taxonomy khối 12 (đề xuất, chờ đối chiếu tài liệu nguồn)
+## 3. Taxonomy khối 12 (chủ PR đã báo đối chiếu tài liệu nguồn)
 
-Chủ đề dưới đây theo chương trình GDPT 2018 lớp 12. **UI mock hiện dùng chủ đề khác chương trình này** (Logarit, Dao động cơ, Bảng tuần hoàn thuộc lớp 10–11), nên mock cần cập nhật theo bảng cuối cùng.
+Chủ đề dưới đây theo chương trình GDPT 2018 lớp 12. Thiên Phúc báo đã đối chiếu 3 môn/9 chủ đề với tài liệu nguồn trong [PR #81](https://github.com/Hungle2910/ai-exam-bank/pull/81#issuecomment-6757659812) ngày 2026-11-10. Tài liệu nguồn không có trong repo, nên người review chưa tự kiểm chứng việc đối chiếu này. **UI mock hiện dùng chủ đề khác chương trình này** (Logarit, Dao động cơ, Bảng tuần hoàn thuộc lớp 10–11), nên mock cần cập nhật theo bảng cuối cùng.
 
 | Subject (`Code`) | Topic (`Code`) |
 |---|---|
@@ -168,10 +168,10 @@ Các mục 2-6 đã được người phụ trách duyệt theo phương án đ�
 
 | # | Nội dung | Người quyết định | Kết quả |
 |---|---|---|---|
-| 1 | Chủ đề ở mục 3 có khớp tài liệu nguồn không | Thiên Phúc | **Còn mở**; đối chiếu với tài liệu nguồn |
+| 1 | Chủ đề ở mục 3 có khớp tài liệu nguồn không | Thiên Phúc | Chủ PR báo đã đối chiếu 3 môn/9 chủ đề trong [PR #81](https://github.com/Hungle2910/ai-exam-bank/pull/81#issuecomment-6757659812) ngày 2026-11-10; tài liệu nguồn không có trong repo để reviewer tự đối chiếu |
 | 2 | `SchoolSubjects` hay cột `SubjectId` trên `Departments` | Minh Phúc | Đã duyệt: dùng `SchoolSubjects` |
 | 3 | `REVIEW_REQUIRED` hay `PENDING_REVIEW` | Minh Phúc, Thiên Phúc | Đã chốt: `PENDING_REVIEW`, theo nhánh M3-03 |
 | 4 | Quyền đọc bank trong bộ môn cho Teacher | Minh Phúc | Đã duyệt, nhưng quy tắc cụ thể (Teacher có đọc câu của đồng nghiệp trong bộ môn không) chưa được ghi lại; Thiên Phúc bổ sung vào mục 7 |
 | 5 | Cột CSV và cách tra tên môn/chủ đề | Hữu Phước | Đã duyệt: tra theo tên trong catalog của trường |
 | 6 | `TopicId` trong blueprint và cách M1 dùng seed | Gia Hưng | Đã duyệt: `TopicId` cố định theo seed |
-| 7 | Nơi lưu file nguồn và người cấp quyền AWS | Đội, Hữu Phước | **Còn mở**: Bedrock chưa dùng được, tài liệu nguồn chưa có trên máy M4; xem [blocker](M4-01_CORPUS_AND_AWS.md) |
+| 7 | Nơi lưu file corpus và người cấp quyền AWS | Đội, Hữu Phước | **Còn mở**: Bedrock chưa dùng được, corpus cho RAG chưa có trên máy M4; đây là phần khác với việc chủ PR báo đã đối chiếu danh sách chủ đề ở mục 1. Xem [blocker](M4-01_CORPUS_AND_AWS.md) |

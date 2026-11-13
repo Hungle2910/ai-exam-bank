@@ -111,7 +111,7 @@ Cam kết của writer:
 
 ## 5. Dữ liệu
 
-Migration `QuestionBank` thêm các bảng `Subjects`, `Topics`, `SchoolSubjects`, `Questions`, `QuestionRevisions`, `QuestionOptions`, cùng chuỗi migration với Identity. Migration seed 3 môn và 9 chủ đề với ID cố định; chủ đề vẫn chờ đối chiếu với tài liệu nguồn ([domain M4-01, mục 11](M4-01_QUESTION_DOMAIN.md)), nên cần chốt trước khi merge vì đổi sau phải thêm migration.
+Migration `QuestionBank` thêm các bảng `Subjects`, `Topics`, `SchoolSubjects`, `Questions`, `QuestionRevisions`, `QuestionOptions`, cùng chuỗi migration với Identity. Migration seed 3 môn và 9 chủ đề với ID cố định. Chủ PR báo đã đối chiếu danh sách này với tài liệu nguồn ([domain M4-01, mục 3 và 11](M4-01_QUESTION_DOMAIN.md)); tài liệu nguồn không có trong repo để reviewer tự kiểm chứng. Nếu danh sách đổi sau khi triển khai, phải thêm migration.
 
 Ràng buộc chính: khóa `(QuestionId, Revision)`, câu hỏi phải thuộc đúng bộ môn đã gán cho môn đó, chủ đề phải thuộc đúng môn, `RowVersion` chống ghi đè đồng thời, không cascade xóa, và các check constraint cho trạng thái, độ khó, đáp án và nguồn gốc import. Index cho lọc theo chủ đề, độ khó, trạng thái và theo trường, môn, thời điểm cập nhật.
 
@@ -132,4 +132,4 @@ Ràng buộc chính: khóa `(QuestionId, Revision)`, câu hỏi phải thuộc �
 | OpenAPI | [openapi/questions.json](openapi/questions.json), 7 route, có ví dụ request và lỗi (thông báo lấy từ server thật). Bản sinh từ code đã so JSON thành công giữa API trước và sau khi chuyển response sang record có kiểu: giống từng byte với dữ liệu thật trên 8 GET. Chưa chạy bộ lint OpenAPI, và chưa có kiểm tra tự động bắt spec lệch khỏi code |
 | Bằng chứng AWS | Không áp dụng; M4-02 không gọi AI |
 
-Còn lại sau PR này, và không chặn việc merge vào `dev`: (1) chạy lại import writer qua API khi M2-03 có route import; (2) áp migration và smoke API trên staging khi M2-02/M2-04 có môi trường; (3) đưa script ghi đồng thời thành test tích hợp có điều kiện nếu nhóm muốn giữ làm hồi quy. Cần chốt trước khi merge: taxonomy seed ở mục 5 vẫn cần owner xác nhận với tài liệu nguồn, vì đổi sau phải thêm migration. Bằng chứng ở bảng trên là kiểm thử cục bộ, không thay thế staging.
+Còn lại sau PR này, và không chặn việc merge vào `dev`: (1) chạy lại import writer qua API khi M2-03 có route import; (2) áp migration và smoke API trên staging khi M2-02/M2-04 có môi trường; (3) đưa script ghi đồng thời thành test tích hợp có điều kiện nếu nhóm muốn giữ làm hồi quy. Chủ PR đã báo đối chiếu taxonomy seed; nguồn không nằm trong repo để reviewer tự xác minh (mục 5). Bằng chứng ở bảng trên là kiểm thử cục bộ, không thay thế staging.
