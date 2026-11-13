@@ -15,5 +15,6 @@
     <ProjectReference Include="..\Modules\Jobs\AiExamBank.Modules.Jobs.csproj" />
     <ProjectReference Include="..\Persistence\AiExamBank.Persistence\AiExamBank.Persistence.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
 </Project>

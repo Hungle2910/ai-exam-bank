@@ -1,0 +1,1201 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "AI Exam Bank - Question bank API (M4-02)",
+    "description": "Question bank CRUD with revisions, filtering and paging, plus the routes that assign a subject to a department.\n\n**Authentication.** Sign in with `POST /auth/login` (outside this document); the session is an HttpOnly cookie. `POST` and `PUT` also need the `X-CSRF-TOKEN` header: call `GET /auth/csrf` after signing in and send the returned `token`.\n\n**Scope.** The school always comes from the signed-in account. A Teacher reads and edits only the questions they own, and writes only for subjects assigned to their department. Status is decided by the server; a new question or revision is always `DRAFT`.\n\n**Errors.** Business errors are Problem Details with a stable `code` and a `traceId`. 401 and 403 from the authentication layer and a request rejected for a missing CSRF token carry no body.",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5001/"
+    }
+  ],
+  "paths": {
+    "/api/v1/catalog": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "Subjects and topics the caller can use",
+        "description": "Subjects of the departments the caller teaches or heads, with their topics. `canWrite` is true only for a Teacher of the owning department; a DepartmentHead sees the subject to filter by it but cannot write.",
+        "operationId": "GetCatalog",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogSubjectResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/questions": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "List and filter questions",
+        "description": "Only questions the caller may read are returned. `status` filters the latest revision of each question. `q` matches the stem or the question id. Results are ordered by last update, then id. The list never contains the answer key.",
+        "operationId": "SearchQuestions",
+        "parameters": [
+          {
+            "name": "subjectId",
+            "in": "query",
+            "description": "Only questions of this subject.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "topicId",
+            "in": "query",
+            "description": "Only questions of this topic.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "description": "EASY, MEDIUM or HARD.",
+            "schema": {
+              "enum": [
+                "EASY",
+                "MEDIUM",
+                "HARD"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Status of the latest revision: DRAFT, PENDING_REVIEW, APPROVED or REJECTED.",
+            "schema": {
+              "enum": [
+                "DRAFT",
+                "PENDING_REVIEW",
+                "APPROVED",
+                "REJECTED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Text found in the stem, or a question id. At most 200 characters.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "1-based page number, at most 10000. Default 1.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "Items per page, 1 to 100. Default 20.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Unknown difficulty filter",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+                      "title": "The difficulty or status filter is not valid.",
+                      "status": 400,
+                      "code": "QUESTION_FILTER_INVALID",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "Create a question as revision 1 in status DRAFT",
+        "description": "Requires the `X-CSRF-TOKEN` header. The school comes from the signed-in account and the status is decided by the server. The caller must be a Teacher of the department that owns the subject. A request without a valid CSRF token is rejected with an empty 400.",
+        "operationId": "CreateQuestion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              },
+              "examples": {
+                "example": {
+                  "summary": "A multiple-choice question",
+                  "value": {
+                    "stem": "Hàm số y = x³ − 3x + 2 đồng biến trên khoảng nào?",
+                    "options": [
+                      "(−∞; −1) và (1; +∞)",
+                      "(−1; 1)",
+                      "(−∞; 1)",
+                      "(−1; +∞)"
+                    ],
+                    "correctOption": "A",
+                    "difficulty": "EASY",
+                    "subjectId": "8ab2a612-3558-435f-9e60-ef3f8e24a8a8",
+                    "topicId": "223f2355-059b-4195-80e0-6056ea6115f6",
+                    "source": "SGK Toán 12, tr. 12"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Content breaks several rules at once",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+                      "title": "The question is not valid.",
+                      "status": 400,
+                      "code": "QUESTION_INVALID",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00",
+                      "errors": [
+                        {
+                          "code": "QUESTION_STEM_REQUIRED",
+                          "field": "stem",
+                          "message": "The question text is required."
+                        },
+                        {
+                          "code": "QUESTION_OPTIONS_COUNT_INVALID",
+                          "field": "options",
+                          "message": "Exactly 4 options are required."
+                        },
+                        {
+                          "code": "QUESTION_CORRECT_OPTION_INVALID",
+                          "field": "correctOption",
+                          "message": "The correct option must be one of A, B, C, D."
+                        },
+                        {
+                          "code": "QUESTION_DIFFICULTY_INVALID",
+                          "field": "difficulty",
+                          "message": "The difficulty must be easy, medium or hard."
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Not a Teacher of the subject's department",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+                      "title": "You may not do this to this question.",
+                      "status": 403,
+                      "code": "QUESTION_FORBIDDEN",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ],
+            "csrfHeader": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/questions/{id}": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "Latest revision with every revision's summary",
+        "description": "A question that does not exist and one the caller may not read both return 404 `QUESTION_NOT_FOUND`, so existence is not disclosed.",
+        "operationId": "GetQuestion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Unknown, or not readable by the caller",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+                      "title": "The question was not found.",
+                      "status": 404,
+                      "code": "QUESTION_NOT_FOUND",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "Create a new revision (DRAFT) of a question",
+        "description": "Never edits in place. `baseRevision` is required and must be the latest revision the author opened, otherwise 409. The subject cannot change. A question whose latest revision is `PENDING_REVIEW` cannot be edited (409). Requires the `X-CSRF-TOKEN` header.",
+        "operationId": "UpdateQuestion",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              },
+              "examples": {
+                "example": {
+                  "summary": "A new revision based on revision 1",
+                  "value": {
+                    "stem": "Hàm số y = x³ − 3x + 2 đồng biến trên khoảng nào?",
+                    "options": [
+                      "(−∞; −1) và (1; +∞)",
+                      "(−1; 1)",
+                      "(−∞; 1)",
+                      "(−1; +∞)"
+                    ],
+                    "correctOption": "A",
+                    "difficulty": "EASY",
+                    "subjectId": "8ab2a612-3558-435f-9e60-ef3f8e24a8a8",
+                    "topicId": "223f2355-059b-4195-80e0-6056ea6115f6",
+                    "source": "SGK Toán 12, tr. 12",
+                    "baseRevision": 1
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "baseRevision is missing",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+                      "title": "The revision being edited is required.",
+                      "status": 400,
+                      "code": "QUESTION_BASE_REVISION_REQUIRED",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Unknown, or not readable by the caller",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+                      "title": "The question was not found.",
+                      "status": 404,
+                      "code": "QUESTION_NOT_FOUND",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "baseRevision is no longer the latest",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+                      "title": "The question is at revision 2, not revision 1.",
+                      "status": 409,
+                      "code": "QUESTION_CONFLICT",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ],
+            "csrfHeader": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/schools/{schoolId}/subjects": {
+      "get": {
+        "tags": [
+          "School subjects"
+        ],
+        "summary": "Subjects the school teaches and the department that owns each",
+        "description": "For a SchoolAdmin of that school or a MinistryAdmin. A school with no mapping has no subject to write questions for.",
+        "operationId": "ListSchoolSubjects",
+        "parameters": [
+          {
+            "name": "schoolId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchoolSubjectResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/admin/schools/{schoolId}/subjects/{subjectId}": {
+      "put": {
+        "tags": [
+          "School subjects"
+        ],
+        "summary": "Assign a subject to a department of the school",
+        "description": "201 when the mapping is new, 200 when the subject is already assigned to that department or was moved. A subject can change department only while it has no questions (409 `SCHOOL_SUBJECT_HAS_QUESTIONS`). Requires the `X-CSRF-TOKEN` header.",
+        "operationId": "AssignSchoolSubject",
+        "parameters": [
+          {
+            "name": "schoolId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "subjectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchoolSubjectRequest"
+              },
+              "examples": {
+                "example": {
+                  "summary": "Assign the subject to a department",
+                  "value": {
+                    "departmentId": "6cdee49d-8909-461c-be94-578010a310d1"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchoolSubjectMappingResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchoolSubjectMappingResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "The subject already has questions in its current department",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+                      "title": "The subject already has questions in its current department.",
+                      "status": 409,
+                      "code": "SCHOOL_SUBJECT_HAS_QUESTIONS",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ],
+            "csrfHeader": [ ]
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiProblem": {
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "code",
+          "traceId",
+          "errors"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/QuestionFieldError"
+            }
+          }
+        }
+      },
+      "CatalogSubjectResponse": {
+        "required": [
+          "id",
+          "code",
+          "name",
+          "canWrite",
+          "topics"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "canWrite": {
+            "type": "boolean"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogTopicResponse"
+            }
+          }
+        }
+      },
+      "CatalogTopicResponse": {
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "NamedRef": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "QuestionDetailResponse": {
+        "required": [
+          "id",
+          "revision",
+          "status",
+          "origin",
+          "stem",
+          "options",
+          "correctOption",
+          "subject",
+          "topic",
+          "difficulty",
+          "source",
+          "ownerUserId",
+          "updatedAt",
+          "revisions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "PENDING_REVIEW",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "MANUAL",
+              "IMPORT",
+              "AI_DRAFT",
+              "SEED"
+            ],
+            "type": "string"
+          },
+          "stem": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "correctOption": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "difficulty": {
+            "enum": [
+              "EASY",
+              "MEDIUM",
+              "HARD"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionRevisionResponse"
+            }
+          }
+        }
+      },
+      "QuestionFieldError": {
+        "required": [
+          "code",
+          "field",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "QuestionPageResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionSummaryResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "QuestionRequest": {
+        "required": [
+          "stem",
+          "options",
+          "correctOption",
+          "difficulty",
+          "subjectId",
+          "topicId"
+        ],
+        "type": "object",
+        "properties": {
+          "stem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "options": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Exactly four different options, in the order A to D."
+          },
+          "correctOption": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "difficulty": {
+            "enum": [
+              "EASY",
+              "MEDIUM",
+              "HARD"
+            ],
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "subjectId": {
+            "type": "string",
+            "description": "Cannot change after the question is created.",
+            "format": "uuid"
+          },
+          "topicId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "baseRevision": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "description": "PUT only, required: the revision the author opened. 409 if a newer revision exists.",
+            "format": "int32"
+          }
+        }
+      },
+      "QuestionRevisionResponse": {
+        "required": [
+          "revision",
+          "status",
+          "origin",
+          "createdByUserId",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "PENDING_REVIEW",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "MANUAL",
+              "IMPORT",
+              "AI_DRAFT",
+              "SEED"
+            ],
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "QuestionSummaryResponse": {
+        "required": [
+          "id",
+          "revision",
+          "status",
+          "stem",
+          "subject",
+          "topic",
+          "difficulty",
+          "ownerUserId",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "PENDING_REVIEW",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "type": "string"
+          },
+          "stem": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "difficulty": {
+            "enum": [
+              "EASY",
+              "MEDIUM",
+              "HARD"
+            ],
+            "type": "string"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SchoolSubjectMappingResponse": {
+        "required": [
+          "subjectId",
+          "departmentId"
+        ],
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departmentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SchoolSubjectRequest": {
+        "required": [
+          "departmentId"
+        ],
+        "type": "object",
+        "properties": {
+          "departmentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SchoolSubjectResponse": {
+        "required": [
+          "subjectId",
+          "code",
+          "name",
+          "departmentId"
+        ],
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "departmentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "description": "Session cookie set by POST /auth/login.",
+        "name": ".AspNetCore.Identity.Application",
+        "in": "cookie"
+      },
+      "csrfHeader": {
+        "type": "apiKey",
+        "description": "Anti-forgery token from GET /auth/csrf. Required on POST and PUT.",
+        "name": "X-CSRF-TOKEN",
+        "in": "header"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Questions"
+    },
+    {
+      "name": "School subjects"
+    }
+  ]
+}
