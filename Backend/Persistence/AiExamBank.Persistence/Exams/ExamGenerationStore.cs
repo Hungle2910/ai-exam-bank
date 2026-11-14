@@ -53,7 +53,7 @@ public sealed class ExamGenerationStore(AiExamBankDbContext db, BlueprintStore b
         var blueprint = await blueprints.Accessible(actor, school).SingleOrDefaultAsync(x => x.Id == exam.BlueprintId, ct);
         if (blueprint is null || blueprint.ArchivedAtUtc is not null || Convert.ToBase64String(blueprint.RowVersion) != exam.BlueprintVersion) return false;
         var matrix = JsonSerializer.Deserialize<BlueprintMatrix>(exam.MatrixJson) ?? throw new InvalidOperationException("Missing stored matrix.");
-        var result = await selection.SelectAsync(matrix, school, exam.DepartmentId, exam.Seed, ct);
+        var result = await selection.SelectWithinSerializableTransactionAsync(matrix, school, exam.DepartmentId, exam.Seed, ct);
         exam.Status = result.Status;
         exam.Items = result.Items.Select((item, index) => new ExamItemEntity
         {
