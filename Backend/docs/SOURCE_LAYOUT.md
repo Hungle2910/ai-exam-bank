@@ -2,6 +2,8 @@
 
 The source code is physically separated into [Backend](../README.md) and [Frontend](../../Frontend/README.md). The .NET solution lives in `Backend/`; the Next.js app runs separately from `Frontend/`.
 
+See the [exam workflow contract handoff](M1-01_EXAM_CONTRACTS.md) for the current module interfaces and the exact PRs that introduce the remaining exam routes.
+
 | Area | Actual path | Contents |
 |---|---|---|
 | Backend | `Backend/Api/` | ASP.NET Core host, authentication, admin endpoints, HTTP composition. |
