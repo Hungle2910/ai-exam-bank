@@ -642,23 +642,39 @@ public static class JobEndpoints
         });
 
         // 7. GET /api/v1/jobs/metrics/summary - Bản tổng hợp chỉ số độ tin cậy và hiệu năng (M5-05)
+        // Yêu cầu xác thực qua JobEngineAuth (kế thừa từ group). Dữ liệu telemetry không được phép truy cập ẩn danh.
         group.MapGet("/metrics/summary", async (
             [FromServices] JobService jobService,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
+            // Defense-in-depth: kiểm tra xác thực tường minh dù group đã có RequireAuthorization.
+            if (httpContext.User?.Identity?.IsAuthenticated != true)
+            {
+                return Results.Unauthorized();
+            }
+
             var summary = await jobService.GetReliabilitySummaryAsync(cancellationToken);
             return Results.Ok(summary);
         })
         .WithTags("JobsMetrics");
 
         // 8. POST /api/v1/jobs/metrics/test-alert - Kích hoạt cảnh báo diễn tập qua SNS (M5-05)
+        // Chỉ cho phép người dùng đã xác thực kích hoạt drill alert để tránh spam cảnh báo.
         group.MapPost("/metrics/test-alert", async (
             [FromBody] TestAlertApiRequest? request,
             [FromServices] JobService jobService,
             HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
-            var requesterId = httpContext.User?.Identity?.Name ?? "system-admin";
+            // Defense-in-depth: từ chối tường minh nếu xác thực chưa hoàn tất (không fallback ẩn danh).
+            if (httpContext.User?.Identity?.IsAuthenticated != true)
+            {
+                return Results.Unauthorized();
+            }
+
+            // ClaimTypes.Name được JobEngineAuthenticationHandler gán bằng UserId của token hợp lệ.
+            var requesterId = httpContext.User.Identity.Name!;
             var result = await jobService.TriggerTestAlertAsync(
                 requesterId,
                 request?.Title,
