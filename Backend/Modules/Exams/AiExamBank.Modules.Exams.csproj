@@ -8,5 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Questions\AiExamBank.Modules.Questions.csproj" />
+    <ProjectReference Include="..\Knowledge\AiExamBank.Modules.Knowledge.csproj" />
   </ItemGroup>
 </Project>
