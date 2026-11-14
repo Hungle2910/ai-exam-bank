@@ -38,6 +38,7 @@ builder.Services.AddScoped<ResourceAuthorizationService>();
 builder.Services.AddQuestionBank();
 builder.Services.AddQuestionBankOpenApi();
 builder.Services.AddExamSelection();
+builder.Services.AddScoped<ExamDraftStore>();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập

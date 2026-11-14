@@ -42,7 +42,7 @@ internal static class ExamSelectionEndpoints
     }
 
     private static async Task<IResult> ResultAsync(Guid id, HttpContext context, UserManager<AppUser> users,
-        ExamGenerationStore store, IJobTracker jobs, CancellationToken ct)
+        ExamGenerationStore store, ExamDraftStore drafts, IJobTracker jobs, CancellationToken ct)
     {
         var actor = await users.GetUserAsync(context.User);
         if (actor is null) return Results.Unauthorized();
@@ -50,6 +50,7 @@ internal static class ExamSelectionEndpoints
         var exam = await store.Accessible(actor.Id, school).AsNoTracking().AsSplitQuery().Include(x => x.Items).Include(x => x.Gaps)
             .SingleOrDefaultAsync(x => x.Id == id, ct);
         if (exam is null) return Results.NotFound();
+        var draftReferences = await drafts.ListReferencesAsync(actor.Id, school, id, ct);
         object? job = null;
         if (exam.JobId is Guid jobId)
         {
@@ -64,6 +65,7 @@ internal static class ExamSelectionEndpoints
         return Results.Ok(new
         {
             exam.Id, exam.BlueprintId, exam.Status, exam.Seed, job,
+            drafts = draftReferences,
             items = exam.Items.OrderBy(x => x.Position).Select(x => new { x.SlotIndex, x.QuestionId, x.Revision, x.Points }),
             gaps = exam.Gaps.OrderBy(x => x.SlotIndex).Select(x => new { x.SlotIndex, x.TopicId, x.Difficulty, x.MissingCount, x.MissingPoints })
         });
