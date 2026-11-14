@@ -2,6 +2,7 @@ using System.Diagnostics;
 using AiExamBank.Api.Authentication;
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
+using AiExamBank.Modules.Jobs.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +29,15 @@ public sealed record CreateJobApiRequest(
 /// </summary>
 /// <param name="Reason">Lý do thử lại (tùy chọn).</param>
 public sealed record RetryJobApiRequest(string? Reason = null);
+
+/// <summary>
+/// DTO tiếp nhận yêu cầu kích hoạt cảnh báo sự cố diễn tập (Drill Test Alert) gửi qua Amazon SNS.
+/// </summary>
+public sealed record TestAlertApiRequest(
+    string? Title = null,
+    string? Details = null,
+    string? JobType = null,
+    string? Provider = null);
 
 /// <summary>
 /// DTO phản hồi chi tiết lượt chạy (Attempt) của tác vụ cho Status UI.
@@ -631,7 +641,37 @@ public static class JobEndpoints
             }
         });
 
-        // 7. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
+        // 7. GET /api/v1/jobs/metrics/summary - Bản tổng hợp chỉ số độ tin cậy và hiệu năng (M5-05)
+        group.MapGet("/metrics/summary", async (
+            [FromServices] JobService jobService,
+            CancellationToken cancellationToken) =>
+        {
+            var summary = await jobService.GetReliabilitySummaryAsync(cancellationToken);
+            return Results.Ok(summary);
+        })
+        .WithTags("JobsMetrics");
+
+        // 8. POST /api/v1/jobs/metrics/test-alert - Kích hoạt cảnh báo diễn tập qua SNS (M5-05)
+        group.MapPost("/metrics/test-alert", async (
+            [FromBody] TestAlertApiRequest? request,
+            [FromServices] JobService jobService,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
+        {
+            var requesterId = httpContext.User?.Identity?.Name ?? "system-admin";
+            var result = await jobService.TriggerTestAlertAsync(
+                requesterId,
+                request?.Title,
+                request?.Details,
+                request?.JobType,
+                request?.Provider,
+                cancellationToken);
+
+            return Results.Ok(result);
+        })
+        .WithTags("JobsMetrics");
+
+        // 9. GET /api/v1/jobs/dev-token - Cấp token phát triển tạm thời cho UI Dashboard (chỉ khả dụng trong môi trường Development)
         routes.MapGet("/api/v1/jobs/dev-token", (
             [FromQuery] string? scopeId,
             [FromQuery] string? scopeKind,

@@ -25,18 +25,24 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
     private readonly TimeSpan _coolingPeriod;
     private readonly TimeSpan _failureWindow;
     private readonly Func<DateTimeOffset> _clock;
+    private readonly IJobMetrics? _metrics;
+    private readonly ISnsAlertPublisher? _alertPublisher;
     private readonly object _syncRoot = new();
 
     public InMemoryCircuitBreaker(
         int failureThreshold = 5,
         TimeSpan? coolingPeriod = null,
         Func<DateTimeOffset>? clock = null,
-        TimeSpan? failureWindow = null)
+        TimeSpan? failureWindow = null,
+        IJobMetrics? metrics = null,
+        ISnsAlertPublisher? alertPublisher = null)
     {
         _failureThreshold = Math.Max(1, failureThreshold);
         _coolingPeriod = coolingPeriod ?? TimeSpan.FromSeconds(60);
         _failureWindow = failureWindow ?? TimeSpan.FromSeconds(60);
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _metrics = metrics;
+        _alertPublisher = alertPublisher;
     }
 
     /// <inheritdoc />
@@ -99,16 +105,21 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             circuit.HalfOpenProbeInFlight = false;
             circuit.LastProbeTime = null;
             circuit.State = CircuitBreakerState.Closed;
+            _metrics?.RecordCircuitBreakerState(provider, CircuitBreakerState.Closed);
         }
     }
 
     /// <inheritdoc />
     public void RecordFailure(string provider = "AWS_BEDROCK", string? errorCode = null)
     {
+        IncidentAlert? alertToPublish = null;
         lock (_syncRoot)
         {
             var circuit = GetOrCreate(provider);
             var now = _clock();
+
+            // Ghi nhận lỗi phát sinh vào metrics
+            _metrics?.RecordProviderError(provider, errorCode ?? "UNKNOWN", isTransient: ErrorClassifier.Classify(errorCode) == ErrorCategory.Transient);
 
             // Chỉ tính vào chuỗi lỗi nếu là lỗi tạm thời (Transient) hoặc lỗi Throttled
             var category = ErrorClassifier.Classify(errorCode);
@@ -136,12 +147,34 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
 
             if (circuit.State == CircuitBreakerState.HalfOpen || circuit.ConsecutiveFailures >= _failureThreshold)
             {
+                var previousState = circuit.State;
                 circuit.State = CircuitBreakerState.Open;
                 circuit.OpenedAt = now;
                 circuit.HalfOpenProbeInFlight = false;
                 circuit.LastProbeTime = null;
                 circuit.WindowStartedAt = null;
+
+                _metrics?.RecordCircuitBreakerState(provider, CircuitBreakerState.Open);
+
+                // Chuẩn bị thông báo sự cố SNS (phát ngoài lock)
+                alertToPublish = new IncidentAlert
+                {
+                    IncidentType = IncidentTypes.CircuitBreakerOpen,
+                    Severity = IncidentSeverity.Critical,
+                    Title = $"AI Provider [{provider}] Circuit Breaker has Tripped OPEN",
+                    Details = $"Circuit transitioned from {previousState} to OPEN after {circuit.ConsecutiveFailures} consecutive failures (Threshold: {_failureThreshold}). AI generation and import requests are paused to protect quota and prevent cascade failure. Error code: {errorCode ?? "UNKNOWN"}.",
+                    Provider = provider,
+                    ErrorCode = errorCode,
+                    RecommendedAction = "Inspect AWS Bedrock service health, API throttling/quota status, and IAM credentials in AWS Console.",
+                    RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md",
+                    TimestampUtc = now
+                };
             }
+        }
+
+        if (alertToPublish != null && _alertPublisher != null)
+        {
+            _ = Task.Run(() => _alertPublisher.PublishIncidentAlertAsync(alertToPublish));
         }
     }
 

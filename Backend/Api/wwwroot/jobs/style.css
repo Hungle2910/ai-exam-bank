@@ -976,3 +976,106 @@ body {
     color: #e2e8f0;
 }
 
+/* ==========================================================================
+   Telemetry KPI Bar & Circuit Breaker (M5-05)
+   ========================================================================== */
+.telemetry-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.5rem;
+    margin-bottom: 1.5rem;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: var(--radius-lg, 12px);
+    backdrop-filter: blur(12px);
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.telemetry-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.telemetry-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--color-slate, #94a3b8);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.telemetry-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.telemetry-divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(148, 163, 184, 0.15);
+}
+
+.badge-circuit-breaker {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.65rem;
+    border-radius: var(--radius-full, 9999px);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-circuit-breaker.status-closed {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--color-emerald, #10b981);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-circuit-breaker.status-open {
+    background: rgba(244, 63, 94, 0.2);
+    color: var(--color-rose, #f43f5e);
+    border: 1px solid rgba(244, 63, 94, 0.45);
+    animation: pulse 1.5s infinite;
+}
+
+.badge-circuit-breaker.status-halfopen {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--color-amber, #f59e0b);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.btn-warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.9), rgba(217, 119, 6, 0.9));
+    color: #fff;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.btn-warning:hover {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 1), rgba(217, 119, 6, 1));
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+}
+
+.form-textarea {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: var(--radius-md, 8px);
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    resize: vertical;
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--color-cyan, #06b6d4);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.25);
+}
+

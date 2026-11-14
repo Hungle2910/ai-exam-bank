@@ -92,10 +92,27 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddProblemDetails();
+
+// Cấu hình Telemetry Metrics và Amazon SNS Alerting cho Job Engine (M5-05)
+builder.Services.AddSingleton<JobMetrics>();
+builder.Services.AddSingleton<IJobMetrics>(sp => sp.GetRequiredService<JobMetrics>());
+builder.Services.Configure<SnsAlertOptions>(builder.Configuration.GetSection("Jobs:SnsAlerts"));
+builder.Services.AddSingleton<ISnsAlertPublisher>(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
+    var logger = sp.GetRequiredService<ILogger<SnsAlertPublisher>>();
+    return new SnsAlertPublisher(opts, msg => logger.LogInformation("{Message}", msg));
+});
+
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
-builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
+builder.Services.AddSingleton<IJobStore>(sp => new FileJobStore(
+    configuredStorePath,
+    metrics: sp.GetRequiredService<IJobMetrics>(),
+    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>()));
 builder.Services.AddSingleton<JobRegistry>();
-builder.Services.AddSingleton<IAiProviderCircuitBreaker, InMemoryCircuitBreaker>();
+builder.Services.AddSingleton<IAiProviderCircuitBreaker>(sp => new InMemoryCircuitBreaker(
+    metrics: sp.GetRequiredService<IJobMetrics>(),
+    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>()));
 var allowFailureSimulation = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("Jobs:AllowFailureSimulation");
 
@@ -112,7 +129,10 @@ builder.Services.AddSingleton<IJobRegistry>(sp =>
         registry.Register(handler);
     return registry;
 });
-builder.Services.AddSingleton<JobService>();
+builder.Services.AddSingleton<JobService>(sp => new JobService(
+    sp.GetRequiredService<IJobStore>(),
+    sp.GetRequiredService<IJobMetrics>(),
+    sp.GetRequiredService<ISnsAlertPublisher>()));
 builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
 builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
 if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))

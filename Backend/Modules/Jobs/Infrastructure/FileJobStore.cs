@@ -30,6 +30,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
     private readonly object _syncRoot = new();
     private readonly string _filePath;
     private readonly Func<DateTimeOffset> _clock;
+    private readonly IJobMetrics? _metrics;
+    private readonly ISnsAlertPublisher? _alertPublisher;
     private readonly Mutex _processMutex;
     private DateTime _lastFileWriteTime = DateTime.MinValue;
     private long _lastFileLength = -1;
@@ -105,10 +107,18 @@ public sealed class FileJobStore : IJobStore, IDisposable
     /// </summary>
     /// <param name="filePath">Đường dẫn tệp tin JSON (mặc định lưu tại jobs_store.json cùng thư mục ứng dụng).</param>
     /// <param name="clock">Hàm lấy thời gian hiện tại (mặc định DateTimeOffset.UtcNow).</param>
-    public FileJobStore(string? filePath = null, Func<DateTimeOffset>? clock = null)
+    /// <param name="metrics">Hệ thống đo lường metrics tùy chọn.</param>
+    /// <param name="alertPublisher">Dịch vụ phát cảnh báo sự cố SNS tùy chọn.</param>
+    public FileJobStore(
+        string? filePath = null,
+        Func<DateTimeOffset>? clock = null,
+        IJobMetrics? metrics = null,
+        ISnsAlertPublisher? alertPublisher = null)
     {
         _filePath = filePath ?? Path.Combine(AppContext.BaseDirectory, "jobs_store.json");
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _metrics = metrics;
+        _alertPublisher = alertPublisher;
 
         // Mutex đồng bộ hóa truy cập giữa các process độc lập (API và Worker)
         var mutexName = "Global\\AiExamBank_JobStore_" + Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_filePath)))[..16];
@@ -170,6 +180,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
             _attempts[newJob.Id] = new List<JobAttempt>();
 
             SaveToDisk();
+            _metrics?.RecordJobEnqueued(newJob.Type, newJob.Scope.Kind.ToString());
             return CloneJob(newJob);
         });
     }
@@ -308,6 +319,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
             eligibleJob.AttemptCount = eligibleJob.AttemptCount + 1;
             eligibleJob.UpdatedAt = now;
 
+            _metrics?.RecordJobStarted(eligibleJob.Type);
+
             if (!_attempts.TryGetValue(eligibleJob.Id, out var list))
             {
                 list = new List<JobAttempt>();
@@ -397,7 +410,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
 
             currentAttempt.Status = AttemptStatus.Completed;
             currentAttempt.FinishedAt = now;
-            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            var durationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            currentAttempt.ExecutionDurationMs = durationMs;
 
             job.Status = JobStatus.Completed;
             job.ErrorCode = null;
@@ -407,6 +421,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
             job.UpdatedAt = now;
 
             SaveToDisk();
+            _metrics?.RecordJobCompleted(job.Type, durationMs);
             return true;
         });
     }
@@ -435,7 +450,10 @@ public sealed class FileJobStore : IJobStore, IDisposable
             currentAttempt.ErrorCode = errorCode;
             currentAttempt.SafeErrorMessage = sanitizedMessage;
             currentAttempt.FinishedAt = now;
-            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            var durationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            currentAttempt.ExecutionDurationMs = durationMs;
+
+            _metrics?.RecordJobFailed(job.Type, ErrorClassifier.Classify(errorCode).ToString(), errorCode, durationMs);
 
             // Khi Circuit Breaker đang ngắt mạch (Open), job bị từ chối trước khi gọi tới AI Provider.
             // Do đó hoàn lại AttemptCount (không tiêu hao ngân sách retry), giữ job ở trạng thái Pending
@@ -469,12 +487,27 @@ public sealed class FileJobStore : IJobStore, IDisposable
             }
             else
             {
+                var isBudgetExhausted = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts;
                 job.Status = JobStatus.Failed;
-                job.ErrorCode = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts
-                    ? "RETRY_BUDGET_EXHAUSTED"
-                    : errorCode;
+                job.ErrorCode = isBudgetExhausted ? "RETRY_BUDGET_EXHAUSTED" : errorCode;
                 job.SafeErrorMessage = sanitizedMessage;
                 job.UpdatedAt = now;
+
+                if (isBudgetExhausted && _alertPublisher != null)
+                {
+                    _ = Task.Run(() => _alertPublisher.PublishIncidentAlertAsync(new IncidentAlert
+                    {
+                        IncidentType = IncidentTypes.RetryBudgetExhausted,
+                        Severity = IncidentSeverity.Warning,
+                        Title = $"Job [{job.Type}] Retry Budget Exhausted ({job.Id})",
+                        Details = $"Job {job.Id} failed after reaching maximum attempts ({BackoffJitterCalculator.DefaultMaxAttempts}). Last error: {errorCode}. Safe message: {sanitizedMessage}.",
+                        JobType = job.Type,
+                        ErrorCode = "RETRY_BUDGET_EXHAUSTED",
+                        RecommendedAction = "Inspect job payload, target data, and error logs. Retry manually via Status UI once root cause is addressed.",
+                        RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_03/M5_03_RETRY_IDEMPOTENCY_DESIGN.md",
+                        TimestampUtc = now
+                    }));
+                }
             }
 
             SaveToDisk();
@@ -557,6 +590,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
                     lastAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - lastAttempt.StartedAt).TotalMilliseconds);
                     recoveredCount++;
 
+                    _metrics?.RecordLeaseRecovery(job.Type);
+
                     if (job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts)
                     {
                         job.Status = JobStatus.Failed;
@@ -584,6 +619,21 @@ public sealed class FileJobStore : IJobStore, IDisposable
             if (recoveredCount > 0)
             {
                 SaveToDisk();
+            }
+
+            if (recoveredCount >= 3 && _alertPublisher != null)
+            {
+                _ = Task.Run(() => _alertPublisher.PublishIncidentAlertAsync(new IncidentAlert
+                {
+                    IncidentType = IncidentTypes.StaleLeaseDetected,
+                    Severity = IncidentSeverity.Warning,
+                    Title = $"Multiple Stale Worker Leases Detected ({recoveredCount} jobs recovered)",
+                    Details = $"Detected {recoveredCount} jobs with expired worker leases in a single scan. This indicates worker node crash, unhandled SIGKILL, or severe network partition.",
+                    ErrorCode = AwsErrorCodes.StaleLeaseRecovered,
+                    RecommendedAction = "Verify EC2/Container worker process status, disk pressure, and CPU utilization in AWS CloudWatch.",
+                    RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md",
+                    TimestampUtc = now
+                }));
             }
 
             return recoveredCount;
@@ -640,6 +690,7 @@ public sealed class FileJobStore : IJobStore, IDisposable
             job.AttemptCount = 0; // Reset consecutive failures for the new manual retry cycle
 
             SaveToDisk();
+            _metrics?.RecordJobRetried(job.Type, isManual: true, 1);
             return CloneJob(job);
         });
     }

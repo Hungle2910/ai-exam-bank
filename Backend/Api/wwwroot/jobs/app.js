@@ -30,6 +30,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const statCompleted = document.getElementById('statCompleted');
     const statFailed = document.getElementById('statFailed');
 
+    // Telemetry KPI Elements (M5-05)
+    const metricSuccessRate = document.getElementById('metricSuccessRate');
+    const metricAvgDuration = document.getElementById('metricAvgDuration');
+    const metricP95Duration = document.getElementById('metricP95Duration');
+    const metricStaleRecoveries = document.getElementById('metricStaleRecoveries');
+    const metricCircuitBreaker = document.getElementById('metricCircuitBreaker');
+    const metricAlertCount = document.getElementById('metricAlertCount');
+
+    // Test Alert Modal (M5-05)
+    const testAlertModal = document.getElementById('testAlertModal');
+    const btnOpenTestAlertModal = document.getElementById('btnTestAlertModal');
+    const btnCloseTestAlertModal = document.getElementById('btnCloseTestAlertModal');
+    const btnCancelTestAlertModal = document.getElementById('btnCancelTestAlertModal');
+    const testAlertForm = document.getElementById('testAlertForm');
+    const modalAlertIncidentType = document.getElementById('modalAlertIncidentType');
+    const modalAlertTitle = document.getElementById('modalAlertTitle');
+    const modalAlertDetails = document.getElementById('modalAlertDetails');
+
     // Table & Filter
     const filterTabs = document.getElementById('filterTabs');
     const searchInput = document.getElementById('searchInput');
@@ -200,6 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
             jobsList = Array.isArray(data) ? data : [];
             updateStats();
             renderTable();
+            fetchMetricsSummary(); // Đồng bộ số liệu đo lường Telemetry (M5-05)
 
             // Adaptive Polling: nếu còn job Running hoặc Pending thì poll nhanh (2s), nếu không thì giãn cách (5s)
             const hasActiveJobs = jobsList.some(j => j.status === 'Running' || j.status === 'Pending');
@@ -755,6 +774,152 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.textContent = 'Đưa vào hàng đợi (Enqueue)';
         }
     });
+
+    // -------------------------------------------------------------
+    // Telemetry & Reliability KPI Handler (M5-05)
+    // -------------------------------------------------------------
+    let latestSummary = null;
+
+    async function fetchMetricsSummary() {
+        try {
+            const scopeKind = scopeKindSelect.value;
+            const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
+            const token = await getAuthorizedToken(scopeKind, scopeId);
+            const headers = { 'Accept': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const resp = await fetch('/api/v1/jobs/metrics/summary', { headers });
+            if (resp.ok) {
+                const summary = await resp.json();
+                latestSummary = summary;
+                updateTelemetryUI(summary);
+            }
+        } catch (e) {
+            // Không làm gián đoạn UI nếu telemetry query tạm thời lỗi
+        }
+    }
+
+    function updateTelemetryUI(s) {
+        if (!s) return;
+        if (metricSuccessRate) metricSuccessRate.textContent = `${(s.successRatePercentage || 100).toFixed(1)}%`;
+        if (metricAvgDuration) metricAvgDuration.textContent = `${Math.round(s.averageDurationMs || 0)} ms`;
+        if (metricP95Duration) metricP95Duration.textContent = `${Math.round(s.p95DurationMs || 0)} ms`;
+        if (metricStaleRecoveries) metricStaleRecoveries.textContent = s.staleLeaseRecoveries || 0;
+
+        if (metricCircuitBreaker) {
+            const states = s.circuitBreakerStates || {};
+            const bedrockState = states['AWS_BEDROCK'] || states['aws_bedrock'] || 'Closed';
+            metricCircuitBreaker.textContent = bedrockState;
+            metricCircuitBreaker.className = 'badge-circuit-breaker status-' + bedrockState.toLowerCase();
+        }
+
+        if (metricAlertCount) {
+            const alertCount = s.recentAlerts ? s.recentAlerts.length : 0;
+            metricAlertCount.textContent = alertCount;
+            metricAlertCount.style.cursor = alertCount > 0 ? 'pointer' : 'default';
+        }
+    }
+
+    // Modal Diễn Tập Cảnh Báo SNS (M5-05)
+    function openTestAlertModal() {
+        testAlertModal.classList.add('active');
+        testAlertModal.removeAttribute('inert');
+    }
+
+    function closeTestAlertModal() {
+        testAlertModal.classList.remove('active');
+        testAlertModal.setAttribute('inert', '');
+    }
+
+    if (btnOpenTestAlertModal) btnOpenTestAlertModal.addEventListener('click', openTestAlertModal);
+    if (btnCloseTestAlertModal) btnCloseTestAlertModal.addEventListener('click', closeTestAlertModal);
+    if (btnCancelTestAlertModal) btnCancelTestAlertModal.addEventListener('click', closeTestAlertModal);
+
+    if (testAlertForm) {
+        testAlertForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('btnSubmitTestAlert');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Đang phát cảnh báo...';
+
+            const payload = {
+                title: modalAlertTitle.value.trim(),
+                details: modalAlertDetails.value.trim(),
+                jobType: 'ExamGeneration',
+                provider: 'AWS_BEDROCK'
+            };
+
+            try {
+                const scopeKind = scopeKindSelect.value;
+                const scopeId = scopeIdInput.value.trim() || 'school-hn-01';
+                const token = await getAuthorizedToken(scopeKind, scopeId);
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch('/api/v1/jobs/metrics/test-alert', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const resData = await response.json();
+                    if (resData.wasThrottled) {
+                        showToast(`Cảnh báo bị Throttled (chống bão alert): ${resData.error}`, 'error');
+                    } else {
+                        showToast(`Phát SNS thành công! MessageId: ${resData.messageId}`, 'success');
+                    }
+                    closeTestAlertModal();
+                    fetchMetricsSummary();
+                } else {
+                    showToast('Lỗi khi phát thông báo sự cố qua SNS.', 'error');
+                }
+            } catch (err) {
+                showToast('Lỗi kết nối khi gửi yêu cầu diễn tập SNS.', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Phát Cảnh Báo SNS';
+            }
+        });
+    }
+
+    // Hiển thị Drawer nhật ký Recent Alerts khi bấm vào thẻ Cảnh báo SNS
+    if (metricAlertCount) {
+        metricAlertCount.addEventListener('click', () => {
+            if (!latestSummary || !latestSummary.recentAlerts || latestSummary.recentAlerts.length === 0) {
+                showToast('Chưa có cảnh báo sự cố SNS nào được ghi nhận.', 'info');
+                return;
+            }
+            drawerTitle.textContent = 'Nhật Ký Cảnh Báo Sự Cố SNS (Audit Log)';
+            drawerBody.innerHTML = `
+                <div class="attempts-container">
+                    <p class="drawer-meta" style="margin-bottom:12px">Danh sách các cảnh báo đã được khử dữ liệu nhạy cảm (CWE-209) và xuất bản đến SNS Topic:</p>
+                    ${latestSummary.recentAlerts.map(a => `
+                        <div class="attempt-card" style="border-left: 3px solid ${a.severity === 'CRITICAL' ? 'var(--rose)' : 'var(--amber)'}">
+                            <div class="attempt-header">
+                                <span class="attempt-badge">${escapeHtml(a.severity)}</span>
+                                <span class="badge-status ${a.severity === 'CRITICAL' ? 'status-failed' : 'status-pending'}">${escapeHtml(a.incidentType)}</span>
+                                <span class="attempt-time">${new Date(a.timestampUtc).toLocaleTimeString('vi-VN')}</span>
+                            </div>
+                            <div style="font-weight:600;margin:6px 0">${escapeHtml(a.title)}</div>
+                            <div class="attempt-meta" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:6px">
+                                <div>Môi trường: <strong>${escapeHtml(a.environment || 'Staging')}</strong> | Provider: <strong>${escapeHtml(a.provider || 'N/A')}</strong></div>
+                            </div>
+                            <div class="reason-box" style="margin-top:6px">${escapeHtml(a.details)}</div>
+                            <div style="margin-top:8px;font-size:0.8rem;color:var(--emerald)">
+                                🛠️ Khuyến nghị: ${escapeHtml(a.recommendedAction)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            detailDrawer.classList.add('active');
+            detailDrawer.removeAttribute('inert');
+        });
+    }
 
     // Drawer close
     function closeDetailDrawer() {

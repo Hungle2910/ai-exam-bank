@@ -12,15 +12,24 @@ namespace AiExamBank.Modules.Jobs.Infrastructure;
 public sealed class JobService : IJobPublisher, IJobTracker
 {
     private readonly IJobStore _store;
+    private readonly IJobMetrics? _metrics;
+    private readonly ISnsAlertPublisher? _alertPublisher;
 
     /// <summary>
     /// Khởi tạo JobService với một kho lưu trữ tác vụ hợp lệ (IJobStore).
     /// </summary>
     /// <param name="store">Kho lưu trữ tác vụ (InMemoryJobStore hoặc FileJobStore).</param>
+    /// <param name="metrics">Hệ thống đo lường metrics tùy chọn.</param>
+    /// <param name="alertPublisher">Dịch vụ phát cảnh báo sự cố SNS tùy chọn.</param>
     /// <exception cref="ArgumentNullException">Ném ra khi store là null.</exception>
-    public JobService(IJobStore store)
+    public JobService(
+        IJobStore store,
+        IJobMetrics? metrics = null,
+        ISnsAlertPublisher? alertPublisher = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _metrics = metrics;
+        _alertPublisher = alertPublisher;
     }
 
     /// <inheritdoc />
@@ -224,6 +233,76 @@ public sealed class JobService : IJobPublisher, IJobTracker
         }
 
         return await _store.GetAttemptsAsync(jobRef.Value, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lấy bản tổng hợp chỉ số độ tin cậy và hiệu năng hệ thống (Reliability Summary).
+    /// </summary>
+    public Task<ReliabilitySummaryDto> GetReliabilitySummaryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var snapshot = _metrics?.GetSnapshot() ?? new JobMetricsSnapshot();
+        var recentAlerts = _alertPublisher?.GetRecentAlerts() ?? Array.Empty<IncidentAlert>();
+
+        var summary = new ReliabilitySummaryDto
+        {
+            TotalEnqueued = snapshot.TotalEnqueued,
+            TotalCompleted = snapshot.TotalCompleted,
+            TotalFailed = snapshot.TotalFailed,
+            TotalRetries = snapshot.TotalRetries,
+            ActivePending = snapshot.ActivePending,
+            ActiveRunning = snapshot.ActiveRunning,
+            StaleLeaseRecoveries = snapshot.StaleLeaseRecoveries,
+            SuccessRatePercentage = snapshot.SuccessRatePercentage,
+            FailureRatePercentage = snapshot.FailureRatePercentage,
+            AverageDurationMs = snapshot.AverageDurationMs,
+            P50DurationMs = snapshot.P50DurationMs,
+            P90DurationMs = snapshot.P90DurationMs,
+            P95DurationMs = snapshot.P95DurationMs,
+            CircuitBreakerStates = snapshot.CircuitBreakerStates,
+            ProviderErrors = snapshot.ProviderErrors,
+            RecentAlerts = recentAlerts,
+            CalculatedAt = DateTimeOffset.UtcNow
+        };
+
+        return Task.FromResult(summary);
+    }
+
+    /// <summary>
+    /// Kích hoạt một cảnh báo sự cố diễn tập (Drill Test Alert) để kiểm tra khả năng định tuyến và kiểm định payload SNS.
+    /// </summary>
+    public async Task<PublishAlertResult> TriggerTestAlertAsync(
+        string requesterId,
+        string? title = null,
+        string? details = null,
+        string? jobType = null,
+        string? provider = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_alertPublisher is null)
+        {
+            return PublishAlertResult.Failed("SNS Alert Publisher is not configured.");
+        }
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.DrillTestAlert,
+            Severity = IncidentSeverity.Info,
+            Title = string.IsNullOrWhiteSpace(title) ? "Controlled Failure Drill Test Alert" : title.Trim(),
+            Details = string.IsNullOrWhiteSpace(details)
+                ? $"Drill initiated by {requesterId} to verify Amazon SNS alert routing and notification payload integrity."
+                : details.Trim(),
+            JobType = jobType,
+            Provider = provider ?? "AWS_BEDROCK",
+            RecommendedAction = "No action required. This is an operational drill to confirm notification channel delivery.",
+            RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md",
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+
+        return await _alertPublisher.PublishIncidentAlertAsync(alert, cancellationToken);
     }
 
     private static JobStatusDto MapToDto(BackgroundJob job)
