@@ -3,8 +3,48 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
 type Blueprint = { id: string; name: string; version: string };
-type Result = { id: string; status: string; items: { questionId: string; revision: number; points: number; slotIndex: number }[]; gaps: { slotIndex: number; missingCount: number; missingPoints: number }[]; job: { status: string; safeMessage?: string } | null };
+type DraftReference = { questionId: string; revision: number; slotIndex: number };
+type DraftQuestion = { revision: number; stem: string; options: string[]; source: string | null };
+type Result = { id: string; status: string; items: { questionId: string; revision: number; points: number; slotIndex: number }[]; gaps: { slotIndex: number; missingCount: number; missingPoints: number }[]; drafts?: DraftReference[]; job: { status: string; safeMessage?: string } | null };
 const labels: Record<string,string> = { QUEUED: 'Đang chờ xử lý', PARTIAL: 'Chưa đủ câu hỏi', NEEDS_REVIEW: 'Đủ câu hỏi — chờ duyệt đề' };
+
+function DraftPreview({ draft, number }: { draft: DraftReference; number: number }) {
+  const { apiFetch } = useAuth();
+  const [question, setQuestion] = useState<DraftQuestion | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function open() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await apiFetch(`/api/v1/questions/${draft.questionId}`);
+      if (!response.ok) throw new Error('Không xem được câu nháp này.');
+      const detail: DraftQuestion = await response.json();
+      if (detail.revision !== draft.revision) {
+        throw new Error('Câu hỏi đã có phiên bản mới. Mở Ngân hàng câu hỏi để xem lịch sử.');
+      }
+      setQuestion(detail);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Không tải được câu nháp.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return <li>
+    <button type="button" className="btn btn-secondary" disabled={loading} onClick={() => {
+      if (question) setQuestion(null);
+      else void open();
+    }}>{loading ? 'Đang tải…' : question ? `Ẩn câu ${number}` : `Xem câu ${number} · bản ${draft.revision}`}</button>
+    {error && <p role="alert">{error}</p>}
+    {question && <div>
+      <p>{question.stem}</p>
+      <ol type="A">{question.options.map((option, index) => <li key={index}>{option}</li>)}</ol>
+      {question.source && <p>Nguồn: {question.source}</p>}
+    </div>}
+  </li>;
+}
 
 export default function GeneratePage() {
   const { apiFetch, csrfToken } = useAuth();
@@ -80,6 +120,17 @@ export default function GeneratePage() {
       {result.job?.safeMessage && <p role="alert">{result.job.safeMessage}</p>}
       <p>Đã chọn {result.items.length} câu · {result.items.reduce((sum,q)=>sum+q.points,0)} điểm</p>
       {result.gaps.length > 0 && <table><caption>Các ô còn thiếu</caption><thead><tr><th>Ô</th><th>Số câu thiếu</th><th>Điểm thiếu</th></tr></thead><tbody>{result.gaps.map(g=><tr key={g.slotIndex}><td>{g.slotIndex+1}</td><td>{g.missingCount}</td><td>{g.missingPoints}</td></tr>)}</tbody></table>}
+      {result.drafts && result.drafts.length > 0 && <section aria-label="Câu nháp theo ô thiếu">
+        <h3>Câu nháp theo ô thiếu</h3>
+        <p>Xem nội dung dự kiến của câu nháp. Tổng số câu của đề chỉ tính các câu đã chọn từ ngân hàng đã duyệt.</p>
+        {result.gaps.map(gap => {
+          const drafts = result.drafts?.filter(draft => draft.slotIndex === gap.slotIndex) ?? [];
+          return drafts.length > 0 && <div key={gap.slotIndex}>
+            <h4>Ô {gap.slotIndex + 1}</h4>
+            <ul>{drafts.map((draft, index) => <DraftPreview key={`${draft.questionId}:${draft.revision}`} draft={draft} number={index + 1} />)}</ul>
+          </div>;
+        })}
+      </section>}
       {result.status === 'NEEDS_REVIEW' && <p>Đề chưa được chốt hoặc phát hành.</p>}
       {!busy && <button className="btn btn-secondary" onClick={()=>{setKey(null);setExamId(null);setResult(null);setError('');}}>Chuẩn bị yêu cầu mới</button>}
     </section>}
