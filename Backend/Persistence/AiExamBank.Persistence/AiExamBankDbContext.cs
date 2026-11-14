@@ -26,6 +26,7 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
     {
         base.OnModelCreating(modelBuilder);
         AiExamBank.Persistence.Exams.BlueprintModel.ApplyBlueprints(modelBuilder);
+        AiExamBank.Persistence.Exams.ExamGenerationModel.ApplyExamGeneration(modelBuilder);
 
         modelBuilder.Entity<SchoolEntity>(entity =>
         {

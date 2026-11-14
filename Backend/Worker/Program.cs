@@ -1,11 +1,23 @@
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
 using AiExamBank.Modules.Jobs.Infrastructure;
+using AiExamBank.Persistence;
+using AiExamBank.Persistence.Exams;
+using AiExamBank.Persistence.Questions;
 using AiExamBank.Worker;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (!string.IsNullOrWhiteSpace(connectionString))
+{
+    builder.Services.AddDbContext<AiExamBankDbContext>(options => options.UseSqlServer(connectionString));
+    builder.Services.AddQuestionBank();
+    builder.Services.AddExamSelection();
+}
 
 // Cấu hình kho lưu trữ Job bền vững và danh mục Handler
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);

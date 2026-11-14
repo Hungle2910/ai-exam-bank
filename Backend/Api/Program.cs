@@ -1,4 +1,5 @@
 using AiExamBank.Persistence;
+using AiExamBank.Persistence.Exams;
 using AiExamBank.Persistence.Questions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,7 @@ builder.Services.AddDbContext<AiExamBankDbContext>(options =>
 builder.Services.AddScoped<ResourceAuthorizationService>();
 builder.Services.AddQuestionBank();
 builder.Services.AddQuestionBankOpenApi();
-builder.Services.AddScoped<AiExamBank.Persistence.Exams.BlueprintStore>();
+builder.Services.AddExamSelection();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
@@ -120,7 +121,10 @@ builder.Services.AddSingleton<JobService>();
 builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
 builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
 if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))
+{
     builder.Services.AddHostedService<JobWorkerHostedService>();
+}
+builder.Services.AddHostedService<AiExamBank.Api.Exams.ExamOutboxDispatcher>();
 
 var app = builder.Build();
 
@@ -188,6 +192,7 @@ app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
 
 app.MapQuestionEndpoints();
 app.MapBlueprintEndpoints();
+app.MapExamSelection();
 app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
 app.MapSchoolAdministrationEndpoints();
