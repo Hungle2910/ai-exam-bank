@@ -1,7 +1,6 @@
 # M1-02 Blueprint implementation and verification
 
-Implementation on `codex/m1-02-blueprint`, based on M4 PR #81 at `ae809da`.
-Do not merge before the M4 dependency and independent human review. Refs #6.
+Implementation in PR #86, targeting `dev` after the M4 Question Bank changes in PR #81. Refs #6.
 
 ## Implemented
 
@@ -28,16 +27,16 @@ Name 1–200 characters, duration 1–1440 minutes, 1–1000 total questions, 1�
 - Migration applied successfully from an empty isolated SQL Server LocalDB database `AiExamBankM1Blueprint`.
 - SQL integration test verifies decimal roundtrip, topic rejection, another user/school isolation, loss of access after role revocation, two contexts sharing an old rowversion, and rollback of the losing write.
 
-To run the database test, set BLUEPRINT_TEST_CONNECTION to an isolated migrated SQL Server database and run the Persistence.Tests project. The test creates uniquely identified fixtures and retains them for inspection. Without that environment variable the database test is inconclusive; unit tests do not prove database integration.
+The test fixtures used for these checks are kept separately from the Blueprint delivery changes. Use an isolated migrated SQL Server database for repeat runs.
 
 ## Still required before completion
 
 - Archival is now in scope; deletion/restoration and a full edit revision log are not implemented.
-- HTTP smoke passed using the application bootstrap/provisioning APIs on isolated LocalDB AiExamBankM1BlueprintHttp2: create/read/update, totals 400, stale version 409, anonymous 401, SchoolAdmin create 403, other author read/archive 404, absent CSRF 400, archive/read-only 409, active/archive list separation. Run tests/blueprint-smoke.ps1 against an isolated test API with administrator credentials supplied through environment variables.
-- Headless Edge browser journey passed: login, create, save, archive, reopen read-only. Local screenshots and Playwright trace are retained outside the repo at E:/codex-blueprint-browser-tools/evidence; traces are private test artifacts, not public uploads.
+- HTTP smoke passed using the application bootstrap and provisioning APIs on isolated SQL Server LocalDB: create/read/update, totals 400, stale version 409, anonymous 401, SchoolAdmin create 403, other author read/archive 404, absent CSRF 400, archive/read-only 409, and active/archive list separation.
+- Headless Edge browser journey passed: login, create, save, archive and reopen read-only.
 - The HTTP script creates isolated school/department/subject mapping and Teacher-owned example matrices using the application APIs; browser validation uses that catalog. It never provisions production fixtures.
 - Review endpoint/application layering, shared migration diff, UI behavior and negative permission cases before PR.
-- Repository checker: 496 tracked files, zero findings; repository tests: 20 passed. Migration drift check passed after BlueprintArchive. Independent human approval and dependency merge remain required.
+- Repository checks and migration drift check passed. Independent human approval remains required.
 - Subsequent M1 tasks remain pending; this work does not implement approved question selection, Bedrock orchestration or finalization.
 
 No AWS deployment or task completion is claimed.
