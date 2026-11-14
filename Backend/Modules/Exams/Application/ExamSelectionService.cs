@@ -18,8 +18,19 @@ public sealed record ExamSelectionResult(IReadOnlyList<SelectedExamQuestion> Ite
 /// <summary>Consumes approved-only reads after the caller has authorized the persisted blueprint.</summary>
 public sealed class ExamSelectionService(IApprovedQuestionReader reader)
 {
-    public async Task<ExamSelectionResult> SelectAsync(BlueprintMatrix matrix, Guid schoolId, Guid departmentId,
-        int seed, CancellationToken ct = default)
+    public Task<ExamSelectionResult> SelectAsync(BlueprintMatrix matrix, Guid schoolId, Guid departmentId,
+        int seed, CancellationToken ct = default) => SelectCoreAsync(matrix, schoolId, departmentId, seed, revalidate: true, ct);
+
+    /// <summary>
+    /// The caller must hold a serializable SQL transaction shared by the approved reader and result write.
+    /// Candidate approval and content are protected until the selection commits.
+    /// </summary>
+    public Task<ExamSelectionResult> SelectWithinSerializableTransactionAsync(BlueprintMatrix matrix, Guid schoolId,
+        Guid departmentId, int seed, CancellationToken ct = default) =>
+        SelectCoreAsync(matrix, schoolId, departmentId, seed, revalidate: false, ct);
+
+    private async Task<ExamSelectionResult> SelectCoreAsync(BlueprintMatrix matrix, Guid schoolId, Guid departmentId,
+        int seed, bool revalidate, CancellationToken ct)
     {
         if (schoolId == Guid.Empty || departmentId == Guid.Empty) throw new ArgumentException("A persisted school and department scope is required.");
         if (matrix.Validate().Count != 0) throw new ArgumentException("The matrix is invalid.", nameof(matrix));
@@ -48,8 +59,8 @@ public sealed class ExamSelectionService(IApprovedQuestionReader reader)
                     if (candidate.SchoolId != schoolId || candidate.DepartmentId != departmentId ||
                         candidate.SubjectId != matrix.SubjectId || candidate.TopicId != slot.TopicId || candidate.Difficulty != difficulty)
                         throw new InvalidOperationException("Approved reader returned a question outside the authorized matrix scope.");
-                    // Pin and revalidate the exact revision, not the mutable question head.
-                    var current = await reader.GetApprovedAsync(candidate.Revision, ct);
+                    // Recheck the pinned revision when the caller does not hold transaction locks.
+                    var current = revalidate ? await reader.GetApprovedAsync(candidate.Revision, ct) : candidate;
                     if (current is null) continue;
                     if (current != candidate && (current.SchoolId != schoolId || current.DepartmentId != departmentId ||
                         current.SubjectId != matrix.SubjectId || current.TopicId != slot.TopicId || current.Difficulty != difficulty ||
