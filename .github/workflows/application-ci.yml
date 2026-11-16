@@ -56,7 +56,7 @@ jobs:
           export Jobs__StorePath="$RUNNER_TEMP/blueprint-jobs.json"
           trap 'if [ -n "${api_pid:-}" ]; then kill "$api_pid" 2>/dev/null || true; fi; docker rm -f blueprint-sql >/dev/null 2>&1 || true' EXIT
           docker run -d --name blueprint-sql -e ACCEPT_EULA -e MSSQL_SA_PASSWORD -p 127.0.0.1:1433:1433 \
-            mcr.microsoft.com/mssql/server@sha256:e10cd49443c94dbdcb7a050987db22ff4d8c87052ac53768abe1ed848d3fcef6
+            mcr.microsoft.com/mssql/server:2022-latest
           for attempt in {1..60}; do
             if docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" blueprint-sql \
               /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' >/dev/null 2>&1; then break; fi
