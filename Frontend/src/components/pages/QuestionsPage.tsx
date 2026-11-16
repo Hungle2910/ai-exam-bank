@@ -109,8 +109,8 @@ const describe = (e: unknown, what: string) =>
    ============================================================ */
 
 export default function QuestionsPage() {
-  const { success } = useToast();
-  const { user, apiFetch } = useAuth();
+  const { success, error: showError } = useToast();
+  const { user, apiFetch, csrfToken } = useAuth();
   const [catalog, setCatalog] = useState<CatalogSubject[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogTick, setCatalogTick] = useState(0);
@@ -177,6 +177,22 @@ export default function QuestionsPage() {
   const onSaved = (mockDetail?: QuestionDetail) => {
     if (mockDetail) setMockStore(prev => prev.some(q => q.id === mockDetail.id) ? prev.map(q => q.id === mockDetail.id ? mockDetail : q) : [mockDetail, ...prev]);
     setEditing(null); load();
+  };
+
+  const submitForReview = async (q: QuestionItem) => {
+    try {
+      // Bản nháp mới có review version 1; server kiểm tra cả revision lẫn version.
+      // Nếu câu đã đổi, server trả 409 và danh sách được tải lại.
+      const response = await apiFetch(`/api/v1/questions/${q.id}/submit-review`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
+        body: JSON.stringify({ revision: q.revision, expectedVersion: 1 }),
+      });
+      if (response.ok) success('Đã gửi câu hỏi để duyệt');
+      else if (response.status === 409) showError('Câu hỏi đã thay đổi. Hãy kiểm tra lại');
+      else showError('Không gửi duyệt được câu hỏi');
+    } catch { showError('Không kết nối được máy chủ'); }
+    load();
   };
 
   return (
@@ -254,6 +270,8 @@ export default function QuestionsPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {canEdit(q) && <button className="topbar-icon-btn" onClick={() => setEditing(q.id)} aria-label="Sửa" id={`btn-edit-${q.id}`}><Pencil size={14} /></button>}
+                      {!isMock && q.status === 'DRAFT' && canEdit(q) &&
+                        <button className="btn btn-secondary btn-sm" onClick={() => void submitForReview(q)} id={`btn-submit-review-${q.id}`}>Gửi duyệt</button>}
                       <button className="topbar-icon-btn" onClick={() => setHistory(q.id)} aria-label="Lịch sử" id={`btn-history-${q.id}`}><History size={14} /></button>
                     </div>
                   </td>
