@@ -21,7 +21,7 @@
 | Câu hỏi không bị xóa | có | `TR_Questions_Immutable`, 51005 (và khóa ngoại, 547) |
 | `LatestRevision` chỉ tăng | có | 51006 |
 
-Chỉ cột `Status` của revision được đổi, theo luồng Review của M3 (`DRAFT → PENDING_REVIEW → APPROVED/REJECTED`); các bước chưa cuối không bị hạn chế ở đây. Sửa một câu đang `PENDING_REVIEW` vẫn bị writer từ chối (409).
+Chỉ cột `Status` của revision được đổi, theo luồng Review của M3 (`DRAFT → PENDING_REVIEW → APPROVED/REJECTED`); các bước chưa cuối không bị hạn chế ở đây. Sửa một câu đang `PENDING_REVIEW` vẫn bị writer từ chối (409). Từ khi M3-03 vào `dev`, luồng Review ghi thêm `ReviewVersion` (token chống ghi đè) và `SubmittedAtUtc` cùng lúc với `Status`; `QuestionImmutabilityGuard` cho phép đúng ba cột này và đóng băng cả ba khi revision đã `APPROVED`/`REJECTED`. Trigger SQL chỉ so các cột nội dung và `Status`, nên không chặn `ReviewVersion`; việc đóng băng nó nằm ở tầng ứng dụng.
 
 Bảng có trigger phải được khai báo trong mô hình EF (`HasTrigger`), nếu không SQL Server từ chối `UPDATE ... OUTPUT` mà EF dùng để đọc lại `RowVersion`.
 
@@ -81,7 +81,17 @@ Reads trên `QuestionRevisions` không đổi ở mọi trường hợp (không 
 
 ## 7. Còn lại của M4-03
 
-- Nút gửi duyệt (`POST /questions/{id}/submit-review`, thuộc M3-03) và adapter thật: chờ nhánh M3-03 merge.
+- Nút gửi duyệt: endpoint và nút ở danh sách đã vào `dev` cùng M3-03. Chưa có nút gửi duyệt trong modal lịch sử/trình soạn thảo.
 - ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Trình soạn thảo có nút "Lịch sử revision" mở lịch sử phía trên form, form giữ nguyên nội dung đang gõ. Còn lại: chụp ảnh/video demo.
 - Sinh lại `openapi/questions.json` từ API đang chạy.
 - Video/ảnh demo revision, ghi PR, giờ thực tế.
+
+## 8. Smoke test trên API thật (sau khi gộp M3-03)
+
+`tools/m403_smoke.ps1` chạy trên API Development và database dùng một lần, kết quả trong [M4-03/evidence_smoke.txt](M4-03/evidence_smoke.txt): tạo câu, gửi duyệt, duyệt revision 1, sửa câu đã duyệt (revision 2 là DRAFT, revision 1 vẫn đang dùng), cập nhật từ revision cũ trả 409, lịch sử mới nhất trước và revision 1 không đổi, duyệt revision 2 thì revision đang dùng chuyển sang 2, trưởng bộ môn đọc được lịch sử lúc câu chờ duyệt, giáo viên tổ khác nhận 404. Sau đó các lệnh SQL thô sửa nội dung, mở lại bản đã duyệt, xóa revision, sửa option, xóa câu đều bị trigger hoặc khóa ngoại từ chối.
+
+Lần chạy đầu bắt được một lỗi tích hợp mà gộp sạch và test riêng từng nhánh đều không thấy: `submit-review` trả 500 vì guard coi `ReviewVersion` là nội dung bất biến. Đã sửa guard và thêm test `The_review_flow_may_move_status_version_and_submit_time_together_but_not_after_a_decision`.
+
+Giới hạn theo chính sách M3-02: trưởng bộ môn chỉ đọc câu đang `PENDING_REVIEW`, nên sau khi quyết định họ nhận 404 với lịch sử (script kiểm đúng điều này).
+
+Chạy lại: khởi động API với `ASPNETCORE_ENVIRONMENT=Development`, `LocalDemoUser__Enabled=true`, `LocalDemoUser__Password`, `LocalDemoUser__BootstrapMinistryAdmin=true`, `Jobs__DisableEmbeddedWorker=true`, rồi `powershell -File tools/m403_smoke.ps1 -Password <mật khẩu>`. Script chạy được trên Windows PowerShell 5.1 và PowerShell 7. Đăng nhập bị giới hạn tốc độ (429): đợi một phút giữa các lần chạy.

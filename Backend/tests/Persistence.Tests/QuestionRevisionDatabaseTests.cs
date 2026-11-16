@@ -115,6 +115,37 @@ public sealed class QuestionRevisionDatabaseTests
     }
 
     [TestMethod]
+    public async Task The_review_flow_may_move_status_version_and_submit_time_together_but_not_after_a_decision()
+    {
+        var id = await CreateDraftAsync("duyệt");
+
+        // Exactly what ReviewEndpoints writes: submit and decide each bump ReviewVersion next to Status.
+        await using (var db = NewContext())
+        {
+            var row = await db.QuestionRevisions.SingleAsync(item => item.QuestionId == id);
+            row.Status = QuestionStatus.PendingReview;
+            row.ReviewVersion = 2;
+            row.SubmittedAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var row = await db.QuestionRevisions.SingleAsync(item => item.QuestionId == id);
+            row.Status = QuestionStatus.Approved;
+            row.ReviewVersion = 3;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = NewContext())
+        {
+            var row = await db.QuestionRevisions.SingleAsync(item => item.QuestionId == id);
+            row.ReviewVersion = 4;
+            await Assert.ThrowsExactlyAsync<QuestionImmutableException>(() => db.SaveChangesAsync(), "a decided revision's review columns are frozen too");
+        }
+    }
+
+    [TestMethod]
     public async Task Editing_an_approved_question_adds_a_draft_and_keeps_the_approved_revision_in_use()
     {
         var id = await CreateDraftAsync("Câu gốc");

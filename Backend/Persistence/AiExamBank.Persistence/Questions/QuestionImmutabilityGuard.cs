@@ -12,6 +12,14 @@ namespace AiExamBank.Persistence.Questions;
 /// </summary>
 internal static class QuestionImmutabilityGuard
 {
+    /// <summary>The columns the Review module (M3-03) moves on a revision: not content, so not covered by immutability.</summary>
+    private static readonly HashSet<string> ReviewBookkeeping =
+    [
+        nameof(QuestionRevisionEntity.Status),
+        nameof(QuestionRevisionEntity.ReviewVersion),
+        nameof(QuestionRevisionEntity.SubmittedAtUtc)
+    ];
+
     public static void Enforce(ChangeTracker tracker)
     {
         foreach (var entry in tracker.Entries())
@@ -38,17 +46,17 @@ internal static class QuestionImmutabilityGuard
             throw new QuestionImmutableException("A revision cannot be deleted.");
         if (entry.State != EntityState.Modified) return;
 
-        foreach (var property in entry.Properties.Where(item => item.IsModified && Changed(item)))
-        {
-            if (property.Metadata.Name != nameof(QuestionRevisionEntity.Status))
-                throw new QuestionImmutableException(
-                    $"The {property.Metadata.Name} of a revision cannot be changed; save a new revision instead.");
+        var changed = entry.Properties.Where(item => item.IsModified && Changed(item)).ToList();
+        foreach (var property in changed.Where(item => !ReviewBookkeeping.Contains(item.Metadata.Name)))
+            throw new QuestionImmutableException(
+                $"The {property.Metadata.Name} of a revision cannot be changed; save a new revision instead.");
 
-            var from = (QuestionStatus)property.OriginalValue!;
-            if (from is QuestionStatus.Approved or QuestionStatus.Rejected)
-                throw new QuestionImmutableException(
-                    $"A revision that is {from} is final; save a new revision instead.");
-        }
+        // Whatever the review flow touches (status, version token, submit time) is frozen once the revision is decided.
+        if (changed.Count == 0) return;
+        var from = (QuestionStatus)entry.Property(nameof(QuestionRevisionEntity.Status)).OriginalValue!;
+        if (from is QuestionStatus.Approved or QuestionStatus.Rejected)
+            throw new QuestionImmutableException(
+                $"A revision that is {from} is final; save a new revision instead.");
     }
 
     private static void CheckQuestion(EntityEntry entry)
