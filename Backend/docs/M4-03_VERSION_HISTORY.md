@@ -81,9 +81,9 @@ Reads trên `QuestionRevisions` không đổi ở mọi trường hợp (không 
 
 ## 7. Còn lại của M4-03
 
-- Nút gửi duyệt: endpoint và nút ở danh sách đã vào `dev` cùng M3-03. Chưa có nút gửi duyệt trong modal lịch sử/trình soạn thảo.
+- Nút gửi duyệt: endpoint và nút ở danh sách đã vào `dev` cùng M3-03. Modal lịch sử cũng có nút Gửi duyệt cho revision mới nhất khi nó còn là DRAFT và người xem là chủ câu hỏi (dùng chung hàm gửi với danh sách, tải lại lịch sử khi server nhận). Nút luôn gửi `expectedVersion: 1`, đúng với bản nháp mới; API lịch sử chưa trả `reviewVersion`.
 - ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Trình soạn thảo có nút "Lịch sử revision" mở lịch sử phía trên form, form giữ nguyên nội dung đang gõ. Còn lại: chụp ảnh/video demo.
-- Sinh lại `openapi/questions.json` từ API đang chạy.
+- ~~Sinh lại `openapi/questions.json`~~ (đã làm): có thêm hai route lịch sử và trường `approvedRevision`; route review của M3-03 không nằm trong tài liệu này.
 - Video/ảnh demo revision, ghi PR, giờ thực tế.
 
 ## 8. Smoke test trên API thật (sau khi gộp M3-03)

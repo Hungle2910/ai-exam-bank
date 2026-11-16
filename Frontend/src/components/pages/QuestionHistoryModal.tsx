@@ -53,8 +53,10 @@ function useHistory(id: string, mockRevisions: RevisionDetail[] | null) {
   return { history: settled?.history ?? null, error: settled?.error ?? null, loading: !settled, reload: () => setTick(t => t + 1) };
 }
 
-export default function QuestionHistoryModal({ id, mockRevisions, onClose }: {
+export default function QuestionHistoryModal({ id, mockRevisions, onClose, onSubmitReview }: {
   id: string; mockRevisions: RevisionDetail[] | null; onClose: () => void;
+  /** Present only when the caller may submit; resolves true when the server accepted it. */
+  onSubmitReview?: (revision: number) => Promise<boolean>;
 }) {
   const { history, error, loading, reload } = useHistory(id, mockRevisions);
 
@@ -70,14 +72,16 @@ export default function QuestionHistoryModal({ id, mockRevisions, onClose }: {
           {error && <div role="alert">⚠ {error} <button className="btn btn-secondary btn-sm" onClick={reload} id="btn-retry-history">Thử lại</button></div>}
           {history && (history.revisions.length === 0
             ? <div>Câu hỏi chưa có revision nào.</div>
-            : <HistoryBody history={history} />)}
+            : <HistoryBody history={history} onSubmitReview={onSubmitReview} onSubmitted={reload} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function HistoryBody({ history }: { history: QuestionHistory }) {
+function HistoryBody({ history, onSubmitReview, onSubmitted }: {
+  history: QuestionHistory; onSubmitReview?: (revision: number) => Promise<boolean>; onSubmitted: () => void;
+}) {
   const { revisions } = history;
   const previousOf = (revision: number) => revisions.find(r => r.revision < revision)?.revision ?? null; // list is newest first
   const [pick, setPick] = useState<{ revision: number; compare: number | null } | null>(null);
@@ -88,6 +92,15 @@ function HistoryBody({ history }: { history: QuestionHistory }) {
   const other = compare === null ? undefined : revisions.find(r => r.revision === compare);
 
   const choose = (revision: number) => setPick({ revision, compare: previousOf(revision) });
+
+  // Only the newest revision can be submitted, and only while it is still a draft.
+  const [submitting, setSubmitting] = useState(false);
+  const canSubmit = !!onSubmitReview && current.isLatest && current.status === 'DRAFT';
+  const submit = async () => {
+    if (!onSubmitReview) return;
+    setSubmitting(true);
+    try { if (await onSubmitReview(current.revision)) onSubmitted(); } finally { setSubmitting(false); }
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '210px 1fr', gap: 18, alignItems: 'start' }}>
@@ -113,6 +126,9 @@ function HistoryBody({ history }: { history: QuestionHistory }) {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
           <div style={{ fontWeight: 600 }}>Revision {current.revision}</div>
+          {canSubmit && (
+            <button type="button" className={clsx('btn btn-primary btn-sm', submitting && 'btn-loading')} disabled={submitting} onClick={submit} id="btn-history-submit-review">Gửi duyệt</button>
+          )}
           {revisions.length > 1 && (
             <label style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--gray-500)' }}>
               So sánh với{' '}

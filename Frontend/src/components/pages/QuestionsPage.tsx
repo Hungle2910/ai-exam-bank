@@ -174,21 +174,29 @@ export default function QuestionsPage() {
     setEditing(null); load();
   };
 
-  const submitForReview = async (q: QuestionItem) => {
+  // Resolves true when the server accepted the submission, so a caller (the history modal) can refresh itself.
+  const submitRevision = async (id: string, revision: number): Promise<boolean> => {
+    let accepted = false;
     try {
       // Bản nháp mới có review version 1; server kiểm tra cả revision lẫn version.
       // Nếu câu đã đổi, server trả 409 và danh sách được tải lại.
-      const response = await apiFetch(`/api/v1/questions/${q.id}/submit-review`, {
+      const response = await apiFetch(`/api/v1/questions/${id}/submit-review`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
-        body: JSON.stringify({ revision: q.revision, expectedVersion: 1 }),
+        body: JSON.stringify({ revision, expectedVersion: 1 }),
       });
+      accepted = response.ok;
       if (response.ok) success('Đã gửi câu hỏi để duyệt');
       else if (response.status === 409) showError('Câu hỏi đã thay đổi. Hãy kiểm tra lại');
       else showError('Không gửi duyệt được câu hỏi');
     } catch { showError('Không kết nối được máy chủ'); }
     load();
+    return accepted;
   };
+  const submitForReview = (q: QuestionItem) => submitRevision(q.id, q.revision);
+  // Same rule as the button in the list: only the owner, and only for a real API.
+  const historyOwner = history ? data?.items.find(q => q.id === history)?.ownerUserId : undefined;
+  const canSubmitFromHistory = !isMock && !!user && !!historyOwner && historyOwner.toLowerCase() === user.id.toLowerCase();
 
   return (
     <div>
@@ -291,6 +299,7 @@ export default function QuestionsPage() {
       )}
       {history && (
         <QuestionHistoryModal id={history} onClose={() => setHistory(null)}
+          onSubmitReview={canSubmitFromHistory ? revision => submitRevision(history, revision) : undefined}
           mockRevisions={isMock ? mockStore.find(q => q.id === history)?.snapshots ?? [] : null} />
       )}
     </div>

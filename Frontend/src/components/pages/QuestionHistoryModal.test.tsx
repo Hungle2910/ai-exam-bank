@@ -95,3 +95,52 @@ it('builds the history from sample data without calling the API', async () => {
   await view.findByText('Mới nhất');
   expect(mocks.apiFetch).not.toHaveBeenCalled();
 });
+
+// Revision 2 is the newest and still a draft; revision 1 is approved.
+const draftHead: QuestionHistory = {
+  ...history,
+  revisions: [revision(2, { isLatest: true }), revision(1, { status: 'APPROVED', isApprovedInUse: true })],
+};
+
+it('submits the newest draft for review and reloads the history once the server accepted it', async () => {
+  mocks.apiFetch.mockImplementation(() => json(200, draftHead));
+  const onSubmitReview = vi.fn().mockResolvedValue(true);
+  const view = render(<QuestionHistoryModal id="q-1" mockRevisions={null} onClose={() => {}} onSubmitReview={onSubmitReview} />);
+
+  fireEvent.click(await view.findByText('Gửi duyệt'));
+
+  await waitFor(() => expect(onSubmitReview).toHaveBeenCalledWith(2));
+  await waitFor(() => expect(mocks.apiFetch).toHaveBeenCalledTimes(2));
+});
+
+it('does not reload when the submission is refused', async () => {
+  mocks.apiFetch.mockImplementation(() => json(200, draftHead));
+  const onSubmitReview = vi.fn().mockResolvedValue(false);
+  const view = render(<QuestionHistoryModal id="q-1" mockRevisions={null} onClose={() => {}} onSubmitReview={onSubmitReview} />);
+
+  fireEvent.click(await view.findByText('Gửi duyệt'));
+
+  await waitFor(() => expect(onSubmitReview).toHaveBeenCalledTimes(1));
+  expect(mocks.apiFetch).toHaveBeenCalledTimes(1);
+});
+
+it('offers no submit action for an older revision, a revision under review, or a caller who cannot submit', async () => {
+  mocks.apiFetch.mockImplementation(() => json(200, draftHead));
+  const onSubmitReview = vi.fn();
+  const view = render(<QuestionHistoryModal id="q-1" mockRevisions={null} onClose={() => {}} onSubmitReview={onSubmitReview} />);
+  await view.findByText('Gửi duyệt');
+  fireEvent.click(view.container.querySelector('#btn-revision-1')!);
+  expect(view.queryByText('Gửi duyệt')).toBeNull();
+  cleanup();
+
+  mocks.apiFetch.mockImplementation(() => json(200, { ...draftHead, revisions: [revision(2, { isLatest: true, status: 'PENDING_REVIEW' }), draftHead.revisions[1]] }));
+  const pending = render(<QuestionHistoryModal id="q-1" mockRevisions={null} onClose={() => {}} onSubmitReview={onSubmitReview} />);
+  await pending.findByText('Mới nhất');
+  expect(pending.queryByText('Gửi duyệt')).toBeNull();
+  cleanup();
+
+  mocks.apiFetch.mockImplementation(() => json(200, draftHead));
+  const viewer = render(<QuestionHistoryModal id="q-1" mockRevisions={null} onClose={() => {}} />);
+  await viewer.findByText('Mới nhất');
+  expect(viewer.queryByText('Gửi duyệt')).toBeNull();
+});
