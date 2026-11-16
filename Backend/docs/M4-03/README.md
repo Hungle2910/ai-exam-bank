@@ -7,7 +7,9 @@ Mọi thứ ở đây chạy trên một database **dùng một lần** (không 
 | [query_evidence_seed.sql](query_evidence_seed.sql) | Tạo 60.000 câu / 150.000 revision / 600.000 option |
 | [index_experiment.sql](index_experiment.sql), [run_experiment.sh](run_experiment.sh) | Chạy 7 câu SQL đại diện (cùng câu EF gửi) và in logical reads từng bảng |
 | [query_evidence.sql](query_evidence.sql), [run_evidence.sh](run_evidence.sh) | Chạy các truy vấn thật của ứng dụng (`QuestionQueryEvidenceRunner`) rồi đọc chi phí từ DMV của SQL Server |
-| `evidence_before.txt`, `evidence_after.txt` | Kết quả của `run_evidence.sh` trước (database ở migration `QuestionBank`) và sau hai migration M4-03 |
+| [../../tools/m403_smoke.ps1](../../tools/m403_smoke.ps1), `evidence_smoke.txt` | Smoke trên API thật (lịch sử, edit-after-approve, 409, quyền) và lệnh SQL thô thử trigger |
+| [../../tools/m403_upgrade_check.ps1](../../tools/m403_upgrade_check.ps1), `evidence_upgrade.txt` | Nâng cấp database đã có dữ liệu duyệt M3-03, rồi hoàn tác chỉ M4-03 |
+| `evidence_before.txt`, `evidence_after.txt` | Kết quả của `run_evidence.sh` trước (đo lúc database ở migration `QuestionBank`, trước khi M3-03 vào `dev`; về truy vấn danh sách thì trạng thái này và `ReviewWorkflow` giống nhau) và sau hai migration M4-03 |
 | `evidence_experiment_before.txt`, `evidence_experiment_after.txt` | Kết quả của `run_experiment.sh` trước và sau |
 
 ## Tái lập (từ thư mục `Backend`, SQL Server Express cục bộ, Windows auth)
@@ -19,7 +21,7 @@ E="--project Persistence/AiExamBank.Persistence --startup-project Api"
 dotnet ef database update $E                                           # tạo database và áp mọi migration
 sqlcmd -S .\\SQLEXPRESS -E -C -I -d AiExamBankM4Perf -i docs/M4-03/query_evidence_seed.sql   # nạp dữ liệu (cần -I)
 
-dotnet ef database update 20261029062927_QuestionBank $E               # về trạng thái trước M4-03
+dotnet ef database update 20261116032602_ReviewWorkflow $E            # về trạng thái trước M4-03 (giữ dữ liệu M3-03)
 bash docs/M4-03/run_experiment.sh  > docs/M4-03/evidence_experiment_before.txt
 bash docs/M4-03/run_evidence.sh    > docs/M4-03/evidence_before.txt
 

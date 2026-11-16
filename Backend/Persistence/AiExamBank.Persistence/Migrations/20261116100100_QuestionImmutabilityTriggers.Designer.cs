@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AiExamBank.Persistence.Migrations
 {
     [DbContext(typeof(AiExamBankDbContext))]
-    [Migration("20261110075848_QuestionImmutabilityTriggers")]
+    [Migration("20261116100100_QuestionImmutabilityTriggers")]
     partial class QuestionImmutabilityTriggers
     {
         /// <inheritdoc />
@@ -238,6 +238,10 @@ namespace AiExamBank.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<long>("ReviewVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.Property<string>("SourceText")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -254,6 +258,9 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.Property<Guid>("SubjectId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("TopicId")
                         .HasColumnType("uniqueidentifier");
@@ -290,6 +297,43 @@ namespace AiExamBank.Persistence.Migrations
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.ReviewDecisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("ReviewerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewerUserId");
+
+                    b.HasIndex("QuestionId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("ReviewDecisions", (string)null);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.SchoolSubjectEntity", b =>
@@ -666,6 +710,21 @@ namespace AiExamBank.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TopicId", "SubjectId")
                         .HasPrincipalKey("Id", "SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.ReviewDecisionEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.QuestionRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId", "Revision")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

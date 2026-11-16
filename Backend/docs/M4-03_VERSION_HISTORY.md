@@ -41,14 +41,14 @@ Truy vấn lịch sử tốn số query cố định (không N+1): câu hỏi, t
 
 ## 4. Migration
 
-Hai migration, theo thứ tự:
+Hai migration, theo thứ tự (timestamp nằm **sau** `20261116032602_ReviewWorkflow` của M3-03, nên M4-03 luôn là phần đuôi của lịch sử migration):
 
-1. `20261110075651_QuestionHistoryIndexes`: thay `IX_Questions_OwnerUserId` bằng `IX_Questions_OwnerUserId_UpdatedAtUtc_Id` và `IX_Questions_SchoolId_SubjectId_DepartmentId` bằng `IX_Questions_SchoolId_SubjectId_DepartmentId_UpdatedAtUtc_Id` (có `UpdatedAtUtc DESC` và cột INCLUDE).
-2. `20261110075848_QuestionImmutabilityTriggers`: ba trigger ở mục 2.
+1. `20261116100000_QuestionHistoryIndexes`: thay `IX_Questions_OwnerUserId` bằng `IX_Questions_OwnerUserId_UpdatedAtUtc_Id` và `IX_Questions_SchoolId_SubjectId_DepartmentId` bằng `IX_Questions_SchoolId_SubjectId_DepartmentId_UpdatedAtUtc_Id` (có `UpdatedAtUtc DESC` và cột INCLUDE).
+2. `20261116100100_QuestionImmutabilityTriggers`: ba trigger ở mục 2.
 
 Áp dụng theo cơ chế chung (không thêm service): `dotnet ef database update --project Persistence/AiExamBank.Persistence --startup-project Api` với `ConnectionStrings__DefaultConnection` trỏ tới database đích.
 
-Hoàn tác về M4-02: `dotnet ef database update 20261029062927_QuestionBank ...`. Đã chạy Up → Down → Up trên database sạch: sau Down không còn trigger và index cũ trở lại. Cả hai migration không đổi dữ liệu, chỉ đổi index và thêm trigger, nên áp trên database đã có dữ liệu là an toàn; việc tạo index khóa bảng trong thời gian ngắn, nên áp ngoài giờ cao điểm nếu bảng lớn.
+Hoàn tác **chỉ phần M4-03**: `dotnet ef database update 20261116032602_ReviewWorkflow --project Persistence/AiExamBank.Persistence --startup-project Api`. Lệnh này bỏ ba trigger và trả hai index cũ, giữ nguyên bảng `ReviewDecisions`, các cột `ReviewVersion`/`SubmittedAtUtc` và mọi dữ liệu duyệt của M3-03 (đã kiểm chứng, xem mục 10). **Đừng hoàn tác về `20261029062927_QuestionBank` (M4-02) trên database đã có M3-03**: lệnh đó cũng lùi `ReviewWorkflow`, xóa bảng `ReviewDecisions` và hai cột trên `QuestionRevisions`, tức là mất dữ liệu duyệt. Đã chạy Up → Down → Up: sau Down không còn trigger, index cũ trở lại, dữ liệu duyệt còn nguyên. Cả hai migration không đổi dữ liệu, chỉ đổi index và thêm trigger, nên áp trên database đã có dữ liệu là an toàn; việc tạo index khóa bảng trong thời gian ngắn, nên áp ngoài giờ cao điểm nếu bảng lớn.
 
 Khi một script cần sửa dữ liệu lịch sử (ví dụ dọn dữ liệu thử), phải `DISABLE TRIGGER` rõ ràng và có chủ đích; đừng tắt vĩnh viễn.
 
@@ -105,3 +105,14 @@ Chụp từ giao diện thật nối API thật và SQL Server cục bộ (datab
 | [01](M4-03/demo/01_history_compare_draft_with_submit.png) | Lịch sử: Revision 3 (Nháp, mới nhất) so với Revision 2 (đang dùng để thi), 3 trường khác nhau, nút Gửi duyệt |
 | [02](M4-03/demo/02_history_compare_approved_revisions.png) | Revision 2 so với Revision 1, cả hai đã duyệt |
 | [03](M4-03/demo/03_after_submit_pending_review.png) | Sau khi bấm Gửi duyệt: Revision 3 chuyển sang Chờ duyệt, nút biến mất; Revision 2 vẫn là bản đang dùng |
+
+## 10. Nâng cấp database đã có dữ liệu duyệt của M3-03
+
+Hai migration của nhánh này từng có timestamp (10/11) trước `ReviewWorkflow` (16/11, đã vào `dev`). Điều đó làm hướng dẫn hoàn tác lùi cả M3-03 và chỉ mới được thử trên database sạch. Đã đổi timestamp để M4-03 nằm sau `ReviewWorkflow` (đổi tên file và `[Migration]` ở hai file Designer, làm mới `BuildTargetModel` theo snapshot hiện tại; snapshot và code `Up`/`Down` không đổi) và thử nâng cấp thật. Kết quả ở [M4-03/evidence_upgrade.txt](M4-03/evidence_upgrade.txt), tái lập bằng `tools/m403_upgrade_check.ps1`:
+
+1. Database ở trạng thái `origin/dev` (`9f82c41`): đã áp `ReviewWorkflow`, chưa có migration M4-03; tạo câu hỏi, gửi duyệt và duyệt revision 1, sửa thành revision 2 (DRAFT). Có 1 dòng `ReviewDecisions`.
+2. `dotnet ef database update` với migration của nhánh: áp đúng hai migration M4-03, `ReviewDecisions` và trạng thái các revision không đổi.
+3. API của nhánh trên cùng database: đọc được câu cũ và lịch sử; gửi duyệt và duyệt revision 2 thành công, bản đang dùng chuyển sang 2.
+4. Hoàn tác về `ReviewWorkflow`: không còn trigger, `ReviewDecisions` và hai cột M3 còn nguyên.
+
+Lưu ý cho máy đã áp hai migration này theo timestamp cũ (10/11): lịch sử migration của database đó có ID cũ nên EF sẽ coi hai migration mới là chưa áp và chạy lại, gây lỗi vì trigger và index đã tồn tại. Với database cục bộ, hãy tạo lại (`dotnet ef database drop` rồi `update`). Nếu database dùng chung chỉ được cập nhật từ `dev` (nơi chưa có hai migration này) thì chưa từng áp chúng và không bị ảnh hưởng; cần xác nhận với người triển khai trước khi merge.
