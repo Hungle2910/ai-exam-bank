@@ -5,6 +5,7 @@ import QuestionsPage from './QuestionsPage';
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   success: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -12,12 +13,30 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 vi.mock('@/contexts/ToastContext', () => ({
-  useToast: () => ({ success: mocks.success }),
+  useToast: () => ({ success: mocks.success, error: mocks.error }),
 }));
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+it('submits the current draft revision and reloads its status', async () => {
+  const draft = { id: 'q1', revision: 1, stem: 'Question', subject: { id: 'sub-a', name: 'Môn A' },
+    topic: { id: 'top-a', name: 'Chủ đề A' }, difficulty: 'EASY', status: 'DRAFT',
+    ownerUserId: 'user-a', updatedAt: '2026-11-01T00:00:00Z' };
+  mocks.apiFetch.mockImplementation((url: string) =>
+    url === '/api/v1/catalog' ? json(200, catalog)
+      : url === '/api/v1/questions/q1/submit-review' ? json(200)
+        : json(200, { items: [draft], page: 1, pageSize: 20, total: 1 }));
+
+  const view = render(<QuestionsPage />);
+  const button = await view.findByText('Gửi duyệt');
+  fireEvent.click(button);
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Đã gửi câu hỏi để duyệt'));
+  const call = mocks.apiFetch.mock.calls.find(([url]) => url === '/api/v1/questions/q1/submit-review');
+  expect(call?.[1].headers['X-CSRF-TOKEN']).toBe('csrf');
+  expect(JSON.parse(call?.[1].body)).toEqual({ revision: 1, expectedVersion: 1 });
 });
 
 const json = (status: number, body: unknown = null) => Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -51,4 +70,35 @@ it('keeps a retry for the catalog and restores subject choices once it loads', a
   await waitFor(() => expect(view.container.querySelector('#btn-create-question')).not.toBeNull());
   expect(view.container.querySelector('#btn-retry-catalog')).toBeNull();
   expect(Array.from((view.container.querySelector('#filter-subject') as HTMLSelectElement).options).map(o => o.text)).toContain('Môn A');
+});
+
+it('opens the revision history from the editor without losing what the author has typed', async () => {
+  const detail = {
+    id: 'q-1', revision: 2, status: 'APPROVED', origin: 'MANUAL', stem: 'Nội dung cũ', options: ['a', 'b', 'c', 'd'], correctOption: 'A',
+    subject: { id: 'sub-a', name: 'Môn A' }, topic: { id: 'top-a', name: 'Chủ đề A' }, difficulty: 'EASY', source: null,
+    ownerUserId: 'user-a', updatedAt: '2026-11-01T00:00:00Z', approvedRevision: 2, revisions: [],
+  };
+  const revision = (n: number) => ({
+    revision: n, status: 'APPROVED', origin: 'MANUAL', stem: `Nội dung ${n}`, options: ['a', 'b', 'c', 'd'], correctOption: 'A',
+    topic: { id: 'top-a', name: 'Chủ đề A' }, difficulty: 'EASY', source: null, importBatchId: null, importRowNumber: null,
+    createdByUserId: 'user-a', createdAt: '2026-11-01T00:00:00Z', isLatest: n === 2, isApprovedInUse: n === 2,
+  });
+  mocks.apiFetch.mockImplementation((url: string) => {
+    if (url === '/api/v1/catalog') return json(200, catalog);
+    if (url === '/api/v1/questions/q-1') return json(200, detail);
+    if (url === '/api/v1/questions/q-1/revisions') return json(200, { id: 'q-1', subject: detail.subject, latestRevision: 2, approvedRevision: 2, revisions: [revision(2), revision(1)] });
+    return json(200, { items: [{ ...detail, subject: detail.subject, topic: detail.topic }], page: 1, pageSize: 20, total: 1 });
+  });
+
+  const view = render(<QuestionsPage />);
+  fireEvent.click(await view.findByLabelText('Sửa'));
+  const stem = await view.findByLabelText(/Nội dung/) as HTMLTextAreaElement;
+  fireEvent.change(stem, { target: { value: 'Đang gõ dở' } });
+
+  fireEvent.click(view.container.querySelector('#btn-editor-history')!);
+  await view.findByText('Đang dùng để thi');
+  fireEvent.click(view.container.querySelector('#btn-close-history')!);
+
+  expect(view.container.querySelector('#btn-save-draft')).not.toBeNull();
+  expect((view.container.querySelector('#q-content') as HTMLTextAreaElement).value).toBe('Đang gõ dở');
 });

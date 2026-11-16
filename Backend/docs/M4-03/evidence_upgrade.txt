@@ -1,0 +1,59 @@
+M4-03 upgrade evidence, 2026-11-16. Local SQL Server Express, throwaway database, Development API.
+Steps 1-4: tools/m403_upgrade_check.ps1. Steps 5-6: dotnet ef.
+
+== 1. database at the state of origin/dev (9f82c41): M3-03 applied, M4-03 migrations not
+20261016100655_InitialIdentity 
+20261016112733_SchoolScopeAndRoleAudit 
+20261029062927_QuestionBank 
+20261116032602_ReviewWorkflow 
+ReviewDecisions rows 1
+revision 1 Approved 3
+revision 2 Draft 1
+
+== 2. dotnet ef database update with this branch's migrations (database already holds the review data)
+Applying migration '20261116100000_QuestionHistoryIndexes'.
+Applying migration '20261116100100_QuestionImmutabilityTriggers'.
+Done.
+20261016100655_InitialIdentity 
+20261016112733_SchoolScopeAndRoleAudit 
+20261029062927_QuestionBank 
+20261116032602_ReviewWorkflow 
+20261116100000_QuestionHistoryIndexes 
+20261116100100_QuestionImmutabilityTriggers 
+ReviewDecisions rows 1
+revision 1 Approved 3
+revision 2 Draft 1
+trigger TR_QuestionOptions_Immutable 
+trigger TR_QuestionRevisions_Immutable 
+trigger TR_Questions_Immutable 
+
+== 3. tools/m403_upgrade_check.ps1 -Phase Continue (this branch's API, same database)
+{"QuestionId":"2e7c5683-e105-4173-86de-34874cc63935","BeforeUpgrade":"rev 1 APPROVED, rev 2 DRAFT","HistoryRevisions":2,"ApprovedInUseAfter":2}
+
+== 4. database after
+20261016100655_InitialIdentity 
+20261016112733_SchoolScopeAndRoleAudit 
+20261029062927_QuestionBank 
+20261116032602_ReviewWorkflow 
+20261116100000_QuestionHistoryIndexes 
+20261116100100_QuestionImmutabilityTriggers 
+ReviewDecisions rows 2
+revision 1 Approved 3
+revision 2 Approved 3
+trigger TR_QuestionOptions_Immutable 
+trigger TR_QuestionRevisions_Immutable 
+trigger TR_Questions_Immutable 
+
+== 5. rollback of M4-03 only: dotnet ef database update 20261116032602_ReviewWorkflow
+Reverting migration '20261116100100_QuestionImmutabilityTriggers'.
+Reverting migration '20261116100000_QuestionHistoryIndexes'.
+Done.
+ReviewDecisions rows 2
+ReviewVersion/SubmittedAtUtc columns 2
+M4 triggers 0
+migrations applied 4
+
+== 6. for contrast, the SQL of the OLD instruction (database update 20261029062927_QuestionBank), printed not run
+DROP TABLE [ReviewDecisions];
+ALTER TABLE [QuestionRevisions] DROP COLUMN [ReviewVersion];
+ALTER TABLE [QuestionRevisions] DROP COLUMN [SubmittedAtUtc];
