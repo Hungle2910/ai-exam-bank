@@ -149,16 +149,26 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerUserId");
+                    b.HasIndex("OwnerUserId", "UpdatedAtUtc", "Id")
+                        .IsDescending(false, true, false);
 
-                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId");
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("OwnerUserId", "UpdatedAtUtc", "Id"), new[] { "SchoolId", "DepartmentId", "SubjectId", "LatestRevision" });
 
                     b.HasIndex("SchoolId", "SubjectId", "UpdatedAtUtc");
 
+                    b.HasIndex("SchoolId", "SubjectId", "DepartmentId", "UpdatedAtUtc", "Id")
+                        .IsDescending(false, false, false, true, false);
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("SchoolId", "SubjectId", "DepartmentId", "UpdatedAtUtc", "Id"), new[] { "OwnerUserId", "LatestRevision" });
+
                     b.ToTable("Questions", null, t =>
                         {
+                            t.HasTrigger("TR_Questions_Immutable");
+
                             t.HasCheckConstraint("CK_Questions_LatestRevision", "[LatestRevision] >= 1");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionOptionEntity", b =>
@@ -182,8 +192,12 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.ToTable("QuestionOptions", null, t =>
                         {
+                            t.HasTrigger("TR_QuestionOptions_Immutable");
+
                             t.HasCheckConstraint("CK_QuestionOptions_Label", "[Label] IN ('A', 'B', 'C', 'D')");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.QuestionRevisionEntity", b =>
@@ -221,6 +235,10 @@ namespace AiExamBank.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<long>("ReviewVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.Property<string>("SourceText")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -237,6 +255,9 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.Property<Guid>("SubjectId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("SubmittedAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("TopicId")
                         .HasColumnType("uniqueidentifier");
@@ -257,6 +278,8 @@ namespace AiExamBank.Persistence.Migrations
 
                     b.ToTable("QuestionRevisions", null, t =>
                         {
+                            t.HasTrigger("TR_QuestionRevisions_Immutable");
+
                             t.HasCheckConstraint("CK_QuestionRevisions_CorrectOption", "[CorrectOption] IN ('A', 'B', 'C', 'D')");
 
                             t.HasCheckConstraint("CK_QuestionRevisions_Difficulty", "[Difficulty] IN ('Easy', 'Medium', 'Hard')");
@@ -269,6 +292,45 @@ namespace AiExamBank.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_QuestionRevisions_Status", "[Status] IN ('Draft', 'PendingReview', 'Approved', 'Rejected')");
                         });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.ReviewDecisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("DecidedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("ReviewerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewerUserId");
+
+                    b.HasIndex("QuestionId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("ReviewDecisions", (string)null);
                 });
 
             modelBuilder.Entity("AiExamBank.Persistence.Questions.SchoolSubjectEntity", b =>
@@ -645,6 +707,21 @@ namespace AiExamBank.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TopicId", "SubjectId")
                         .HasPrincipalKey("Id", "SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiExamBank.Persistence.Questions.ReviewDecisionEntity", b =>
+                {
+                    b.HasOne("AiExamBank.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiExamBank.Persistence.Questions.QuestionRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("QuestionId", "Revision")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
