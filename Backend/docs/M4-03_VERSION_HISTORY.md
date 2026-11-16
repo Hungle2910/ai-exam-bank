@@ -82,6 +82,6 @@ Reads trên `QuestionRevisions` không đổi ở mọi trường hợp (không 
 ## 7. Còn lại của M4-03
 
 - Nút gửi duyệt (`POST /questions/{id}/submit-review`, thuộc M3-03) và adapter thật: chờ nhánh M3-03 merge.
-- ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Còn lại: mở lịch sử ngay trong trình soạn thảo, và chụp ảnh/video demo.
+- ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Trình soạn thảo có nút "Lịch sử revision" mở lịch sử phía trên form, form giữ nguyên nội dung đang gõ. Còn lại: chụp ảnh/video demo.
 - Sinh lại `openapi/questions.json` từ API đang chạy.
 - Video/ảnh demo revision, ghi PR, giờ thực tế.

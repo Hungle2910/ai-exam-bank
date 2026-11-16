@@ -269,7 +269,7 @@ export default function QuestionsPage() {
 
       {editing && (
         <QuestionModal id={editing === 'new' ? null : editing} catalog={catalog} isMock={isMock} mockStore={mockStore}
-          onClose={() => setEditing(null)} onSaved={d => { success(editing === 'new' ? 'Đã lưu câu hỏi ở trạng thái nháp' : 'Đã lưu revision mới ở trạng thái nháp'); onSaved(d); }} />
+          onClose={() => setEditing(null)} onShowHistory={setHistory} onSaved={d => { success(editing === 'new' ? 'Đã lưu câu hỏi ở trạng thái nháp' : 'Đã lưu revision mới ở trạng thái nháp'); onSaved(d); }} />
       )}
       {history && (
         <QuestionHistoryModal id={history} onClose={() => setHistory(null)}
@@ -319,9 +319,9 @@ function useDetail(id: string | null, isMock: boolean, mockStore: QuestionDetail
    MODALS
    ============================================================ */
 
-function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved }: {
+function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved, onShowHistory }: {
   id: string | null; catalog: CatalogSubject[]; isMock: boolean; mockStore: QuestionDetail[];
-  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void;
+  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onShowHistory: (id: string) => void;
 }) {
   const { detail, error: loadError, loading, reload } = useDetail(id, isMock, mockStore);
   const isNew = id === null;
@@ -335,15 +335,15 @@ function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved }: {
               <button className="btn btn-secondary btn-sm" onClick={reload} id="btn-retry-detail">Thử lại</button>{' '}
               <button className="btn btn-secondary btn-sm" onClick={onClose} id="btn-close-question">Đóng</button>
             </div>
-          ) : <QuestionForm key={detail?.id ?? 'new'} initial={isNew ? null : detail} catalog={catalog} isMock={isMock} onClose={onClose} onSaved={onSaved} onReload={reload} />}
+          ) : <QuestionForm key={detail?.id ?? 'new'} initial={isNew ? null : detail} catalog={catalog} isMock={isMock} onClose={onClose} onSaved={onSaved} onReload={reload} onShowHistory={onShowHistory} />}
       </div>
     </div>
   );
 }
 
-function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: {
+function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload, onShowHistory }: {
   initial: QuestionDetail | null; catalog: CatalogSubject[]; isMock: boolean;
-  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onReload: () => void;
+  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onReload: () => void; onShowHistory: (id: string) => void;
 }) {
   const { csrfToken, apiFetch } = useAuth();
   const isNew = initial === null;
@@ -483,6 +483,8 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
           {fieldError('source')}</div>
       </div>
       <div className="modal-footer">
+        {/* The history opens above this form, which stays mounted, so what the author has typed is kept. */}
+        {!isNew && <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => onShowHistory(initial.id)} id="btn-editor-history"><History size={14} />Lịch sử revision</button>}
         <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-question">Hủy</button>
         <button className={clsx('btn btn-primary', saving && 'btn-loading')} disabled={saving} onClick={save} id="btn-save-draft">Lưu nháp</button>
       </div>
