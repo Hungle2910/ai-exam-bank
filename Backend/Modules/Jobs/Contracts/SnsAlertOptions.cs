@@ -35,5 +35,23 @@ public class SnsAlertOptions
 
     /// <summary>Tên môi trường hiện tại (Local, Staging, Production).</summary>
     public string EnvironmentName { get; set; } = "Development";
+
+    /// <summary>
+    /// AWS Access Key ID dùng để ký AWS Signature Version 4 cho request Publish tới Amazon SNS.
+    /// Nếu để trống, hệ thống sẽ đọc từ biến môi trường chuẩn AWS_ACCESS_KEY_ID.
+    /// </summary>
+    public string? AwsAccessKeyId { get; set; }
+
+    /// <summary>
+    /// AWS Secret Access Key dùng để ký AWS Signature Version 4 cho request Publish tới Amazon SNS.
+    /// Nếu để trống, hệ thống sẽ đọc từ biến môi trường chuẩn AWS_SECRET_ACCESS_KEY.
+    /// </summary>
+    public string? AwsSecretAccessKey { get; set; }
+
+    /// <summary>
+    /// AWS Session Token (tùy chọn) khi sử dụng thông tin xác thực tạm thời từ AWS STS hoặc IAM Role.
+    /// Nếu để trống, hệ thống sẽ đọc từ biến môi trường chuẩn AWS_SESSION_TOKEN.
+    /// </summary>
+    public string? AwsSessionToken { get; set; }
 }
 

@@ -94,6 +94,7 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
         // Trong môi trường Production/Staging: Bắt buộc đọc từ cấu hình bí mật (IConfiguration: JobEngine:TrustedTokens:<token>).
         // Token dev tĩnh tuyệt đối không được cấp quyền ngoài môi trường Development (CWE-798).
         TrustedDevIdentity? identityConfig = null;
+        string[]? configuredPermissions = null;
 
         var secretSection = _configuration.GetSection($"JobEngine:TrustedTokens:{token}");
         if (secretSection.Exists())
@@ -101,6 +102,9 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             var userId = secretSection["UserId"];
             var scopeId = secretSection["ScopeId"];
             var scopeKindStr = secretSection["ScopeKind"];
+            var roleStr = secretSection["Role"];
+            var role = string.IsNullOrWhiteSpace(roleStr) ? "User" : roleStr.Trim();
+
             var scopeKind = JobScopeKind.School;
             if (!string.IsNullOrWhiteSpace(scopeKindStr) &&
                 Enum.TryParse<JobScopeKind>(scopeKindStr, ignoreCase: true, out var parsedKind) &&
@@ -111,8 +115,11 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
 
             if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(scopeId))
             {
-                identityConfig = new TrustedDevIdentity(userId, scopeId, scopeKind);
+                identityConfig = new TrustedDevIdentity(userId, scopeId, scopeKind, role);
             }
+
+            configuredPermissions = secretSection.GetSection("Permissions").Get<string[]>()
+                ?? (string.IsNullOrWhiteSpace(secretSection["Permission"]) ? null : new[] { secretSection["Permission"]! });
         }
 
         if (identityConfig is null && _environment.IsDevelopment())
@@ -142,6 +149,24 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             new(ClaimTypes.Role, identityConfig.Role),
             new("role", identityConfig.Role)
         };
+
+        if (string.Equals(identityConfig.Role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(identityConfig.Role, "SystemAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            claims.Add(new("permission", JobSecurityPolicies.MetricsPermission));
+            claims.Add(new("permission", JobSecurityPolicies.AdminPermission));
+        }
+
+        if (configuredPermissions is not null)
+        {
+            foreach (var perm in configuredPermissions)
+            {
+                if (!string.IsNullOrWhiteSpace(perm))
+                {
+                    claims.Add(new("permission", perm.Trim()));
+                }
+            }
+        }
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);

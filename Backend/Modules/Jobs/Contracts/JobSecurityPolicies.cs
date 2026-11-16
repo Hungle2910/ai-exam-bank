@@ -13,7 +13,9 @@ public static class JobSecurityPolicies
     public const string AdminPermission = "jobs.admin";
 
     /// <summary>
-    /// Kiểm tra người dùng có quyền Quản trị viên hệ thống hoặc thẩm quyền cấp Bộ hay không.
+    /// Kiểm tra người dùng có quyền Quản trị viên hệ thống để truy cập metrics và cảnh báo sự cố hay không.
+    /// Yêu cầu Role hoặc Permission được cấp rõ ràng (Explicit Role/Claim),
+    /// tuyệt đối không suy diễn từ Scope (kể cả MinistryExam) hay tên người dùng (UserId) nhằm ngăn chặn CWE-285, CWE-863.
     /// </summary>
     public static bool IsSystemAdministrator(ClaimsPrincipal? principal)
     {
@@ -32,14 +34,7 @@ public static class JobSecurityPolicies
             return true;
         }
 
-        // 2. Kiểm tra ScopeKind được cấp rõ ràng là cấp Bộ (MinistryExam)
-        var scopeKindClaim = principal.FindFirst("scope_kind")?.Value;
-        if (string.Equals(scopeKindClaim, nameof(JobScopeKind.MinistryExam), StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // 3. Kiểm tra Permission claim chuyên biệt
+        // 2. Kiểm tra Permission claim chuyên biệt được cấp rõ ràng
         if (principal.HasClaim("permission", MetricsPermission) ||
             principal.HasClaim("permission", AdminPermission))
         {

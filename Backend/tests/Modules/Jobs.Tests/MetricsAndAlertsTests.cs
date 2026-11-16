@@ -761,14 +761,81 @@ public sealed class MetricsAndAlertsTests
     }
 
     [TestMethod]
-    public void JobSecurityPolicies_MinistryExamScope_IsAuthorized()
+    public async Task DefaultAwsSnsClient_PublishAsync_WithCredentials_SignsRequestWithAwsSigV4()
     {
-        // ScopeKind cấp Bộ (MinistryExam) được phép truy cập
-        var ministryClaims = new[] { new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.MinistryExam)) };
-        var ministryPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(ministryClaims, "TestAuth"));
-        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(ministryPrincipal));
+        var fakeResponseXml = """
+            <PublishResponse xmlns="http://sns.amazonaws.com/doc/2010-03-31/">
+                <PublishResult>
+                    <MessageId>sigv4-msg-12345</MessageId>
+                </PublishResult>
+            </PublishResponse>
+            """;
 
-        // ScopeKind cấp Trường (School) không được phép truy cập metrics toàn hệ thống
+        var fakeHandler = new FakeHttpMessageHandler(HttpStatusCode.OK, fakeResponseXml);
+        using var httpClient = new HttpClient(fakeHandler);
+        var options = new SnsAlertOptions
+        {
+            Region = "ap-southeast-1",
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:reliability-alerts",
+            AwsAccessKeyId = "AKIAIOSFODNN7EXAMPLE",
+            AwsSecretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        };
+        var client = new DefaultAwsSnsClient(httpClient, options);
+
+        var messageId = await client.PublishAsync(
+            options.TopicArn,
+            "Signed SigV4 Alert Payload",
+            "[CRITICAL] AWS SigV4 Drill");
+
+        Assert.AreEqual("sigv4-msg-12345", messageId);
+        Assert.IsNotNull(fakeHandler.LastRequest);
+
+        // Kiểm tra header x-amz-date
+        Assert.IsTrue(fakeHandler.LastRequest.Headers.Contains("x-amz-date"), "Must contain x-amz-date header");
+        var amzDate = fakeHandler.LastRequest.Headers.GetValues("x-amz-date").FirstOrDefault();
+        Assert.IsNotNull(amzDate);
+        StringAssert.Matches(amzDate, new System.Text.RegularExpressions.Regex(@"^\d{8}T\d{6}Z$"));
+
+        // Kiểm tra header Authorization dạng AWS4-HMAC-SHA256
+        Assert.IsTrue(fakeHandler.LastRequest.Headers.Contains("Authorization"), "Must contain Authorization header");
+        var authHeader = fakeHandler.LastRequest.Headers.GetValues("Authorization").FirstOrDefault();
+        Assert.IsNotNull(authHeader);
+        StringAssert.StartsWith(authHeader, "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/");
+        StringAssert.Contains(authHeader, "/ap-southeast-1/sns/aws4_request");
+        StringAssert.Contains(authHeader, "SignedHeaders=content-type;host;x-amz-date");
+        StringAssert.Contains(authHeader, "Signature=");
+    }
+
+    [TestMethod]
+    public void JobSecurityPolicies_MinistryExamScopeWithoutAdminRole_IsRejected()
+    {
+        // ScopeKind cấp Bộ (MinistryExam) nhưng Role = User hoặc không có role thì KHÔNG được coi là Quản trị viên
+        var ministryUserClaims = new[]
+        {
+            new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.MinistryExam)),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "User")
+        };
+        var ministryUserPrincipal = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(ministryUserClaims, "TestAuth"));
+
+        Assert.IsFalse(
+            JobSecurityPolicies.IsSystemAdministrator(ministryUserPrincipal),
+            "Tài khoản chỉ có phạm vi MinistryExam mà không được cấp Role Admin hoặc Permission rõ ràng thì KHÔNG được cấp quyền quản trị.");
+
+        // ScopeKind cấp Bộ (MinistryExam) ĐỒNG THỜI có Role Admin rõ ràng thì ĐƯỢC PHÉP
+        var ministryAdminClaims = new[]
+        {
+            new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.MinistryExam)),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Admin")
+        };
+        var ministryAdminPrincipal = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(ministryAdminClaims, "TestAuth"));
+
+        Assert.IsTrue(
+            JobSecurityPolicies.IsSystemAdministrator(ministryAdminPrincipal),
+            "Tài khoản có Role Admin được cấp rõ ràng thì được phép truy cập.");
+
+        // ScopeKind cấp Trường (School) không có Role Admin bị từ chối
         var schoolClaims = new[] { new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.School)) };
         var schoolPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(schoolClaims, "TestAuth"));
         Assert.IsFalse(JobSecurityPolicies.IsSystemAdministrator(schoolPrincipal));
