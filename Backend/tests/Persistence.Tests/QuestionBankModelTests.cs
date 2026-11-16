@@ -110,6 +110,19 @@ public sealed class QuestionBankModelTests
         Assert.AreEqual(typeof(string), status.GetProviderClrType());
     }
 
+    [TestMethod]
+    public void Review_decision_is_unique_per_revision_and_transition_has_a_concurrency_token()
+    {
+        var model = BuildModel();
+        var version = Entity<QuestionRevisionEntity>(model).FindProperty(nameof(QuestionRevisionEntity.ReviewVersion))!;
+        Assert.IsTrue(version.IsConcurrencyToken);
+
+        var decisions = Entity<ReviewDecisionEntity>(model);
+        var unique = decisions.GetIndexes().Single(index => index.Properties.Select(p => p.Name)
+            .SequenceEqual([nameof(ReviewDecisionEntity.QuestionId), nameof(ReviewDecisionEntity.Revision)]));
+        Assert.IsTrue(unique.IsUnique);
+    }
+
     private static IEntityType Entity(IModel model, Type type) =>
         model.FindEntityType(type) ?? throw new AssertFailedException($"{type.Name} is not mapped.");
 }
