@@ -2,7 +2,8 @@ namespace AiExamBank.Persistence.Questions;
 
 /// <summary>
 /// Grade-12 THPT taxonomy proposed in docs/M4-01_QUESTION_DOMAIN.md. IDs are fixed so a topic keeps the same
-/// ID in every environment. Topics still need checking against the source documents before this is merged.
+/// ID in every environment. See docs/M4-01_QUESTION_DOMAIN.md for the owner's reported source comparison;
+/// the source documents are outside this repository.
 /// </summary>
 public static class QuestionTaxonomySeed
 {
