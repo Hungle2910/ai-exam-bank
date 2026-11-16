@@ -27,7 +27,7 @@ Name 1–200 characters, duration 1–1440 minutes, 1–1000 total questions, 1�
 - Migration applied successfully from an empty isolated SQL Server LocalDB database `AiExamBankM1Blueprint`.
 - SQL integration test verifies decimal roundtrip, topic rejection, another user/school isolation, loss of access after role revocation, two contexts sharing an old rowversion, and rollback of the losing write.
 
-The test fixtures used for these checks are kept separately from the Blueprint delivery changes. Use an isolated migrated SQL Server database for repeat runs.
+The Blueprint persistence and HTTP regression tests run in Application CI against an isolated SQL Server container. The SQL test covers school and department scope, role revocation, invalid matrices and rollback of a stale edit. The HTTP smoke checks two editors saving the same version (one 200 and one 409), then checks that the owner's existing session loses access after the Teacher assignment is revoked.
 
 ## Still required before completion
 
