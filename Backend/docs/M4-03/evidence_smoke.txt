@@ -1,0 +1,20 @@
+M4-03 smoke evidence, 2026-11-16. Local API (Development) on SQL Server Express, throwaway database, migrations up to ReviewWorkflow.
+Branch feat/m4-03-version-history-and-quality merged with origin/dev (M3-03, PR #95).
+
+== tools/m403_smoke.ps1 (every step asserted; exits non-zero on the first failure)
+{"QuestionId":"46014ba7-da73-4786-aeab-a898987e47a6","EditAfterApprove":"rev 2 DRAFT, approved in use 1","StaleUpdate":409,"HistoryOrder":"2,1","ApprovedInUseAfterReview":2,"OtherDepartmentHistory":404}
+
+== raw SQL against the same data (sqlcmd), after the smoke run
+Revision    Status           ReviewVersion        Stem
+----------- ---------------- -------------------- ----------------------------------------
+          1 Approved                            3 Ham so nao co dao ham bang 2x?
+          2 Approved                            3 Ham so nao co dao ham bang 2x? (da sua)
+content rewrite refused: 51002 The content of a question revision cannot be changed; save a new revision instead.
+reopen approved refused: 51003 An approved or rejected question revision is final.
+delete revision refused: 547 The DELETE statement conflicted with the REFERENCE constraint "FK_QuestionOptions_QuestionRevisions_QuestionId_Revision". The conflict occurred in database "AiExamBankM403Smoke", table "dbo.QuestionOpt
+option rewrite refused: 51004 The options of a question revision cannot be changed or deleted.
+delete question refused: 547 The DELETE statement conflicted with the REFERENCE constraint "FK_QuestionRevisions_Questions_QuestionId_SubjectId". The conflict occurred in database "AiExamBankM403Smoke", table "dbo.QuestionRevision
+Revision    Status           Stem
+----------- ---------------- ----------------------------------------
+          1 Approved         Ham so nao co dao ham bang 2x?
+          2 Approved         Ham so nao co dao ham bang 2x? (da sua)

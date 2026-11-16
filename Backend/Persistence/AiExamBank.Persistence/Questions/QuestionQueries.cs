@@ -75,8 +75,7 @@ internal sealed class QuestionQueries(AiExamBankDbContext db) : IQuestionQueries
     public async Task<QuestionDetail?> GetAsync(
         Guid actorUserId, Guid questionId, CancellationToken cancellationToken = default)
     {
-        var question = await db.Questions.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.Id == questionId, cancellationToken);
+        var question = await FindReadableAsync(actorUserId, questionId, cancellationToken);
         if (question is null) return null;
 
         var revisions = await db.QuestionRevisions.AsNoTracking()
@@ -85,10 +84,6 @@ internal sealed class QuestionQueries(AiExamBankDbContext db) : IQuestionQueries
             .ToListAsync(cancellationToken);
         var latest = revisions.FirstOrDefault(item => item.Revision == question.LatestRevision);
         if (latest is null) return null;
-
-        var assignments = await _access.LoadAssignmentsAsync(actorUserId, question.SchoolId, cancellationToken);
-        var resource = QuestionAccess.ResourceOf(question.SchoolId, question.DepartmentId, question.OwnerUserId, latest.Status);
-        if (!ResourceAccessPolicy.CanAccess(actorUserId, resource, ResourceAction.Read, assignments)) return null;
 
         var options = await db.QuestionOptions.AsNoTracking()
             .Where(item => item.QuestionId == questionId && item.Revision == latest.Revision)
@@ -105,6 +100,111 @@ internal sealed class QuestionQueries(AiExamBankDbContext db) : IQuestionQueries
             latest.CorrectOption[0], question.SubjectId, subjectName, latest.TopicId, topicName,
             latest.Difficulty, latest.SourceText, question.OwnerUserId, question.UpdatedAtUtc,
             revisions.Select(item => new QuestionRevisionSummary(
-                item.Revision, item.Status, item.Origin, item.CreatedByUserId, item.CreatedAtUtc)).ToArray());
+                item.Revision, item.Status, item.Origin, item.CreatedByUserId, item.CreatedAtUtc)).ToArray(),
+            ApprovedRevisionOf(revisions));
     }
+
+    public async Task<QuestionHistory?> GetHistoryAsync(
+        Guid actorUserId, Guid questionId, CancellationToken cancellationToken = default)
+    {
+        var question = await FindReadableAsync(actorUserId, questionId, cancellationToken);
+        if (question is null) return null;
+
+        // Three queries however long the history is: revisions, their options, and the topic names.
+        var revisions = await db.QuestionRevisions.AsNoTracking()
+            .Where(item => item.QuestionId == questionId)
+            .OrderByDescending(item => item.Revision)
+            .ToListAsync(cancellationToken);
+        var options = (await db.QuestionOptions.AsNoTracking()
+                .Where(item => item.QuestionId == questionId)
+                .ToListAsync(cancellationToken))
+            .ToLookup(item => item.Revision);
+        var topicIds = revisions.Select(item => item.TopicId).Distinct().ToArray();
+        var topicNames = await db.Topics.AsNoTracking()
+            .Where(topic => topicIds.Contains(topic.Id))
+            .ToDictionaryAsync(topic => topic.Id, topic => topic.Name, cancellationToken);
+        var subjectName = await db.Subjects.AsNoTracking()
+            .Where(item => item.Id == question.SubjectId).Select(item => item.Name).SingleAsync(cancellationToken);
+
+        var approved = ApprovedRevisionOf(revisions);
+        return new QuestionHistory(
+            question.Id, question.SubjectId, subjectName, question.LatestRevision, approved,
+            revisions.Select(item => ToRevisionDetail(
+                item, options[item.Revision], topicNames, question.LatestRevision, approved)).ToArray());
+    }
+
+    public async Task<QuestionRevisionDetail?> GetRevisionAsync(
+        Guid actorUserId, Guid questionId, int revision, CancellationToken cancellationToken = default)
+    {
+        var question = await FindReadableAsync(actorUserId, questionId, cancellationToken);
+        if (question is null) return null;
+
+        var item = await db.QuestionRevisions.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.QuestionId == questionId && row.Revision == revision, cancellationToken);
+        if (item is null) return null;
+
+        var approved = await db.QuestionRevisions.AsNoTracking()
+            .Where(row => row.QuestionId == questionId && row.Status == QuestionStatus.Approved)
+            .Select(row => (int?)row.Revision)
+            .MaxAsync(cancellationToken);
+        var options = await db.QuestionOptions.AsNoTracking()
+            .Where(option => option.QuestionId == questionId && option.Revision == revision)
+            .ToListAsync(cancellationToken);
+        var topicNames = await db.Topics.AsNoTracking()
+            .Where(topic => topic.Id == item.TopicId)
+            .ToDictionaryAsync(topic => topic.Id, topic => topic.Name, cancellationToken);
+
+        return ToRevisionDetail(item, options, topicNames, question.LatestRevision, approved);
+    }
+
+    /// <summary>
+    /// The question when the actor may read it, otherwise null, so a question the actor cannot read looks like a
+    /// missing one. Access follows the latest revision's status, exactly as the list does.
+    /// </summary>
+    private async Task<QuestionEntity?> FindReadableAsync(
+        Guid actorUserId, Guid questionId, CancellationToken cancellationToken)
+    {
+        var question = await db.Questions.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == questionId, cancellationToken);
+        if (question is null) return null;
+
+        var latestStatus = await db.QuestionRevisions.AsNoTracking()
+            .Where(item => item.QuestionId == questionId && item.Revision == question.LatestRevision)
+            .Select(item => (QuestionStatus?)item.Status)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (latestStatus is null) return null;
+
+        var assignments = await _access.LoadAssignmentsAsync(actorUserId, question.SchoolId, cancellationToken);
+        var resource = QuestionAccess.ResourceOf(question.SchoolId, question.DepartmentId, question.OwnerUserId, latestStatus.Value);
+        return ResourceAccessPolicy.CanAccess(actorUserId, resource, ResourceAction.Read, assignments) ? question : null;
+    }
+
+    private static int? ApprovedRevisionOf(IEnumerable<QuestionRevisionEntity> revisions) =>
+        revisions.Where(item => item.Status == QuestionStatus.Approved)
+            .Select(item => (int?)item.Revision)
+            .Max();
+
+    private static QuestionRevisionDetail ToRevisionDetail(
+        QuestionRevisionEntity revision,
+        IEnumerable<QuestionOptionEntity> options,
+        IReadOnlyDictionary<Guid, string> topicNames,
+        int latestRevision,
+        int? approvedRevision) =>
+        new(
+            revision.Revision,
+            revision.Status,
+            revision.Origin,
+            revision.Stem,
+            options.OrderBy(option => option.Label, StringComparer.Ordinal).Select(option => option.Text).ToArray(),
+            revision.CorrectOption[0],
+            revision.TopicId,
+            topicNames.GetValueOrDefault(revision.TopicId, ""),
+            revision.Difficulty,
+            revision.SourceText,
+            revision.ImportBatchId,
+            revision.ImportRowNumber,
+            revision.CreatedByUserId,
+            revision.CreatedAtUtc,
+            revision.Revision == latestRevision,
+            approvedRevision == revision.Revision);
 }
