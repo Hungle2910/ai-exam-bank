@@ -151,7 +151,7 @@ public class JobMetrics : IJobMetrics, IDisposable
             new KeyValuePair<string, object?>("job_type", SanitizeDimension(jobType)),
             new KeyValuePair<string, object?>("status", "Failed"));
 
-        EmitCloudWatchEmf("jobs_failed_total", 1, "Count", new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
+        EmitCloudWatchEmf("jobs_failed_total", 1, "Count", includeAggregateEnvironmentDimension: true, new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
     }
 
     public void RecordJobRetried(string jobType, bool isManual, int attemptNumber)
@@ -171,7 +171,7 @@ public class JobMetrics : IJobMetrics, IDisposable
         _leaseRecoveriesCounter.Add(1,
             new KeyValuePair<string, object?>("job_type", SanitizeDimension(jobType)));
 
-        EmitCloudWatchEmf("job_lease_recoveries_total", 1, "Count", new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
+        EmitCloudWatchEmf("job_lease_recoveries_total", 1, "Count", includeAggregateEnvironmentDimension: true, new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
     }
 
     public void RecordCircuitBreakerState(string provider, CircuitBreakerState state)
@@ -179,7 +179,7 @@ public class JobMetrics : IJobMetrics, IDisposable
         var cleanProvider = SanitizeDimension(provider);
         _circuitBreakerStates[cleanProvider] = state;
 
-        EmitCloudWatchEmf("ai_provider_circuit_breaker_state", (int)state, "None", new KeyValuePair<string, string>("provider", cleanProvider));
+        EmitCloudWatchEmf("ai_provider_circuit_breaker_state", (int)state, "None", includeAggregateEnvironmentDimension: false, new KeyValuePair<string, string>("provider", cleanProvider));
     }
 
     public void RecordProviderError(string provider, string errorCode, bool isTransient)
@@ -286,12 +286,19 @@ public class JobMetrics : IJobMetrics, IDisposable
     /// Xuất bản log có cấu trúc theo chuẩn AWS CloudWatch Embedded Metric Format (EMF).
     /// Chuẩn này cho phép CloudWatch Logs tự động phân tích và tạo Metric trong namespace "AiExamBank/Jobs"
     /// mà không cần cài đặt thêm daemon bên thứ ba hoặc phụ thuộc vào collector trung gian.
+    /// Hỗ trợ đa Dimension Sets: cấp độ tổng hợp (chỉ có Environment - khớp với CloudWatch Alarm trong Terraform)
+    /// và cấp độ chi tiết (Environment + job_type / provider - phục vụ drill-down phân tích).
     /// </summary>
-    private void EmitCloudWatchEmf(string metricName, double value, string unit, params KeyValuePair<string, string>[] extraDimensions)
+    private void EmitCloudWatchEmf(
+        string metricName,
+        double value,
+        string unit,
+        bool includeAggregateEnvironmentDimension = true,
+        params KeyValuePair<string, string>[] extraDimensions)
     {
         try
         {
-            var dimensionKeys = new List<string> { "Environment" };
+            var detailedDimensionKeys = new List<string> { "Environment" };
             var payload = new Dictionary<string, object?>
             {
                 ["Environment"] = _environmentName
@@ -299,11 +306,27 @@ public class JobMetrics : IJobMetrics, IDisposable
 
             foreach (var kvp in extraDimensions)
             {
-                dimensionKeys.Add(kvp.Key);
+                detailedDimensionKeys.Add(kvp.Key);
                 payload[kvp.Key] = kvp.Value;
             }
 
             payload[metricName] = value;
+
+            var dimensionSets = new List<string[]>();
+            if (includeAggregateEnvironmentDimension)
+            {
+                dimensionSets.Add(new[] { "Environment" });
+            }
+
+            if (extraDimensions.Length > 0)
+            {
+                dimensionSets.Add(detailedDimensionKeys.ToArray());
+            }
+
+            if (dimensionSets.Count == 0)
+            {
+                dimensionSets.Add(new[] { "Environment" });
+            }
 
             var emfHeader = new
             {
@@ -313,7 +336,7 @@ public class JobMetrics : IJobMetrics, IDisposable
                     new
                     {
                         Namespace = "AiExamBank/Jobs",
-                        Dimensions = new[] { dimensionKeys.ToArray() },
+                        Dimensions = dimensionSets.ToArray(),
                         Metrics = new[]
                         {
                             new { Name = metricName, Unit = unit }

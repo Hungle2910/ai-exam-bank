@@ -15,6 +15,8 @@ public sealed class InMemoryJobStore : IJobStore
     private readonly Dictionary<Guid, BackgroundJob> _jobs = new();
     private readonly Dictionary<string, Guid> _idempotencyIndex = new();
     private readonly Dictionary<Guid, List<JobAttempt>> _attempts = new();
+    private readonly Dictionary<string, string> _circuitBreakerStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<IncidentAlert> _recentAlerts = new();
     private readonly Func<DateTimeOffset> _clock;
     private readonly IJobMetrics? _metrics;
     private readonly ISnsAlertPublisher? _alertPublisher;
@@ -611,6 +613,55 @@ public sealed class InMemoryJobStore : IJobStore
             };
 
             return Task.FromResult(summary);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            _circuitBreakerStates[provider] = state.ToString();
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var copy = new Dictionary<string, string>(_circuitBreakerStates, StringComparer.OrdinalIgnoreCase);
+            return Task.FromResult<IReadOnlyDictionary<string, string>>(copy);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(alert);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            _recentAlerts.Add(alert);
+            while (_recentAlerts.Count > 50)
+            {
+                _recentAlerts.RemoveAt(0);
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var copy = _recentAlerts.AsEnumerable().Reverse().ToList();
+            return Task.FromResult<IReadOnlyList<IncidentAlert>>(copy);
         }
     }
 

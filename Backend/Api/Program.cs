@@ -102,12 +102,23 @@ builder.Services.AddSingleton<JobMetrics>(sp =>
 });
 builder.Services.AddSingleton<IJobMetrics>(sp => sp.GetRequiredService<JobMetrics>());
 builder.Services.Configure<SnsAlertOptions>(builder.Configuration.GetSection("Jobs:SnsAlerts"));
+
+// Đăng ký client AWS SNS HTTP thực tế phục vụ xuất bản thông báo khi tắt chế độ mô phỏng
+builder.Services.AddHttpClient("AwsSnsClient");
+builder.Services.AddSingleton<IAwsSnsClient>(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var logger = sp.GetRequiredService<ILogger<DefaultAwsSnsClient>>();
+    return new DefaultAwsSnsClient(httpClientFactory.CreateClient("AwsSnsClient"), opts, msg => logger.LogInformation("{Message}", msg));
+});
+
 builder.Services.AddSingleton<ISnsAlertPublisher>(sp =>
 {
     var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
     var logger = sp.GetRequiredService<ILogger<SnsAlertPublisher>>();
-    var awsClient = sp.GetService<IAwsSnsClient>();
-    return new SnsAlertPublisher(opts, awsClient, msg => logger.LogInformation("{Message}", msg));
+    var awsClient = sp.GetRequiredService<IAwsSnsClient>();
+    return new SnsAlertPublisher(opts, awsClient, () => sp.GetService<IJobStore>(), msg => logger.LogInformation("{Message}", msg));
 });
 
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
@@ -118,7 +129,8 @@ builder.Services.AddSingleton<IJobStore>(sp => new FileJobStore(
 builder.Services.AddSingleton<JobRegistry>();
 builder.Services.AddSingleton<IAiProviderCircuitBreaker>(sp => new InMemoryCircuitBreaker(
     metrics: sp.GetRequiredService<IJobMetrics>(),
-    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>()));
+    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>(),
+    store: sp.GetRequiredService<IJobStore>()));
 var allowFailureSimulation = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("Jobs:AllowFailureSimulation");
 

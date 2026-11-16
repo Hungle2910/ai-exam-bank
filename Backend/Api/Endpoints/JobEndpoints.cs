@@ -800,37 +800,9 @@ public static class JobEndpoints
 
     /// <summary>
     /// Kiểm tra người dùng hiện tại có thẩm quyền Quản trị viên hệ thống hoặc tài khoản cấp Bộ hay không.
-    /// Dùng để giới hạn quyền truy cập các endpoint quản trị nhạy cảm (Telemetry Metrics toàn hệ thống, Kích hoạt diễn tập SNS).
+    /// Dựa trên Role claim hoặc ScopeKind được cấp phép rõ ràng (Explicit Role/Claim),
+    /// tuyệt đối không suy diễn quyền hạn từ tên tài khoản (UserId) để tránh lỗ hổng phân quyền (CWE-285, CWE-863).
     /// </summary>
     internal static bool IsSystemAdministrator(HttpContext httpContext)
-    {
-        if (httpContext.User?.Identity?.IsAuthenticated != true) return false;
-
-        var scopeKindClaim = httpContext.User.FindFirst("scope_kind")?.Value;
-        if (string.Equals(scopeKindClaim, nameof(JobScopeKind.MinistryExam), StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var userId = httpContext.User.Identity?.Name ?? httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            if (userId.StartsWith("system-", StringComparison.OrdinalIgnoreCase) ||
-                userId.Contains("admin", StringComparison.OrdinalIgnoreCase) ||
-                userId.Contains("ministry", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (httpContext.User.IsInRole("Admin") ||
-            httpContext.User.IsInRole("SystemAdmin") ||
-            httpContext.User.HasClaim("role", "Admin") ||
-            httpContext.User.HasClaim("role", "SystemAdmin"))
-        {
-            return true;
-        }
-
-        return false;
-    }
+        => JobSecurityPolicies.IsSystemAdministrator(httpContext.User);
 }

@@ -245,8 +245,12 @@ public sealed class JobService : IJobPublisher, IJobTracker
         // Đọc tổng hợp số liệu trực tiếp từ kho lưu trữ bền vững (IJobStore)
         // để đảm bảo tính nhất quán (Consistent View) ngay cả khi API Host và Worker Host chạy ở các tiến trình độc lập.
         var storeSummary = await _store.GetStoreMetricsSummaryAsync(cancellationToken);
+        var storeCbStates = await _store.GetCircuitBreakerStatesAsync(cancellationToken);
+        var storeRecentAlerts = await _store.GetRecentAlertsAsync(cancellationToken);
+
         var snapshot = _metrics?.GetSnapshot() ?? new JobMetricsSnapshot();
-        var recentAlerts = _alertPublisher?.GetRecentAlerts() ?? Array.Empty<IncidentAlert>();
+        var recentAlerts = storeRecentAlerts.Count > 0 ? storeRecentAlerts : (_alertPublisher?.GetRecentAlerts() ?? Array.Empty<IncidentAlert>());
+        var cbStates = storeCbStates.Count > 0 ? storeCbStates : snapshot.CircuitBreakerStates;
 
         var summary = new ReliabilitySummaryDto
         {
@@ -263,7 +267,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
             P50DurationMs = storeSummary.P50DurationMs > 0 ? storeSummary.P50DurationMs : snapshot.P50DurationMs,
             P90DurationMs = storeSummary.P90DurationMs > 0 ? storeSummary.P90DurationMs : snapshot.P90DurationMs,
             P95DurationMs = storeSummary.P95DurationMs > 0 ? storeSummary.P95DurationMs : snapshot.P95DurationMs,
-            CircuitBreakerStates = snapshot.CircuitBreakerStates,
+            CircuitBreakerStates = cbStates,
             ProviderErrors = snapshot.ProviderErrors,
             RecentAlerts = recentAlerts,
             CalculatedAt = DateTimeOffset.UtcNow

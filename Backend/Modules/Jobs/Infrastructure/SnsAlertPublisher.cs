@@ -14,15 +14,18 @@ public class SnsAlertPublisher : ISnsAlertPublisher
 {
     private readonly SnsAlertOptions _options;
     private readonly IAwsSnsClient? _awsSnsClient;
+    private readonly Func<IJobStore?>? _storeProvider;
     private readonly Action<string>? _logAction;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastAlertTimestamps = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<IncidentAlert> _recentAlerts = new();
     private const int MaxRecentAlerts = 50;
 
+    private IJobStore? Store => _storeProvider?.Invoke();
+
     public SnsAlertPublisher(
         SnsAlertOptions? options = null,
         Action<string>? logAction = null)
-        : this(options, null, logAction)
+        : this(options, null, (Func<IJobStore?>?)null, logAction)
     {
     }
 
@@ -30,9 +33,28 @@ public class SnsAlertPublisher : ISnsAlertPublisher
         SnsAlertOptions? options,
         IAwsSnsClient? awsSnsClient,
         Action<string>? logAction = null)
+        : this(options, awsSnsClient, (Func<IJobStore?>?)null, logAction)
+    {
+    }
+
+    public SnsAlertPublisher(
+        SnsAlertOptions? options,
+        IAwsSnsClient? awsSnsClient,
+        IJobStore? store,
+        Action<string>? logAction = null)
+        : this(options, awsSnsClient, store != null ? () => store : null, logAction)
+    {
+    }
+
+    public SnsAlertPublisher(
+        SnsAlertOptions? options,
+        IAwsSnsClient? awsSnsClient,
+        Func<IJobStore?>? storeProvider,
+        Action<string>? logAction = null)
     {
         _options = options ?? new SnsAlertOptions();
         _awsSnsClient = awsSnsClient;
+        _storeProvider = storeProvider;
         _logAction = logAction;
     }
 
@@ -91,9 +113,10 @@ public class SnsAlertPublisher : ISnsAlertPublisher
         // 3. Cập nhật timestamp lần phát gần nhất
         _lastAlertTimestamps[throttleKey] = now;
 
-        // 4. Lưu vết vào Recent Alerts Audit Queue
+        // 4. Lưu vết vào Recent Alerts Audit Queue (cả in-memory và store bền vững liên tiến trình)
         _recentAlerts.Enqueue(sanitizedAlert);
         while (_recentAlerts.Count > MaxRecentAlerts && _recentAlerts.TryDequeue(out _)) { }
+        _ = Store?.RecordIncidentAlertAsync(sanitizedAlert);
 
         // 5. Định dạng thông điệp theo chuẩn AWS SNS Payload
         var snsMessageBody = FormatSnsPayload(sanitizedAlert);
@@ -143,6 +166,22 @@ public class SnsAlertPublisher : ISnsAlertPublisher
 
     public IReadOnlyList<IncidentAlert> GetRecentAlerts()
     {
+        if (Store != null)
+        {
+            try
+            {
+                var storeAlerts = Store.GetRecentAlertsAsync().GetAwaiter().GetResult();
+                if (storeAlerts.Count > 0)
+                {
+                    return storeAlerts;
+                }
+            }
+            catch
+            {
+                // Fallback in-memory nếu kho lưu trữ gặp sự cố đọc
+            }
+        }
+
         return _recentAlerts.Reverse().ToArray();
     }
 

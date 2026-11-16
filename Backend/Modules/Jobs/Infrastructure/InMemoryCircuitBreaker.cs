@@ -27,6 +27,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
     private readonly Func<DateTimeOffset> _clock;
     private readonly IJobMetrics? _metrics;
     private readonly ISnsAlertPublisher? _alertPublisher;
+    private readonly IJobStore? _store;
     private readonly object _syncRoot = new();
 
     public InMemoryCircuitBreaker(
@@ -35,7 +36,8 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
         Func<DateTimeOffset>? clock = null,
         TimeSpan? failureWindow = null,
         IJobMetrics? metrics = null,
-        ISnsAlertPublisher? alertPublisher = null)
+        ISnsAlertPublisher? alertPublisher = null,
+        IJobStore? store = null)
     {
         _failureThreshold = Math.Max(1, failureThreshold);
         _coolingPeriod = coolingPeriod ?? TimeSpan.FromSeconds(60);
@@ -43,6 +45,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _metrics = metrics;
         _alertPublisher = alertPublisher;
+        _store = store;
     }
 
     /// <inheritdoc />
@@ -106,6 +109,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
             circuit.LastProbeTime = null;
             circuit.State = CircuitBreakerState.Closed;
             _metrics?.RecordCircuitBreakerState(provider, CircuitBreakerState.Closed);
+            _ = _store?.RecordCircuitBreakerStateAsync(provider, CircuitBreakerState.Closed);
         }
     }
 
@@ -155,6 +159,7 @@ public sealed class InMemoryCircuitBreaker : IAiProviderCircuitBreaker
                 circuit.WindowStartedAt = null;
 
                 _metrics?.RecordCircuitBreakerState(provider, CircuitBreakerState.Open);
+                _ = _store?.RecordCircuitBreakerStateAsync(provider, CircuitBreakerState.Open);
 
                 // Chuẩn bị thông báo sự cố SNS (phát ngoài lock)
                 alertToPublish = new IncidentAlert

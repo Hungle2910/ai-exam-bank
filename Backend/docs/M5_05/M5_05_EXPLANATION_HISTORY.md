@@ -44,14 +44,43 @@
    - Bổ sung `GetStoreMetricsSummaryAsync` vào `IJobStore` (`FileJobStore` và `InMemoryJobStore`).
    - `JobService.GetReliabilitySummaryAsync` đọc trực tiếp từ kho lưu trữ bền vững (Job và Attempt thực tế được lưu qua Named Mutex liên tiến trình). Khi Worker chạy ở tiến trình độc lập xử lý hàng nghìn job, Dashboard trên API Host lập tức phản ánh đầy đủ và chính xác 100%.
 
+### 1.5 Giải Quyết Triệt Để Phản Hồi Review PR #94 Vòng 2 (Deep Security & Architecture Hardening)
+1. **Kiểm tra Quyền Explicit Role/Claim (Xóa Bỏ Hoàn Toàn Heuristic String Matching):**
+   - Loại bỏ triệt để việc kiểm tra tên tài khoản (`userId.Contains("admin")` hay `userId.Contains("ministry")`) vốn vi phạm tiêu chuẩn bảo mật CWE-285, CWE-863.
+   - Chuẩn hóa thành chính sách bảo mật tập trung `JobSecurityPolicies.IsSystemAdministrator`:
+     - Kiểm tra Role claim tường minh: `IsInRole("Admin")`, `IsInRole("SystemAdmin")`, claim `role == "Admin"`.
+     - Kiểm tra Scope claim cấp Bộ: `scope_kind == "MinistryExam"`.
+     - Kiểm tra Permission claim chuyên biệt: `permission == "jobs.metrics"` hoặc `permission == "jobs.admin"`.
+   - Cập nhật `JobEngineAuthenticationHandler`: cấp phát đầy đủ claims `ClaimTypes.Role`, `role`, và `permission` cho các token quản trị dev (`dev-system-token-hn`, `dev-ministry-token`).
+2. **Triển khai `DefaultAwsSnsClient` Qua Amazon SNS Query API (Zero AWSSDK Dependency):**
+   - Triển khai class `DefaultAwsSnsClient` kế thừa `IAwsSnsClient`, sử dụng `HttpClient` gửi HTTP POST trực tiếp tới endpoint `https://sns.{region}.amazonaws.com/` theo chuẩn AWS Query API `Action=Publish`.
+   - Tự động parse `<MessageId>` từ XML response của AWS SNS hoặc ném ngoại lệ rõ ràng kèm mã lỗi chi tiết khi AWS trả về HTTP 4xx/5xx XML ErrorResponse.
+   - Đăng ký tự động `AddHttpClient("AwsSnsClient")` và `IAwsSnsClient` trong DI Container của cả `Api/Program.cs` và `Worker/Program.cs`, cho phép gửi thông báo thật tới Amazon SNS khi tắt chế độ mô phỏng mà không cần thêm bất kỳ package bên thứ ba nào.
+3. **Khớp 100% Dimensions CloudWatch EMF Với Terraform Alarm:**
+   - Trong `JobMetrics.cs`, nâng cấp hàm `EmitCloudWatchEmf` hỗ trợ đa dimension sets theo đúng đặc tả AWS EMF:
+     - `jobs_failed_total` và `job_lease_recoveries_total` phát đồng thời:
+       - Set 1: `["Environment"]` ➔ Khớp chính xác 100% với Alarm `dimensions = { Environment = var.environment }` trong Terraform `main.tf`.
+       - Set 2: `["Environment", "job_type"]` ➔ Phục vụ trực quan hóa drill-down theo từng loại tác vụ trên CloudWatch Dashboard.
+     - `ai_provider_circuit_breaker_state` phát set `["Environment", "provider"]` ➔ Khớp với Alarm `circuit-breaker-open`.
+4. **Đồng Bộ Trạng Thái Circuit Breaker và Alert Gần Đây Liên Tiến Trình:**
+   - Bổ sung các phương thức quản lý Circuit Breaker và Alert vào interface `IJobStore`:
+     - `RecordCircuitBreakerStateAsync(provider, state)` & `GetCircuitBreakerStatesAsync()`
+     - `RecordIncidentAlertAsync(alert)` & `GetRecentAlertsAsync()`
+   - Triển khai lưu trữ bền vững trong `FileJobStore` kèm cơ chế bảo vệ Named Mutex liên tiến trình.
+   - `InMemoryCircuitBreaker` khi chuyển trạng thái (Open, HalfOpen, Closed) tự động cập nhật vào `IJobStore`.
+   - `SnsAlertPublisher` khi phát cảnh báo tự động lưu vết vào `IJobStore`.
+   - `JobService.GetReliabilitySummaryAsync()` trên API Host đọc trực tiếp từ store, đảm bảo Dashboard hiển thị chính xác mọi sự cố mạch ngắt và cảnh báo do Worker Host phát ra từ tiến trình riêng biệt.
+
 ---
 
 ## 🧪 2. Kết Quả Kiểm Thử Toàn Diện
 
-- **Unit Tests:** Đạt **144/144 tests** vượt qua 100% trong `AiExamBank.Modules.Jobs.Tests` (18 test mới cho M5-05 gồm Live SNS, Drill Throttling, CloudWatch EMF, Percentiles, Stale Lease Alert, Circuit Breaker Trip Alert, và Cross-Process Store Metrics).
-- **Solution Tests:** Đạt **161/161 tests** vượt qua 100% trên toàn bộ các project trong solution:
+- **Unit Tests Module Jobs:** Đạt **155/155 tests** vượt qua 100% trong `AiExamBank.Modules.Jobs.Tests` (29 test mới cho M5-05 gồm Live SNS HTTP Client, XML parsing, Multi-Dimension EMF, Explicit Admin Authorization, Cross-Process Circuit Breaker Persistence, Percentiles, Stale Lease Alert, và Drill Rate Limiting).
+- **Solution Tests:** Đạt **172/172 tests** vượt qua 100% trên toàn bộ các project trong solution:
   - `AiExamBank.Modules.Exams.Tests`: 3/3 passed.
   - `AiExamBank.Modules.Questions.Tests`: 3/3 passed.
   - `AiExamBank.Modules.Identity.Tests`: 8/8 passed.
-  - `AiExamBank.Architecture.Tests`: 3/3 passed (Kiểm định ranh giới kiến trúc và SDKs).
-  - `AiExamBank.Modules.Jobs.Tests`: 144/144 passed.
+  - `AiExamBank.Architecture.Tests`: 3/3 passed (Kiểm định nghiêm ngặt ranh giới kiến trúc và SDKs).
+  - `AiExamBank.Modules.Jobs.Tests`: 155/155 passed.
+- **Repository Hygiene:** Lệnh `py -3 Backend/tools/check_repository.py` kiểm tra 446 tracked files đạt **0 lỗi**.
+- **SDK Consistency:** File `Backend/global.json` bảo toàn cấu hình SDK `10.0.400` cho pipeline CI/CD.

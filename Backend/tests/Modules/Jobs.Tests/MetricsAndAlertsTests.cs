@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
@@ -489,7 +494,329 @@ public sealed class MetricsAndAlertsTests
         Assert.AreEqual(IncidentTypes.DrillTestAlert, recentAlerts[0].IncidentType);
     }
 
+    [TestMethod]
+    public void JobMetrics_EmitsCloudWatchEmf_WithMultiDimensionSets_MatchingTerraformAlarm()
+    {
+        var logs = new List<string>();
+        var metrics = new JobMetrics(environmentName: "Production", logAction: logs.Add);
+
+        metrics.RecordJobFailed("ExamGeneration", "Permanent", "ERR_FATAL", 150);
+
+        var emfJson = logs.FirstOrDefault(l => l.Contains("\"_aws\""));
+        Assert.IsNotNull(emfJson, "CloudWatch EMF JSON line must be logged");
+
+        using var doc = JsonDocument.Parse(emfJson);
+        var root = doc.RootElement;
+
+        Assert.AreEqual("Production", root.GetProperty("Environment").GetString());
+        Assert.AreEqual("ExamGeneration", root.GetProperty("job_type").GetString());
+        Assert.AreEqual(1L, root.GetProperty("jobs_failed_total").GetInt64());
+
+        var awsElement = root.GetProperty("_aws");
+        Assert.AreEqual("AiExamBank/Jobs", awsElement.GetProperty("CloudWatchMetrics")[0].GetProperty("Namespace").GetString());
+
+        var dimensionsArray = awsElement.GetProperty("CloudWatchMetrics")[0].GetProperty("Dimensions");
+        Assert.AreEqual(2, dimensionsArray.GetArrayLength(), "Must emit 2 dimension sets: [Environment] for Terraform Alarm and [Environment, job_type] for drill-down");
+
+        var dimSet1 = dimensionsArray[0].EnumerateArray().Select(e => e.GetString()).ToList();
+        var dimSet2 = dimensionsArray[1].EnumerateArray().Select(e => e.GetString()).ToList();
+
+        CollectionAssert.AreEqual(new[] { "Environment" }, dimSet1);
+        CollectionAssert.AreEqual(new[] { "Environment", "job_type" }, dimSet2);
+    }
+
+    [TestMethod]
+    public async Task DefaultAwsSnsClient_PublishAsync_SendsXmlPayloadAndParsesMessageId()
+    {
+        var fakeResponseXml = """
+            <PublishResponse xmlns="http://sns.amazonaws.com/doc/2010-03-31/">
+                <PublishResult>
+                    <MessageId>94f39b1b-cc91-5370-84a8-5055bb0ea3fe</MessageId>
+                </PublishResult>
+                <ResponseMetadata>
+                    <RequestId>f18730e4-4ee3-5686-892e-aedbe9be1320</RequestId>
+                </ResponseMetadata>
+            </PublishResponse>
+            """;
+
+        var fakeHandler = new FakeHttpMessageHandler(HttpStatusCode.OK, fakeResponseXml);
+        using var httpClient = new HttpClient(fakeHandler);
+        var options = new SnsAlertOptions
+        {
+            Region = "ap-southeast-1",
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:reliability-alerts"
+        };
+        var client = new DefaultAwsSnsClient(httpClient, options);
+
+        var messageId = await client.PublishAsync(
+            options.TopicArn,
+            "Critical Job Engine Alert Payload",
+            "[CRITICAL] Circuit Breaker Tripped");
+
+        Assert.AreEqual("94f39b1b-cc91-5370-84a8-5055bb0ea3fe", messageId);
+        Assert.AreEqual("https://sns.ap-southeast-1.amazonaws.com/", fakeHandler.LastRequest?.RequestUri?.ToString());
+        Assert.AreEqual(HttpMethod.Post, fakeHandler.LastRequest?.Method);
+    }
+
+    [TestMethod]
+    public async Task DefaultAwsSnsClient_PublishAsync_ThrowsOnHttpError()
+    {
+        var fakeErrorXml = """
+            <ErrorResponse xmlns="http://sns.amazonaws.com/doc/2010-03-31/">
+                <Error>
+                    <Type>Sender</Type>
+                    <Code>NotFound</Code>
+                    <Message>Topic does not exist</Message>
+                </Error>
+                <RequestId>b163d89e-561b-4395-9ffb-3bc7a1a2b75a</RequestId>
+            </ErrorResponse>
+            """;
+
+        var fakeHandler = new FakeHttpMessageHandler(HttpStatusCode.NotFound, fakeErrorXml);
+        using var httpClient = new HttpClient(fakeHandler);
+        var options = new SnsAlertOptions
+        {
+            Region = "ap-southeast-1",
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:non-existent-topic"
+        };
+        var client = new DefaultAwsSnsClient(httpClient, options);
+
+        try
+        {
+            await client.PublishAsync(options.TopicArn, "Alert content", "Test Subject");
+            Assert.Fail("Expected HttpRequestException was not thrown.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Assert.IsTrue(ex.Message.Contains("Topic does not exist") || ex.Message.Contains("NotFound"));
+        }
+    }
+
+    [TestMethod]
+    public async Task FileJobStore_CircuitBreakerState_And_RecentAlerts_PersistsAcrossInstances()
+    {
+        var tempStoreDir = Path.Combine(Path.GetTempPath(), "aiexam_store_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Instance 1: Ghi nhận Circuit Breaker và Alert
+            var store1 = new FileJobStore(tempStoreDir);
+            await store1.RecordCircuitBreakerStateAsync("AWS_BEDROCK", CircuitBreakerState.Open);
+
+            var testAlert = new IncidentAlert
+            {
+                Title = "Bedrock Failure Spike",
+                IncidentType = IncidentTypes.CircuitBreakerOpen,
+                Severity = IncidentSeverity.Critical,
+                Details = "5 consecutive timeouts",
+                TimestampUtc = DateTimeOffset.UtcNow
+            };
+            await store1.RecordIncidentAlertAsync(testAlert);
+
+            // Instance 2: Đọc dữ liệu từ cùng thư mục lưu trữ bền vững (giả lập liên tiến trình giữa Worker và API)
+            var store2 = new FileJobStore(tempStoreDir);
+            var cbStates = await store2.GetCircuitBreakerStatesAsync();
+            var recentAlerts = await store2.GetRecentAlertsAsync();
+
+            Assert.IsTrue(cbStates.ContainsKey("AWS_BEDROCK"));
+            Assert.AreEqual("Open", cbStates["AWS_BEDROCK"]);
+
+            Assert.HasCount(1, recentAlerts);
+            Assert.AreEqual("Bedrock Failure Spike", recentAlerts[0].Title);
+            Assert.AreEqual(IncidentTypes.CircuitBreakerOpen, recentAlerts[0].IncidentType);
+        }
+        finally
+        {
+            if (Directory.Exists(tempStoreDir))
+            {
+                Directory.Delete(tempStoreDir, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task JobService_GetReliabilitySummaryAsync_ReadsCircuitBreakerAndAlertsFromStore()
+    {
+        var tempStoreDir = Path.Combine(Path.GetTempPath(), "aiexam_store_summary_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new FileJobStore(tempStoreDir);
+            await store.RecordCircuitBreakerStateAsync("AZURE_OPENAI", CircuitBreakerState.Open);
+
+            var workerAlert = new IncidentAlert
+            {
+                Title = "Worker Trip Alert",
+                IncidentType = IncidentTypes.CircuitBreakerOpen,
+                Severity = IncidentSeverity.Critical,
+                Details = "Tripped inside standalone worker process",
+                TimestampUtc = DateTimeOffset.UtcNow
+            };
+            await store.RecordIncidentAlertAsync(workerAlert);
+
+            var metrics = new JobMetrics();
+            var alertPublisher = new SnsAlertPublisher(new SnsAlertOptions { IsEnabled = true, UseMockSimulation = true }, awsSnsClient: null, store: store);
+            var jobService = new JobService(store, metrics, alertPublisher);
+
+            var summary = await jobService.GetReliabilitySummaryAsync();
+
+            Assert.IsNotNull(summary);
+            Assert.IsTrue(summary.CircuitBreakerStates.ContainsKey("AZURE_OPENAI"));
+            Assert.AreEqual("Open", summary.CircuitBreakerStates["AZURE_OPENAI"]);
+            Assert.IsTrue(summary.RecentAlerts.Any(a => a.Title == "Worker Trip Alert"));
+        }
+        finally
+        {
+            if (Directory.Exists(tempStoreDir))
+            {
+                Directory.Delete(tempStoreDir, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task SnsAlertPublisher_RateLimiting_AppliesToDrillAlerts()
+    {
+        var options = new SnsAlertOptions
+        {
+            IsEnabled = true,
+            UseMockSimulation = true,
+            DrillThrottleWindowSeconds = 60
+        };
+        var publisher = new SnsAlertPublisher(options);
+
+        var alert1 = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.DrillTestAlert,
+            Severity = IncidentSeverity.Info,
+            Title = "Drill attempt 1",
+            Details = "Testing rate limit",
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+        var firstResult = await publisher.PublishIncidentAlertAsync(alert1);
+        Assert.IsTrue(firstResult.Success);
+        Assert.IsFalse(firstResult.WasThrottled);
+
+        var alert2 = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.DrillTestAlert,
+            Severity = IncidentSeverity.Info,
+            Title = "Drill attempt 2 immediately",
+            Details = "Testing rate limit throttling",
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+        var secondResult = await publisher.PublishIncidentAlertAsync(alert2);
+        Assert.IsTrue(secondResult.Success);
+        Assert.IsTrue(secondResult.WasThrottled);
+    }
+
     #endregion
+
+    #region 5. Admin Authorization & Explicit Security Claims Tests
+
+    [TestMethod]
+    public void JobSecurityPolicies_UnauthenticatedUser_IsRejected()
+    {
+        Assert.IsFalse(JobSecurityPolicies.IsSystemAdministrator(null));
+
+        var unauthenticatedPrincipal = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity());
+        Assert.IsFalse(JobSecurityPolicies.IsSystemAdministrator(unauthenticatedPrincipal));
+    }
+
+    [TestMethod]
+    public void JobSecurityPolicies_UserWithAdminInUserId_WithoutAdminRole_IsRejected()
+    {
+        // Kiểm thử lỗ hổng CWE-285, CWE-863: UserId chứa chuỗi "admin" hoặc "ministry"
+        // nhưng KHÔNG có role hay permission hợp lệ thì BẮT BUỘC phải bị từ chối!
+        var claims = new[]
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "fake-admin-user"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "ministry-hacker"),
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Teacher")
+        };
+        var identity = new System.Security.Claims.ClaimsIdentity(claims, "TestAuth");
+        var principal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+        Assert.IsFalse(
+            JobSecurityPolicies.IsSystemAdministrator(principal),
+            "Người dùng chỉ có chuỗi 'admin' hoặc 'ministry' trong tên/ID nhưng không có Role Admin không được cấp quyền.");
+    }
+
+    [TestMethod]
+    public void JobSecurityPolicies_ExplicitAdminRoles_AreAuthorized()
+    {
+        // 1. Role Admin chuẩn
+        var adminClaims = new[] { new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Admin") };
+        var adminPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(adminClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(adminPrincipal));
+
+        // 2. Role SystemAdmin chuẩn
+        var sysAdminClaims = new[] { new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "SystemAdmin") };
+        var sysAdminPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(sysAdminClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(sysAdminPrincipal));
+
+        // 3. Claim "role" (JWT format)
+        var jwtRoleClaims = new[] { new System.Security.Claims.Claim("role", "Admin") };
+        var jwtRolePrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(jwtRoleClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(jwtRolePrincipal));
+    }
+
+    [TestMethod]
+    public void JobSecurityPolicies_MinistryExamScope_IsAuthorized()
+    {
+        // ScopeKind cấp Bộ (MinistryExam) được phép truy cập
+        var ministryClaims = new[] { new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.MinistryExam)) };
+        var ministryPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(ministryClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(ministryPrincipal));
+
+        // ScopeKind cấp Trường (School) không được phép truy cập metrics toàn hệ thống
+        var schoolClaims = new[] { new System.Security.Claims.Claim("scope_kind", nameof(JobScopeKind.School)) };
+        var schoolPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(schoolClaims, "TestAuth"));
+        Assert.IsFalse(JobSecurityPolicies.IsSystemAdministrator(schoolPrincipal));
+    }
+
+    [TestMethod]
+    public void JobSecurityPolicies_SpecificPermissions_AreAuthorized()
+    {
+        // Permission jobs.metrics
+        var metricsClaims = new[] { new System.Security.Claims.Claim("permission", JobSecurityPolicies.MetricsPermission) };
+        var metricsPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(metricsClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(metricsPrincipal));
+
+        // Permission jobs.admin
+        var adminClaims = new[] { new System.Security.Claims.Claim("permission", JobSecurityPolicies.AdminPermission) };
+        var adminPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(adminClaims, "TestAuth"));
+        Assert.IsTrue(JobSecurityPolicies.IsSystemAdministrator(adminPrincipal));
+
+        // Permission không liên quan
+        var otherClaims = new[] { new System.Security.Claims.Claim("permission", "jobs.read") };
+        var otherPrincipal = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(otherClaims, "TestAuth"));
+        Assert.IsFalse(JobSecurityPolicies.IsSystemAdministrator(otherPrincipal));
+    }
+
+    #endregion
+
+    private sealed class FakeHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _statusCode;
+        private readonly string _responseContent;
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        public FakeHttpMessageHandler(HttpStatusCode statusCode, string responseContent)
+        {
+            _statusCode = statusCode;
+            _responseContent = responseContent;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            var response = new HttpResponseMessage(_statusCode)
+            {
+                Content = new StringContent(_responseContent)
+            };
+            return Task.FromResult(response);
+        }
+    }
 
     private sealed class MockAwsSnsClient : IAwsSnsClient
     {

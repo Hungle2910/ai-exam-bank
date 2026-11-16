@@ -39,6 +39,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
     private Dictionary<Guid, BackgroundJob> _jobs = new();
     private Dictionary<string, Guid> _idempotencyIndex = new();
     private Dictionary<Guid, List<JobAttempt>> _attempts = new();
+    private Dictionary<string, string> _circuitBreakerStates = new(StringComparer.OrdinalIgnoreCase);
+    private List<IncidentAlert> _recentAlerts = new();
 
     /// <summary>
     /// DTO lưu trữ thông tin Job trên đĩa, tương thích lược đồ bảng PostgreSQL jobs.
@@ -100,6 +102,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
         public List<JobDataDto> Jobs { get; set; } = new();
         public Dictionary<string, Guid> IdempotencyIndex { get; set; } = new();
         public Dictionary<Guid, List<AttemptDataDto>> Attempts { get; set; } = new();
+        public Dictionary<string, string> CircuitBreakerStates { get; set; } = new();
+        public List<IncidentAlert> RecentAlerts { get; set; } = new();
     }
 
     /// <summary>
@@ -717,6 +721,57 @@ public sealed class FileJobStore : IJobStore, IDisposable
         });
     }
 
+    /// <inheritdoc />
+    public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ExecuteWithLock(() =>
+        {
+            _circuitBreakerStates[provider] = state.ToString();
+            SaveToDisk();
+            return true;
+        });
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ExecuteWithLock(() =>
+        {
+            var copy = new Dictionary<string, string>(_circuitBreakerStates, StringComparer.OrdinalIgnoreCase);
+            return (IReadOnlyDictionary<string, string>)copy;
+        });
+    }
+
+    /// <inheritdoc />
+    public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(alert);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ExecuteWithLock(() =>
+        {
+            _recentAlerts.Add(alert);
+            while (_recentAlerts.Count > 50)
+            {
+                _recentAlerts.RemoveAt(0);
+            }
+            SaveToDisk();
+            return true;
+        });
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ExecuteWithLock(() =>
+        {
+            var copy = _recentAlerts.AsEnumerable().Reverse().ToList();
+            return (IReadOnlyList<IncidentAlert>)copy;
+        });
+    }
+
     private static double GetPercentile(double[] sortedValues, double percentile)
     {
         if (sortedValues.Length == 0) return 0;
@@ -847,6 +902,8 @@ public sealed class FileJobStore : IJobStore, IDisposable
             _jobs.Clear();
             _idempotencyIndex.Clear();
             _attempts.Clear();
+            _circuitBreakerStates.Clear();
+            _recentAlerts.Clear();
             _lastFileWriteTime = DateTime.MinValue;
             _lastFileLength = -1;
             return;
@@ -912,6 +969,14 @@ public sealed class FileJobStore : IJobStore, IDisposable
                         RetryReason = a.RetryReason,
                         IsManualRetry = a.IsManualRetry
                     }).ToList());
+
+            _circuitBreakerStates = snapshot.CircuitBreakerStates != null
+                ? new Dictionary<string, string>(snapshot.CircuitBreakerStates, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            _recentAlerts = snapshot.RecentAlerts != null
+                ? new List<IncidentAlert>(snapshot.RecentAlerts)
+                : new List<IncidentAlert>();
 
             _lastFileWriteTime = File.GetLastWriteTimeUtc(_filePath);
             _lastFileLength = new FileInfo(_filePath).Length;
@@ -1001,7 +1066,9 @@ public sealed class FileJobStore : IJobStore, IDisposable
                     ExecutionDurationMs = a.ExecutionDurationMs,
                     RetryReason = a.RetryReason,
                     IsManualRetry = a.IsManualRetry
-                }).ToList())
+                }).ToList()),
+            CircuitBreakerStates = _circuitBreakerStates,
+            RecentAlerts = _recentAlerts
         };
 
         var json = JsonSerializer.Serialize(snapshot, JsonOptions);
