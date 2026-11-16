@@ -1377,6 +1377,9 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
             => _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+            => _inner.GetStoreMetricsSummaryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1493,6 +1496,9 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
             => _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+            => _inner.GetStoreMetricsSummaryAsync(cancellationToken);
     }
 
     private sealed class FastJobHandler : IJobHandler
@@ -1825,6 +1831,9 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
     }
 
     private sealed class ThrowingProgressJobStore : IJobStore
@@ -1870,6 +1879,9 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
     }
 
     private sealed class CountingSuccessfulJobHandler : IJobHandler
@@ -1978,5 +1990,8 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
     }
 }

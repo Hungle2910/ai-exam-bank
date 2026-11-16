@@ -27,16 +27,31 @@
 - **Giải pháp:**
   - `SnsAlertPublisher` áp dụng bộ đệm trượt `_lastAlertTimestamps` lưu thời điểm phát cảnh báo gần nhất theo bộ khóa `{IncidentType}:{JobType}:{Provider}`.
   - Cửa sổ hạ nhiệt (Throttle Window) 300 giây ngăn chặn việc phát đi hàng trăm thông báo giống hệt nhau khi hệ thống xảy ra sự cố kéo dài.
-  - Trường hợp đặc biệt: Sự cố diễn tập `DRILL_TEST_ALERT` được cấp đặc quyền bypass kiểm tra cooldown để kỹ sư và kiểm thử viên có thể diễn tập liên tục mà không bị nuốt thông điệp.
+  - Cảnh báo diễn tập `DRILL_TEST_ALERT` áp dụng cửa sổ giãn cách riêng `DrillThrottleWindowSeconds` (60 giây) để vừa cho phép diễn tập vừa triệt tiêu nguy cơ spam hoặc DoS kênh cảnh báo.
+
+### 1.4 Giải Quyết 4 Phản Hồi Review Kỹ Thuật (PR #94 Hardening)
+1. **Phân biệt rõ ràng Chế độ Mô phỏng (Mock Simulation) và Live AWS SNS:**
+   - Tạo abstraction `IAwsSnsClient` độc lập với SDK bên thứ ba, bảo vệ ranh giới kiến trúc Domain Modules.
+   - Khi `UseMockSimulation == false`: Bắt buộc cấu hình `TopicArn` và `IAwsSnsClient`. Nếu thiếu hoặc gửi thất bại, hàm `PublishIncidentAlertAsync` trả về `PublishAlertResult.Failed(...)` thay vì giả vờ thành công.
+2. **Khai báo Metric Circuit Breaker & Xuất bản chuẩn AWS CloudWatch EMF:**
+   - Bổ sung `ObservableGauge<int>` cho metric `ai_provider_circuit_breaker_state` (0=Closed, 1=HalfOpen, 2=Open) trong `JobMetrics`, khớp 100% với cấu hình Alarm trong Terraform `main.tf`.
+   - Triển khai định dạng log chuẩn AWS CloudWatch Embedded Metric Format (EMF) với namespace `AiExamBank/Jobs`. CloudWatch Logs tự động phân tích và chuyển đổi thành CloudWatch Metrics với zero overhead.
+3. **Phân quyền Zero-Trust & Giới hạn tốc độ Endpoint Metrics:**
+   - Chặn toàn bộ truy cập từ tài khoản trường học thông thường (`JobScopeKind.School`) vào `/metrics/summary` và `/metrics/test-alert` (trả về `403 Forbidden`).
+   - Chỉ Quản trị viên hệ thống (System Administrator / Cấp Bộ `MinistryExam`) mới có quyền xem chỉ số toàn hệ thống và kích hoạt diễn tập.
+   - Áp dụng HTTP 429 Too Many Requests khi diễn tập bị throttled.
+4. **Nhất quán Số liệu giữa API Host và Worker Host (Consistent View Across Processes):**
+   - Bổ sung `GetStoreMetricsSummaryAsync` vào `IJobStore` (`FileJobStore` và `InMemoryJobStore`).
+   - `JobService.GetReliabilitySummaryAsync` đọc trực tiếp từ kho lưu trữ bền vững (Job và Attempt thực tế được lưu qua Named Mutex liên tiến trình). Khi Worker chạy ở tiến trình độc lập xử lý hàng nghìn job, Dashboard trên API Host lập tức phản ánh đầy đủ và chính xác 100%.
 
 ---
 
 ## 🧪 2. Kết Quả Kiểm Thử Toàn Diện
 
-- **Unit Tests:** Đạt **139/139 tests** vượt qua 100% trong `AiExamBank.Modules.Jobs.Tests` (13 test mới cho M5-05 gồm tính toán P50/P90/P95, khử thông tin nhạy cảm CWE-209, throttling, và tích hợp Circuit Breaker/JobStore).
-- **Solution Tests:** Đạt **156/156 tests** vượt qua 100% trên toàn bộ các project trong solution:
+- **Unit Tests:** Đạt **144/144 tests** vượt qua 100% trong `AiExamBank.Modules.Jobs.Tests` (18 test mới cho M5-05 gồm Live SNS, Drill Throttling, CloudWatch EMF, Percentiles, Stale Lease Alert, Circuit Breaker Trip Alert, và Cross-Process Store Metrics).
+- **Solution Tests:** Đạt **161/161 tests** vượt qua 100% trên toàn bộ các project trong solution:
   - `AiExamBank.Modules.Exams.Tests`: 3/3 passed.
   - `AiExamBank.Modules.Questions.Tests`: 3/3 passed.
   - `AiExamBank.Modules.Identity.Tests`: 8/8 passed.
-  - `AiExamBank.Architecture.Tests`: 3/3 passed.
-  - `AiExamBank.Modules.Jobs.Tests`: 139/139 passed.
+  - `AiExamBank.Architecture.Tests`: 3/3 passed (Kiểm định ranh giới kiến trúc và SDKs).
+  - `AiExamBank.Modules.Jobs.Tests`: 144/144 passed.

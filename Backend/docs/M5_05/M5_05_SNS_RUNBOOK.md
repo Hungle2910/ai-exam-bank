@@ -64,4 +64,9 @@
 ### 2.4 `DRILL_TEST_ALERT` (Mức độ: INFO)
 - **Dấu hiệu:** Cảnh báo diễn tập xuất phát từ việc bấm nút "Diễn Tập SNS" trên giao diện hoặc gọi API `POST /api/v1/jobs/metrics/test-alert`.
 - **Mục đích:** Kiểm tra tính toàn vẹn của chuỗi cảnh báo từ ứng dụng -> SNS Topic -> Hộp thư người nhận.
-- **Hành động:** Không cần can thiệp kỹ thuật. Xác nhận email hoặc thông báo đã đến nơi kịp thời.
+- **Quyền hạn truy cập:** Bắt buộc tài khoản có thẩm quyền Quản trị viên hệ thống hoặc cấp Bộ (`JobScopeKind.MinistryExam`). Tài khoản trường học thông thường bị chặn với mã HTTP 403 Forbidden.
+- **Giới hạn tần suất gọi (Rate Limiting):** Áp dụng cửa sổ giãn cách 60 giây (`DrillThrottleWindowSeconds`). Nếu gọi dồn dập, API trả về HTTP 429 Too Many Requests.
+- **Chế độ phát:** 
+  - *Mô phỏng (Mock Simulation)*: Sinh MessageId giả định an toàn cho môi trường Local / Testing.
+  - *Live Mode*: Gọi trực tiếp AWS SNS Topic qua `IAwsSnsClient`. Báo lỗi rõ ràng nếu thiếu cấu hình hoặc Topic không hợp lệ.
+- **Hành động:** Xác nhận email hoặc thông báo đã đến nơi kịp thời, kiểm tra định dạng JSON payload và trường hợp kiểm thử.

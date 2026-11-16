@@ -150,4 +150,12 @@ public interface IJobStore
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Danh sách các lượt chạy của tác vụ.</returns>
     Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tính toán tổng hợp số liệu thống kê độ tin cậy từ toàn bộ các Job và Attempt bền vững trong kho lưu trữ.
+    /// Giúp API Host và Worker Host dù chạy ở hai tiến trình độc lập vẫn có chung một góc nhìn số liệu đồng nhất.
+    /// </summary>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Bản tổng hợp số liệu thống kê JobStoreMetricsSummary.</returns>
+    Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default);
 }

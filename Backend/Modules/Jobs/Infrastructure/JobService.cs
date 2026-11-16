@@ -238,35 +238,38 @@ public sealed class JobService : IJobPublisher, IJobTracker
     /// <summary>
     /// Lấy bản tổng hợp chỉ số độ tin cậy và hiệu năng hệ thống (Reliability Summary).
     /// </summary>
-    public Task<ReliabilitySummaryDto> GetReliabilitySummaryAsync(CancellationToken cancellationToken = default)
+    public async Task<ReliabilitySummaryDto> GetReliabilitySummaryAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Đọc tổng hợp số liệu trực tiếp từ kho lưu trữ bền vững (IJobStore)
+        // để đảm bảo tính nhất quán (Consistent View) ngay cả khi API Host và Worker Host chạy ở các tiến trình độc lập.
+        var storeSummary = await _store.GetStoreMetricsSummaryAsync(cancellationToken);
         var snapshot = _metrics?.GetSnapshot() ?? new JobMetricsSnapshot();
         var recentAlerts = _alertPublisher?.GetRecentAlerts() ?? Array.Empty<IncidentAlert>();
 
         var summary = new ReliabilitySummaryDto
         {
-            TotalEnqueued = snapshot.TotalEnqueued,
-            TotalCompleted = snapshot.TotalCompleted,
-            TotalFailed = snapshot.TotalFailed,
-            TotalRetries = snapshot.TotalRetries,
-            ActivePending = snapshot.ActivePending,
-            ActiveRunning = snapshot.ActiveRunning,
-            StaleLeaseRecoveries = snapshot.StaleLeaseRecoveries,
-            SuccessRatePercentage = snapshot.SuccessRatePercentage,
-            FailureRatePercentage = snapshot.FailureRatePercentage,
-            AverageDurationMs = snapshot.AverageDurationMs,
-            P50DurationMs = snapshot.P50DurationMs,
-            P90DurationMs = snapshot.P90DurationMs,
-            P95DurationMs = snapshot.P95DurationMs,
+            TotalEnqueued = storeSummary.TotalJobs > 0 ? storeSummary.TotalJobs : snapshot.TotalEnqueued,
+            TotalCompleted = storeSummary.CompletedJobs > 0 ? storeSummary.CompletedJobs : snapshot.TotalCompleted,
+            TotalFailed = storeSummary.FailedJobs > 0 ? storeSummary.FailedJobs : snapshot.TotalFailed,
+            TotalRetries = storeSummary.TotalAttempts > storeSummary.TotalJobs ? (storeSummary.TotalAttempts - storeSummary.TotalJobs) : snapshot.TotalRetries,
+            ActivePending = storeSummary.TotalJobs > 0 ? storeSummary.PendingJobs : snapshot.ActivePending,
+            ActiveRunning = storeSummary.TotalJobs > 0 ? storeSummary.RunningJobs : snapshot.ActiveRunning,
+            StaleLeaseRecoveries = storeSummary.StaleRecoveries > 0 ? storeSummary.StaleRecoveries : snapshot.StaleLeaseRecoveries,
+            SuccessRatePercentage = storeSummary.TotalJobs > 0 ? storeSummary.SuccessRatePercentage : snapshot.SuccessRatePercentage,
+            FailureRatePercentage = storeSummary.TotalJobs > 0 ? storeSummary.FailureRatePercentage : snapshot.FailureRatePercentage,
+            AverageDurationMs = storeSummary.AverageDurationMs > 0 ? storeSummary.AverageDurationMs : snapshot.AverageDurationMs,
+            P50DurationMs = storeSummary.P50DurationMs > 0 ? storeSummary.P50DurationMs : snapshot.P50DurationMs,
+            P90DurationMs = storeSummary.P90DurationMs > 0 ? storeSummary.P90DurationMs : snapshot.P90DurationMs,
+            P95DurationMs = storeSummary.P95DurationMs > 0 ? storeSummary.P95DurationMs : snapshot.P95DurationMs,
             CircuitBreakerStates = snapshot.CircuitBreakerStates,
             ProviderErrors = snapshot.ProviderErrors,
             RecentAlerts = recentAlerts,
             CalculatedAt = DateTimeOffset.UtcNow
         };
 
-        return Task.FromResult(summary);
+        return summary;
     }
 
     /// <summary>

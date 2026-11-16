@@ -551,6 +551,84 @@ public sealed class InMemoryJobStore : IJobStore
     }
 
     /// <inheritdoc />
+    public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var totalJobs = (long)_jobs.Count;
+            var pendingJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Pending);
+            var runningJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Running);
+            var completedJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Completed);
+            var failedJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Failed);
+            var cancelledJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Cancelled);
+            var totalAttempts = (long)_attempts.Values.Sum(l => l.Count);
+            var staleRecoveries = (long)_attempts.Values.Sum(l => l.Count(a => a.ErrorCode == AwsErrorCodes.StaleLeaseRecovered || a.Status == AttemptStatus.Abandoned));
+
+            var durations = _attempts.Values
+                .SelectMany(l => l)
+                .Where(a => a.ExecutionDurationMs.HasValue && a.ExecutionDurationMs.Value >= 0)
+                .Select(a => (double)a.ExecutionDurationMs!.Value)
+                .ToArray();
+
+            Array.Sort(durations);
+
+            double avg = 0;
+            double p50 = 0;
+            double p90 = 0;
+            double p95 = 0;
+
+            if (durations.Length > 0)
+            {
+                double sum = 0;
+                foreach (var d in durations) sum += d;
+                avg = Math.Round(sum / durations.Length, 2);
+                p50 = Math.Round(GetPercentile(durations, 0.50), 2);
+                p90 = Math.Round(GetPercentile(durations, 0.90), 2);
+                p95 = Math.Round(GetPercentile(durations, 0.95), 2);
+            }
+
+            var terminal = completedJobs + failedJobs;
+            double successRate = terminal > 0 ? Math.Round((double)completedJobs / terminal * 100.0, 1) : 100.0;
+            double failureRate = terminal > 0 ? Math.Round((double)failedJobs / terminal * 100.0, 1) : 0.0;
+
+            var summary = new JobStoreMetricsSummary
+            {
+                TotalJobs = totalJobs,
+                PendingJobs = pendingJobs,
+                RunningJobs = runningJobs,
+                CompletedJobs = completedJobs,
+                FailedJobs = failedJobs,
+                CancelledJobs = cancelledJobs,
+                TotalAttempts = totalAttempts,
+                StaleRecoveries = staleRecoveries,
+                AverageDurationMs = avg,
+                P50DurationMs = p50,
+                P90DurationMs = p90,
+                P95DurationMs = p95,
+                SuccessRatePercentage = successRate,
+                FailureRatePercentage = failureRate
+            };
+
+            return Task.FromResult(summary);
+        }
+    }
+
+    private static double GetPercentile(double[] sortedValues, double percentile)
+    {
+        if (sortedValues.Length == 0) return 0;
+        if (sortedValues.Length == 1) return sortedValues[0];
+
+        double rank = percentile * (sortedValues.Length - 1);
+        int low = (int)Math.Floor(rank);
+        int high = (int)Math.Ceiling(rank);
+        if (low == high) return sortedValues[low];
+
+        double weight = rank - low;
+        return sortedValues[low] * (1.0 - weight) + sortedValues[high] * weight;
+    }
+
+    /// <inheritdoc />
     public Task<BackgroundJob> RetryJobAsync(Guid jobId, string requesterId, string? reason = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

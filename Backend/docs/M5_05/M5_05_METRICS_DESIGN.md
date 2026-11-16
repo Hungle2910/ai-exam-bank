@@ -47,6 +47,9 @@
 | `job_stale_lease_recoveries_total` | Counter | Count | `job_type` | Số lần phát hiện và cấp cứu worker lease bị kẹt |
 | `job_execution_duration_seconds` | Histogram | Seconds | `job_type`, `status` | Phân bố thời gian thực thi của tác vụ |
 | `provider_errors_total` | Counter | Count | `provider`, `error_code`, `is_transient` | Số lượng lỗi ghi nhận từ AWS Bedrock, S3, v.v. |
+| `ai_provider_circuit_breaker_state` | ObservableGauge | {state} | `provider`, `Environment` | Trạng thái bộ ngắt mạch AI Bedrock (0=Closed, 1=HalfOpen, 2=Open) |
+| `jobs_pending` | ObservableGauge | Count | — | Số lượng tác vụ hiện đang chờ Worker xử lý |
+| `jobs_running` | ObservableGauge | Count | — | Số lượng tác vụ hiện đang được Worker thuê thực thi |
 
 ---
 
@@ -58,39 +61,26 @@
 | `STALE_LEASE_DETECTED` | **WARNING** | >= 3 stale leases trong 1 lần scan | SNS -> Slack/DevOps | Kiểm tra worker container/EC2 CPU, OOM killer, hoặc phân vùng mạng |
 | `RETRY_BUDGET_EXHAUSTED` | **WARNING** | Job chạm mốc 3 attempts thất bại | SNS -> Support | Kiểm tra dữ liệu đầu vào và format file import |
 | `HIGH_FAILURE_RATE` | **WARNING** | Tỷ lệ lỗi > 10% trong 5 phút | CloudWatch Alarm -> SNS | Rà soát lỗi ứng dụng và dịch vụ phụ thuộc |
-| `DRILL_TEST_ALERT` | **INFO** | Kích hoạt thủ công từ UI / API | SNS Mock Dispatch | Xác nhận đường truyền và định dạng payload cảnh báo |
+| `DRILL_TEST_ALERT` | **INFO** | Kích hoạt thủ công từ UI / API (Rate limited 60s) | SNS Mock / Live Dispatch | Xác nhận đường truyền và định dạng payload cảnh báo |
 
 ---
 
-## 🔧 4. Lưu Ý Triển Khai & Giới Hạn Kỹ Thuật Hiện Tại
+## 🔧 4. Cơ Chế Quan Sát & Bảo Mật Nâng Cao
 
-### 4.1 CloudWatch Metric Collector — Prerequisite M2/M5-09
+### 4.1 Xuất Bản Metric Chuẩn AWS CloudWatch Embedded Metric Format (EMF)
+- `JobMetrics` tích hợp bộ phát log chuẩn **AWS CloudWatch Embedded Metric Format (EMF)** với namespace `AiExamBank/Jobs`.
+- Khi các sự kiện trọng yếu phát sinh (Circuit Breaker chuyển trạng thái sang Open/HalfOpen, Job thất bại, hoặc thu hồi Stale Lease), ứng dụng phát một bản ghi JSON có cấu trúc `_aws` chuẩn hóa.
+- CloudWatch Logs / CloudWatch Agent tự động phân tích và tạo Metrics trực tiếp trong CloudWatch Console, kích hoạt ngay lập tức 3 CloudWatch Alarms trong Terraform mà không cần cài đặt thêm daemon bên thứ ba.
 
-> **Lưu ý quan trọng cho reviewer / ops team:**
+### 4.2 Tính Nhất Quán Giữa API Host và Worker Host (Store-Backed Metrics)
+- `IJobStore` (`FileJobStore` và `InMemoryJobStore`) cung cấp phương thức `GetStoreMetricsSummaryAsync` tính toán trực tiếp từ các thực thể `BackgroundJob` và `JobAttempt` được chia sẻ qua Named Mutex liên tiến trình.
+- Khi Worker Host chạy độc lập và xử lý hàng trăm tác vụ, Dashboard trên API Host vẫn phản ánh chính xác 100% số lượng tác vụ đã hoàn tất, thất bại, đang chạy và độ trễ phân vị P50/P90/P95.
 
-`.NET System.Diagnostics.Metrics` (Meter `"AiExamBank.Jobs"`) **không tự động xuất metric vào CloudWatch namespace** `AiExamBank/Jobs`. Để 3 CloudWatch Alarms trong Terraform (`circuit-breaker-open`, `high-job-failures`, `stale-leases`) hoạt động trên AWS thực tế, cần **một trong hai phương án** sau:
+### 4.3 Phân Quyền Zero-Trust & Giới Hạn Tốc Độ (Rate Limiting)
+- Hai endpoint `/metrics/summary` và `/metrics/test-alert` yêu cầu thẩm quyền **Quản trị viên hệ thống (System Administrator / MinistryExam)**.
+- Token của giáo viên trường học bình thường (`JobScopeKind.School`) bị từ chối với mã **HTTP 403 Forbidden**.
+- Cảnh báo diễn tập `DRILL_TEST_ALERT` được áp dụng cửa sổ giãn cách riêng `DrillThrottleWindowSeconds` (60 giây), trả về **HTTP 429 Too Many Requests** nếu bị gọi liên tiếp dồn dập.
 
-| Phương án | Yêu cầu | Scope |
-|-----------|---------|-------|
-| **A. CloudWatch Agent + EMF** (khuyến nghị) | Cài CloudWatch Agent trên EC2/ECS; cấu hình `MetricsCollection` nhận `AiExamBank/Jobs` namespace | M2 Infra task |
-| **B. OpenTelemetry Collector** | Deploy OTEL Collector sidecar; map `.NET Meter` → `OTLP` → `AWS CloudWatch Exporter` | M5-09 (Observability) |
-
-**Trạng thái hiện tại:**
-- Terraform IaC (`modules/observability/main.tf`) đã sẵn sàng để `terraform apply`.
-- Alarm sẽ ở trạng thái `INSUFFICIENT_DATA` cho đến khi collector được cài đặt và metric được đẩy vào namespace.
-- `SnsAlertPublisher` hoạt động hoàn toàn với **Mock Simulation** (`UseMockSimulation = true`) trong môi trường local/staging, không phụ thuộc collector.
-
-**Action item (ngoài scope M5-05, giao M2 hoặc M5-09):**
-```
-[ ] Cấu hình CloudWatch Agent hoặc OTEL Collector để forward AiExamBank/Jobs metrics.
-[ ] Confirm SNS email subscription sau khi Topic được tạo bằng terraform apply.
-[ ] Chạy terraform apply và đính kèm screenshot alarm trạng thái vào Issue #25 trước khi đóng milestone.
-```
-
-### 4.2 Security Guards — Metrics Endpoints
-
-Cả hai endpoint `/metrics/summary` và `/metrics/test-alert` đều:
-1. Kế thừa `RequireAuthorization(JobEngineAuthScheme)` từ route group `/api/v1/jobs`.
-2. Thêm kiểm tra `IsAuthenticated` tường minh (defense-in-depth) để từ chối rõ ràng bằng `401 Unauthorized` thay vì silently fallback `"system-admin"`.
-
-Không có endpoint nào expose telemetry ra ngoài mà không xác thực.
+### 4.4 Chế Độ Mô Phỏng vs Live AWS SNS
+- `UseMockSimulation = true`: Phục vụ an toàn cho Local / Testing / Staging khi chưa có quyền AWS thực tế.
+- `UseMockSimulation = false`: Bắt buộc cấu hình `TopicArn` và `IAwsSnsClient`. Nếu thiếu hoặc gọi thất bại, publisher trả về lỗi tường minh, nút diễn tập hiển thị cảnh báo lỗi màu đỏ thay vì báo thành công giả tạo.

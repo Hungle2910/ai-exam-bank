@@ -26,6 +26,13 @@ public class SnsAlertOptions
     /// </summary>
     public int ThrottleWindowSeconds { get; set; } = 300;
 
+    /// <summary>
+    /// Khoảng thời gian giãn cách (giây) tối thiểu giữa hai lần kích hoạt cảnh báo diễn tập (DRILL_TEST_ALERT).
+    /// Ngăn chặn việc gửi dồn dập hoặc spam gây nghẽn đường truyền và vượt hạn mức AWS.
+    /// Mặc định: 60 giây.
+    /// </summary>
+    public int DrillThrottleWindowSeconds { get; set; } = 60;
+
     /// <summary>Tên môi trường hiện tại (Local, Staging, Production).</summary>
     public string EnvironmentName { get; set; } = "Development";
 }

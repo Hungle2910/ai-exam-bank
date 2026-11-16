@@ -642,7 +642,7 @@ public static class JobEndpoints
         });
 
         // 7. GET /api/v1/jobs/metrics/summary - Bản tổng hợp chỉ số độ tin cậy và hiệu năng (M5-05)
-        // Yêu cầu xác thực qua JobEngineAuth (kế thừa từ group). Dữ liệu telemetry không được phép truy cập ẩn danh.
+        // Chỉ cho phép Quản trị viên hệ thống hoặc cấp Bộ truy cập để bảo vệ thông tin vận hành toàn hệ thống.
         group.MapGet("/metrics/summary", async (
             [FromServices] JobService jobService,
             HttpContext httpContext,
@@ -654,13 +654,21 @@ public static class JobEndpoints
                 return Results.Unauthorized();
             }
 
+            if (!IsSystemAdministrator(httpContext))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Forbidden",
+                    detail: "Chỉ Quản trị viên hệ thống hoặc tài khoản cấp Bộ mới có quyền truy cập chỉ số vận hành toàn hệ thống.");
+            }
+
             var summary = await jobService.GetReliabilitySummaryAsync(cancellationToken);
             return Results.Ok(summary);
         })
         .WithTags("JobsMetrics");
 
         // 8. POST /api/v1/jobs/metrics/test-alert - Kích hoạt cảnh báo diễn tập qua SNS (M5-05)
-        // Chỉ cho phép người dùng đã xác thực kích hoạt drill alert để tránh spam cảnh báo.
+        // Chỉ cho phép Quản trị viên hệ thống kích hoạt diễn tập và áp dụng rate limiting chống spam.
         group.MapPost("/metrics/test-alert", async (
             [FromBody] TestAlertApiRequest? request,
             [FromServices] JobService jobService,
@@ -673,6 +681,14 @@ public static class JobEndpoints
                 return Results.Unauthorized();
             }
 
+            if (!IsSystemAdministrator(httpContext))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: "Forbidden",
+                    detail: "Chỉ Quản trị viên hệ thống hoặc tài khoản cấp Bộ mới có quyền kích hoạt cảnh báo diễn tập sự cố.");
+            }
+
             // ClaimTypes.Name được JobEngineAuthenticationHandler gán bằng UserId của token hợp lệ.
             var requesterId = httpContext.User.Identity.Name!;
             var result = await jobService.TriggerTestAlertAsync(
@@ -682,6 +698,22 @@ public static class JobEndpoints
                 request?.JobType,
                 request?.Provider,
                 cancellationToken);
+
+            if (result.WasThrottled)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    title: "Too Many Requests",
+                    detail: result.Error ?? "Cảnh báo diễn tập đang bị giới hạn tốc độ. Vui lòng chờ trước khi diễn tập lại.");
+            }
+
+            if (!result.Success)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "Bad Gateway",
+                    detail: result.Error ?? "Không thể xuất bản cảnh báo qua Amazon SNS.");
+            }
 
             return Results.Ok(result);
         })
@@ -764,5 +796,41 @@ public static class JobEndpoints
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Kiểm tra người dùng hiện tại có thẩm quyền Quản trị viên hệ thống hoặc tài khoản cấp Bộ hay không.
+    /// Dùng để giới hạn quyền truy cập các endpoint quản trị nhạy cảm (Telemetry Metrics toàn hệ thống, Kích hoạt diễn tập SNS).
+    /// </summary>
+    internal static bool IsSystemAdministrator(HttpContext httpContext)
+    {
+        if (httpContext.User?.Identity?.IsAuthenticated != true) return false;
+
+        var scopeKindClaim = httpContext.User.FindFirst("scope_kind")?.Value;
+        if (string.Equals(scopeKindClaim, nameof(JobScopeKind.MinistryExam), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var userId = httpContext.User.Identity?.Name ?? httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            if (userId.StartsWith("system-", StringComparison.OrdinalIgnoreCase) ||
+                userId.Contains("admin", StringComparison.OrdinalIgnoreCase) ||
+                userId.Contains("ministry", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (httpContext.User.IsInRole("Admin") ||
+            httpContext.User.IsInRole("SystemAdmin") ||
+            httpContext.User.HasClaim("role", "Admin") ||
+            httpContext.User.HasClaim("role", "SystemAdmin"))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

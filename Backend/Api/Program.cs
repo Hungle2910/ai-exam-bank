@@ -94,14 +94,20 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddProblemDetails();
 
 // Cấu hình Telemetry Metrics và Amazon SNS Alerting cho Job Engine (M5-05)
-builder.Services.AddSingleton<JobMetrics>();
+builder.Services.AddSingleton<JobMetrics>(sp =>
+{
+    var env = sp.GetRequiredService<IHostEnvironment>();
+    var logger = sp.GetRequiredService<ILogger<JobMetrics>>();
+    return new JobMetrics(env.EnvironmentName, msg => logger.LogInformation("{Message}", msg));
+});
 builder.Services.AddSingleton<IJobMetrics>(sp => sp.GetRequiredService<JobMetrics>());
 builder.Services.Configure<SnsAlertOptions>(builder.Configuration.GetSection("Jobs:SnsAlerts"));
 builder.Services.AddSingleton<ISnsAlertPublisher>(sp =>
 {
     var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
     var logger = sp.GetRequiredService<ILogger<SnsAlertPublisher>>();
-    return new SnsAlertPublisher(opts, msg => logger.LogInformation("{Message}", msg));
+    var awsClient = sp.GetService<IAwsSnsClient>();
+    return new SnsAlertPublisher(opts, awsClient, msg => logger.LogInformation("{Message}", msg));
 });
 
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);

@@ -134,7 +134,7 @@ public sealed class MetricsAndAlertsTests
         Assert.IsTrue(result.Success);
         Assert.IsFalse(result.WasThrottled);
         Assert.IsNotNull(result.MessageId);
-        Assert.IsTrue(logs.Any(l => l.Contains("[SNS ALERT PUBLISHED]")));
+        Assert.IsTrue(logs.Any(l => l.Contains("[SNS ALERT SIMULATED]") || l.Contains("[SNS ALERT PUBLISHED]")));
 
         var recent = publisher.GetRecentAlerts();
         Assert.HasCount(1, recent);
@@ -179,13 +179,13 @@ public sealed class MetricsAndAlertsTests
     }
 
     [TestMethod]
-    public async Task SnsAlertPublisher_AllowsDrillAlerts_BypassingThrottle()
+    public async Task SnsAlertPublisher_AppliesDrillThrottling_ToPreventSpam()
     {
         var options = new SnsAlertOptions
         {
             IsEnabled = true,
             UseMockSimulation = true,
-            ThrottleWindowSeconds = 300
+            DrillThrottleWindowSeconds = 60
         };
         var publisher = new SnsAlertPublisher(options);
 
@@ -209,8 +209,121 @@ public sealed class MetricsAndAlertsTests
         var result2 = await publisher.PublishIncidentAlertAsync(alert2);
 
         Assert.IsTrue(result1.Success);
+        Assert.IsFalse(result1.WasThrottled);
+
+        // Lần thứ 2 gọi ngay lập tức phải bị áp dụng rate limiting
         Assert.IsTrue(result2.Success);
-        Assert.IsFalse(result2.WasThrottled, "Drill test alerts must bypass throttle window.");
+        Assert.IsTrue(result2.WasThrottled, "Drill test alerts must apply drill rate limiting to prevent spam.");
+        StringAssert.Contains(result2.Error, "giới hạn tốc độ");
+    }
+
+    [TestMethod]
+    public async Task SnsAlertPublisher_LiveMode_FailsWhenTopicArnMissing()
+    {
+        var options = new SnsAlertOptions
+        {
+            IsEnabled = true,
+            UseMockSimulation = false, // Live Mode
+            TopicArn = null
+        };
+        var publisher = new SnsAlertPublisher(options);
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.CircuitBreakerOpen,
+            Severity = IncidentSeverity.Critical,
+            Title = "Live Alert",
+            Details = "Live failure"
+        };
+
+        var result = await publisher.PublishIncidentAlertAsync(alert);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "TopicArn is required");
+    }
+
+    [TestMethod]
+    public async Task SnsAlertPublisher_LiveMode_FailsWhenAwsClientMissing()
+    {
+        var options = new SnsAlertOptions
+        {
+            IsEnabled = true,
+            UseMockSimulation = false, // Live Mode
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:test-topic"
+        };
+        var publisher = new SnsAlertPublisher(options); // Không inject IAwsSnsClient
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.CircuitBreakerOpen,
+            Severity = IncidentSeverity.Critical,
+            Title = "Live Alert",
+            Details = "Live failure"
+        };
+
+        var result = await publisher.PublishIncidentAlertAsync(alert);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "IAwsSnsClient");
+    }
+
+    [TestMethod]
+    public async Task SnsAlertPublisher_LiveMode_CallsAwsClientWhenConfigured()
+    {
+        var mockClient = new MockAwsSnsClient("mock-live-msg-999");
+        var options = new SnsAlertOptions
+        {
+            IsEnabled = true,
+            UseMockSimulation = false, // Live Mode
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:test-topic"
+        };
+        var publisher = new SnsAlertPublisher(options, mockClient);
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.CircuitBreakerOpen,
+            Severity = IncidentSeverity.Critical,
+            Title = "Live Alert",
+            Details = "Live failure"
+        };
+
+        var result = await publisher.PublishIncidentAlertAsync(alert);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("mock-live-msg-999", result.MessageId);
+        Assert.AreEqual(1, mockClient.PublishCallCount);
+    }
+
+    [TestMethod]
+    public void JobMetrics_EmitsCloudWatchEmfLog_WhenCircuitBreakerTrips()
+    {
+        var logs = new List<string>();
+        using var metrics = new JobMetrics("Staging", logs.Add);
+
+        metrics.RecordCircuitBreakerState("AWS_BEDROCK", CircuitBreakerState.Open);
+
+        Assert.IsTrue(logs.Any(l => l.Contains("_aws") && l.Contains("ai_provider_circuit_breaker_state")),
+            "JobMetrics phải xuất bản log định dạng AWS CloudWatch EMF khi circuit breaker chuyển trạng thái.");
+    }
+
+    [TestMethod]
+    public async Task JobStore_GetStoreMetricsSummary_CalculatesAccuratelyAcrossProcesses()
+    {
+        var store = new InMemoryJobStore();
+        var request = JobRequest.Create("ExamGeneration", "payload-ref", "user-test-01", SchoolScope, "idemp-summary-01", "corr-summary-01");
+        var job = await store.EnqueueAsync(request, "fingerprint-01");
+
+        var claim = await store.ClaimNextJobAsync("worker-01", TimeSpan.FromMinutes(2));
+        Assert.IsNotNull(claim);
+
+        await store.CompleteJobAsync(job.Id, claim.LeaseToken, "exam-result-01");
+
+        var summary = await store.GetStoreMetricsSummaryAsync();
+
+        Assert.AreEqual(1L, summary.TotalJobs);
+        Assert.AreEqual(1L, summary.CompletedJobs);
+        Assert.AreEqual(0L, summary.FailedJobs);
+        Assert.AreEqual(100.0, summary.SuccessRatePercentage);
     }
 
     [TestMethod]
@@ -377,4 +490,21 @@ public sealed class MetricsAndAlertsTests
     }
 
     #endregion
+
+    private sealed class MockAwsSnsClient : IAwsSnsClient
+    {
+        private readonly string _returnedMessageId;
+        public int PublishCallCount { get; private set; }
+
+        public MockAwsSnsClient(string returnedMessageId)
+        {
+            _returnedMessageId = returnedMessageId;
+        }
+
+        public Task<string> PublishAsync(string topicArn, string message, string? subject = null, CancellationToken cancellationToken = default)
+        {
+            PublishCallCount++;
+            return Task.FromResult(_returnedMessageId);
+        }
+    }
 }

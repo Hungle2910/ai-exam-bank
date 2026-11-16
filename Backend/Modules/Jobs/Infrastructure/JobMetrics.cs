@@ -38,9 +38,13 @@ public class JobMetrics : IJobMetrics, IDisposable
     private readonly ConcurrentDictionary<string, long> _providerErrorCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<double> _recentDurationsMs = new();
     private const int MaxTrackedDurations = 500;
+    private readonly string _environmentName;
+    private readonly Action<string>? _logAction;
 
-    public JobMetrics()
+    public JobMetrics(string environmentName = "Development", Action<string>? logAction = null)
     {
+        _environmentName = string.IsNullOrWhiteSpace(environmentName) ? "Development" : environmentName.Trim();
+        _logAction = logAction;
         _meter = new Meter(MeterName, MeterVersion);
 
         _enqueuedCounter = _meter.CreateCounter<long>(
@@ -85,6 +89,15 @@ public class JobMetrics : IJobMetrics, IDisposable
             "jobs_running",
             () => Interlocked.Read(ref _activeRunning),
             description: "Current number of jobs in Running state leased by workers.");
+
+        _meter.CreateObservableGauge<int>(
+            "ai_provider_circuit_breaker_state",
+            () => _circuitBreakerStates.Select(kvp => new Measurement<int>(
+                (int)kvp.Value,
+                new KeyValuePair<string, object?>("provider", kvp.Key),
+                new KeyValuePair<string, object?>("Environment", _environmentName))),
+            unit: "{state}",
+            description: "State of AI Provider Circuit Breaker (0=Closed, 1=HalfOpen, 2=Open)");
     }
 
     public void RecordJobEnqueued(string jobType, string scopeKind)
@@ -137,6 +150,8 @@ public class JobMetrics : IJobMetrics, IDisposable
         _durationHistogram.Record(durationMs / 1000.0,
             new KeyValuePair<string, object?>("job_type", SanitizeDimension(jobType)),
             new KeyValuePair<string, object?>("status", "Failed"));
+
+        EmitCloudWatchEmf("jobs_failed_total", 1, "Count", new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
     }
 
     public void RecordJobRetried(string jobType, bool isManual, int attemptNumber)
@@ -155,12 +170,16 @@ public class JobMetrics : IJobMetrics, IDisposable
 
         _leaseRecoveriesCounter.Add(1,
             new KeyValuePair<string, object?>("job_type", SanitizeDimension(jobType)));
+
+        EmitCloudWatchEmf("job_lease_recoveries_total", 1, "Count", new KeyValuePair<string, string>("job_type", SanitizeDimension(jobType)));
     }
 
     public void RecordCircuitBreakerState(string provider, CircuitBreakerState state)
     {
         var cleanProvider = SanitizeDimension(provider);
         _circuitBreakerStates[cleanProvider] = state;
+
+        EmitCloudWatchEmf("ai_provider_circuit_breaker_state", (int)state, "None", new KeyValuePair<string, string>("provider", cleanProvider));
     }
 
     public void RecordProviderError(string provider, string errorCode, bool isTransient)
@@ -261,6 +280,64 @@ public class JobMetrics : IJobMetrics, IDisposable
         // Bounded low-cardinality: Chỉ giữ chữ cái, số, gạch dưới, gạch ngang, tối đa 32 ký tự
         var chars = input.Trim().Take(32).Where(c => char.IsLetterOrDigit(c) || c is '_' or '-').ToArray();
         return chars.Length == 0 ? "unknown" : new string(chars);
+    }
+
+    /// <summary>
+    /// Xuất bản log có cấu trúc theo chuẩn AWS CloudWatch Embedded Metric Format (EMF).
+    /// Chuẩn này cho phép CloudWatch Logs tự động phân tích và tạo Metric trong namespace "AiExamBank/Jobs"
+    /// mà không cần cài đặt thêm daemon bên thứ ba hoặc phụ thuộc vào collector trung gian.
+    /// </summary>
+    private void EmitCloudWatchEmf(string metricName, double value, string unit, params KeyValuePair<string, string>[] extraDimensions)
+    {
+        try
+        {
+            var dimensionKeys = new List<string> { "Environment" };
+            var payload = new Dictionary<string, object?>
+            {
+                ["Environment"] = _environmentName
+            };
+
+            foreach (var kvp in extraDimensions)
+            {
+                dimensionKeys.Add(kvp.Key);
+                payload[kvp.Key] = kvp.Value;
+            }
+
+            payload[metricName] = value;
+
+            var emfHeader = new
+            {
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                CloudWatchMetrics = new[]
+                {
+                    new
+                    {
+                        Namespace = "AiExamBank/Jobs",
+                        Dimensions = new[] { dimensionKeys.ToArray() },
+                        Metrics = new[]
+                        {
+                            new { Name = metricName, Unit = unit }
+                        }
+                    }
+                }
+            };
+
+            payload["_aws"] = emfHeader;
+
+            var json = System.Text.Json.JsonSerializer.Serialize(payload);
+            if (_logAction != null)
+            {
+                _logAction(json);
+            }
+            else
+            {
+                Console.WriteLine(json);
+            }
+        }
+        catch
+        {
+            // Tránh làm ảnh hưởng luồng nghiệp vụ chính nếu việc ghi log EMF gặp trục trặc
+        }
     }
 
     public void Dispose()

@@ -8,14 +8,20 @@ using Microsoft.Extensions.Hosting;
 var builder = Host.CreateApplicationBuilder(args);
 
 // Cấu hình Telemetry Metrics và Amazon SNS Alerting cho Job Engine (M5-05)
-builder.Services.AddSingleton<JobMetrics>();
+builder.Services.AddSingleton<JobMetrics>(sp =>
+{
+    var env = sp.GetRequiredService<IHostEnvironment>();
+    var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<JobMetrics>>();
+    return new JobMetrics(env.EnvironmentName, msg => logger.LogInformation("{Message}", msg));
+});
 builder.Services.AddSingleton<IJobMetrics>(sp => sp.GetRequiredService<JobMetrics>());
 builder.Services.Configure<SnsAlertOptions>(builder.Configuration.GetSection("Jobs:SnsAlerts"));
 builder.Services.AddSingleton<ISnsAlertPublisher>(sp =>
 {
     var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
     var logger = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SnsAlertPublisher>>();
-    return new SnsAlertPublisher(opts, msg => logger.LogInformation("{Message}", msg));
+    var awsClient = sp.GetService<IAwsSnsClient>();
+    return new SnsAlertPublisher(opts, awsClient, msg => logger.LogInformation("{Message}", msg));
 });
 
 // Cấu hình kho lưu trữ Job bền vững và danh mục Handler

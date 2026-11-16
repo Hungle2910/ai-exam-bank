@@ -13,6 +13,7 @@ namespace AiExamBank.Modules.Jobs.Infrastructure;
 public class SnsAlertPublisher : ISnsAlertPublisher
 {
     private readonly SnsAlertOptions _options;
+    private readonly IAwsSnsClient? _awsSnsClient;
     private readonly Action<string>? _logAction;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastAlertTimestamps = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentQueue<IncidentAlert> _recentAlerts = new();
@@ -21,12 +22,21 @@ public class SnsAlertPublisher : ISnsAlertPublisher
     public SnsAlertPublisher(
         SnsAlertOptions? options = null,
         Action<string>? logAction = null)
+        : this(options, null, logAction)
+    {
+    }
+
+    public SnsAlertPublisher(
+        SnsAlertOptions? options,
+        IAwsSnsClient? awsSnsClient,
+        Action<string>? logAction = null)
     {
         _options = options ?? new SnsAlertOptions();
+        _awsSnsClient = awsSnsClient;
         _logAction = logAction;
     }
 
-    public Task<PublishAlertResult> PublishIncidentAlertAsync(
+    public async Task<PublishAlertResult> PublishIncidentAlertAsync(
         IncidentAlert alert,
         CancellationToken cancellationToken = default)
     {
@@ -35,24 +45,36 @@ public class SnsAlertPublisher : ISnsAlertPublisher
         if (!_options.IsEnabled)
         {
             Log($"SNS alerts are disabled by configuration. Alert {alert.IncidentId} skipped.");
-            return Task.FromResult(PublishAlertResult.Throttled("SNS alerts disabled."));
+            return PublishAlertResult.Throttled("SNS alerts disabled.");
         }
 
-        // 1. Kiểm tra Throttling để chống Alert Storm (ngoại trừ cảnh báo kiểm tra diễn tập DRILL_TEST_ALERT)
+        // 1. Kiểm tra Throttling để chống Alert Storm
         var throttleKey = $"{alert.IncidentType}:{alert.JobType ?? "all"}:{alert.Provider ?? "all"}";
         var now = DateTimeOffset.UtcNow;
 
-        if (alert.IncidentType != IncidentTypes.DrillTestAlert &&
-            _lastAlertTimestamps.TryGetValue(throttleKey, out var lastSent))
+        if (_lastAlertTimestamps.TryGetValue(throttleKey, out var lastSent))
         {
             var elapsedSeconds = (now - lastSent).TotalSeconds;
-            if (elapsedSeconds < _options.ThrottleWindowSeconds)
+
+            // Xử lý giãn cách riêng cho cảnh báo diễn tập (DRILL_TEST_ALERT) để ngăn chặn spam/DoS
+            if (alert.IncidentType == IncidentTypes.DrillTestAlert)
+            {
+                if (elapsedSeconds < _options.DrillThrottleWindowSeconds)
+                {
+                    var remaining = (int)(_options.DrillThrottleWindowSeconds - elapsedSeconds);
+                    Log($"Throttled DRILL_TEST_ALERT. Last triggered {elapsedSeconds:N0}s ago. Drill cooldown: {remaining}s remaining.");
+
+                    return PublishAlertResult.Throttled(
+                        $"Cảnh báo diễn tập đang bị giới hạn tốc độ. Vui lòng chờ thêm {remaining} giây trước khi diễn tập lại.");
+                }
+            }
+            else if (elapsedSeconds < _options.ThrottleWindowSeconds)
             {
                 var remaining = (int)(_options.ThrottleWindowSeconds - elapsedSeconds);
                 Log($"Throttled SNS alert {alert.IncidentType} for {alert.JobType}/{alert.Provider}. Last sent {elapsedSeconds:N0}s ago. Cooldown: {remaining}s remaining.");
 
-                return Task.FromResult(PublishAlertResult.Throttled(
-                    $"Alert throttled. Cooldown active for next {remaining} seconds."));
+                return PublishAlertResult.Throttled(
+                    $"Alert throttled. Cooldown active for next {remaining} seconds.");
             }
         }
 
@@ -76,13 +98,47 @@ public class SnsAlertPublisher : ISnsAlertPublisher
         // 5. Định dạng thông điệp theo chuẩn AWS SNS Payload
         var snsMessageBody = FormatSnsPayload(sanitizedAlert);
 
-        // 6. Phát cảnh báo (Mô phỏng an toàn cho Staging/Local hoặc gọi trực tiếp)
-        var messageId = $"sns-msg-{Guid.NewGuid():N}";
+        // 6. Phát cảnh báo: Phân biệt rõ chế độ Mock Simulation vs Live AWS SNS
+        if (_options.UseMockSimulation)
+        {
+            var mockMessageId = $"sns-mock-{Guid.NewGuid():N}";
+            Log($"🧪 [SNS ALERT SIMULATED] [{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType} - {sanitizedAlert.Title}. MessageId: {mockMessageId}. Mode: MockSimulation. Target Topic: {_options.TopicArn ?? "arn:aws:sns:local:mock-topic"}");
+            Log($"SNS Payload:\n{snsMessageBody}");
+            return PublishAlertResult.Succeeded(mockMessageId);
+        }
 
-        Log($"🚨 [SNS ALERT PUBLISHED] [{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType} - {sanitizedAlert.Title}. MessageId: {messageId}. Target Topic: {_options.TopicArn ?? "arn:aws:sns:local:mock-topic"}");
-        Log($"SNS Payload:\n{snsMessageBody}");
+        // Chế độ phát AWS SNS thật (Live Mode):
+        if (string.IsNullOrWhiteSpace(_options.TopicArn))
+        {
+            var error = "TopicArn is required when UseMockSimulation is false.";
+            Log($"❌ [SNS ALERT FAILED] {error}");
+            return PublishAlertResult.Failed(error);
+        }
 
-        return Task.FromResult(PublishAlertResult.Succeeded(messageId));
+        if (_awsSnsClient == null)
+        {
+            var error = $"AWS SNS client (IAwsSnsClient) is not configured for live publishing. Target TopicArn: {_options.TopicArn}. Please register IAwsSnsClient or set UseMockSimulation = true.";
+            Log($"❌ [SNS ALERT FAILED] {error}");
+            return PublishAlertResult.Failed(error);
+        }
+
+        try
+        {
+            var liveMessageId = await _awsSnsClient.PublishAsync(
+                _options.TopicArn,
+                snsMessageBody,
+                $"[{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType}",
+                cancellationToken);
+
+            Log($"🚨 [SNS ALERT PUBLISHED LIVE] [{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType} - {sanitizedAlert.Title}. MessageId: {liveMessageId}. Target Topic: {_options.TopicArn}");
+            return PublishAlertResult.Succeeded(liveMessageId);
+        }
+        catch (Exception ex)
+        {
+            var error = $"AWS SNS Publish failed: {ex.Message}";
+            Log($"❌ [SNS ALERT FAILED] {error}");
+            return PublishAlertResult.Failed(error);
+        }
     }
 
     public IReadOnlyList<IncidentAlert> GetRecentAlerts()
