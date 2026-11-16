@@ -84,7 +84,7 @@ Reads trên `QuestionRevisions` không đổi ở mọi trường hợp (không 
 - Nút gửi duyệt: endpoint và nút ở danh sách đã vào `dev` cùng M3-03. Modal lịch sử cũng có nút Gửi duyệt cho revision mới nhất khi nó còn là DRAFT và người xem là chủ câu hỏi (dùng chung hàm gửi với danh sách, tải lại lịch sử khi server nhận). Nút luôn gửi `expectedVersion: 1`, đúng với bản nháp mới; API lịch sử chưa trả `reviewVersion`.
 - ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Trình soạn thảo có nút "Lịch sử revision" mở lịch sử phía trên form, form giữ nguyên nội dung đang gõ. Còn lại: chụp ảnh/video demo.
 - ~~Sinh lại `openapi/questions.json`~~ (đã làm): có thêm hai route lịch sử và trường `approvedRevision`; route review của M3-03 không nằm trong tài liệu này.
-- Video/ảnh demo revision, ghi PR, giờ thực tế.
+- ~~Ảnh demo revision~~ (đã làm, xem mục 9). Còn lại: video nếu cần, ghi PR, giờ thực tế.
 
 ## 8. Smoke test trên API thật (sau khi gộp M3-03)
 
@@ -95,3 +95,13 @@ Lần chạy đầu bắt được một lỗi tích hợp mà gộp sạch và 
 Giới hạn theo chính sách M3-02: trưởng bộ môn chỉ đọc câu đang `PENDING_REVIEW`, nên sau khi quyết định họ nhận 404 với lịch sử (script kiểm đúng điều này).
 
 Chạy lại: khởi động API với `ASPNETCORE_ENVIRONMENT=Development`, `LocalDemoUser__Enabled=true`, `LocalDemoUser__Password`, `LocalDemoUser__BootstrapMinistryAdmin=true`, `Jobs__DisableEmbeddedWorker=true`, rồi `powershell -File tools/m403_smoke.ps1 -Password <mật khẩu>`. Script chạy được trên Windows PowerShell 5.1 và PowerShell 7. Đăng nhập bị giới hạn tốc độ (429): đợi một phút giữa các lần chạy.
+
+## 9. Demo revision (ảnh chụp trên stack thật)
+
+Chụp từ giao diện thật nối API thật và SQL Server cục bộ (database dùng một lần, đã xóa), đăng nhập bằng tài khoản giáo viên. Dữ liệu: một câu có 3 revision, revision 1 và 2 đã duyệt, revision 3 là bản nháp mới sửa.
+
+| Ảnh | Nội dung |
+|---|---|
+| [01](M4-03/demo/01_history_compare_draft_with_submit.png) | Lịch sử: Revision 3 (Nháp, mới nhất) so với Revision 2 (đang dùng để thi), 3 trường khác nhau, nút Gửi duyệt |
+| [02](M4-03/demo/02_history_compare_approved_revisions.png) | Revision 2 so với Revision 1, cả hai đã duyệt |
+| [03](M4-03/demo/03_after_submit_pending_review.png) | Sau khi bấm Gửi duyệt: Revision 3 chuyển sang Chờ duyệt, nút biến mất; Revision 2 vẫn là bản đang dùng |
