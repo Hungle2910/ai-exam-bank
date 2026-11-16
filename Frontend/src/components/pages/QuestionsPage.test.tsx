@@ -5,6 +5,7 @@ import QuestionsPage from './QuestionsPage';
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   success: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -12,12 +13,30 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 vi.mock('@/contexts/ToastContext', () => ({
-  useToast: () => ({ success: mocks.success }),
+  useToast: () => ({ success: mocks.success, error: mocks.error }),
 }));
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+it('submits the current draft revision and reloads its status', async () => {
+  const draft = { id: 'q1', revision: 1, stem: 'Question', subject: { id: 'sub-a', name: 'Môn A' },
+    topic: { id: 'top-a', name: 'Chủ đề A' }, difficulty: 'EASY', status: 'DRAFT',
+    ownerUserId: 'user-a', updatedAt: '2026-11-01T00:00:00Z' };
+  mocks.apiFetch.mockImplementation((url: string) =>
+    url === '/api/v1/catalog' ? json(200, catalog)
+      : url === '/api/v1/questions/q1/submit-review' ? json(200)
+        : json(200, { items: [draft], page: 1, pageSize: 20, total: 1 }));
+
+  const view = render(<QuestionsPage />);
+  const button = await view.findByText('Gửi duyệt');
+  fireEvent.click(button);
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Đã gửi câu hỏi để duyệt'));
+  const call = mocks.apiFetch.mock.calls.find(([url]) => url === '/api/v1/questions/q1/submit-review');
+  expect(call?.[1].headers['X-CSRF-TOKEN']).toBe('csrf');
+  expect(JSON.parse(call?.[1].body)).toEqual({ revision: 1, expectedVersion: 1 });
 });
 
 const json = (status: number, body: unknown = null) => Promise.resolve({ ok: status >= 200 && status < 300, status, json: async () => body });
