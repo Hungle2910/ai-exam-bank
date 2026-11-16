@@ -193,6 +193,7 @@ app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
 app.MapQuestionEndpoints();
 app.MapBlueprintEndpoints();
 app.MapExamSelection();
+app.MapReviewEndpoints();
 app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
 app.MapSchoolAdministrationEndpoints();
