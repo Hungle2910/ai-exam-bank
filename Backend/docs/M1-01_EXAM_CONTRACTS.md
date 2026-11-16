@@ -1,6 +1,6 @@
 # Exam workflow contracts for owner review
 
-Issue #1. Source baseline `dev` at `ebb078e`. The workflow below distinguishes deployed-contract candidates in open PRs from interfaces already on `dev`. Scope follows [ADR 0004](adr/0004-multi-school-ministry-mvp.md) and the [permission matrix](IDENTITY_AND_PERMISSIONS.md).
+Issue #1. Source baseline `dev` at `465142e`. Scope follows [ADR 0004](adr/0004-multi-school-ministry-mvp.md) and the [permission matrix](IDENTITY_AND_PERMISSIONS.md).
 
 ## Runtime inventory
 
@@ -9,7 +9,7 @@ Issue #1. Source baseline `dev` at `ebb078e`. The workflow below distinguishes d
 | HTTP and web | `Api/Program.cs` composes auth and routes. Next.js uses the pages in `Frontend/src/components/pages`. Identity mutations use a session cookie and antiforgery. | M1 host, M3 auth |
 | SQL schema | `Persistence/AiExamBank.Persistence/AiExamBankDbContext.cs` uses EF Core SQL Server with one migration stream. M3 owns school, department and role assignments. M4 owns taxonomy, school-subject mapping and question revisions. | M1 migration coordination, M3 and M4 mappings |
 | Questions | `IQuestionCatalog`, `IQuestionWriter`, and `IApprovedQuestionReader` are public M4 contracts. A question ID plus revision number pins content. | M4 |
-| Approval | `ReviewDecisionRequest` defines a decision contract. The state transition, independent reviewer checks and audit integration still need M3's implementation. | M3 |
+| Approval | `ReviewEndpoints` handles question submission, pending review and decisions. M3-03 stores revision review decisions. Exam selection approval and the broader audit integration are tracked separately. | M3 |
 | Jobs | `Api` and `Worker` compose the M5 file-backed job store. Exams uses the Jobs contracts at the API boundary. | M5 |
 | Retrieval | `IKnowledgeRetriever` defines scoped retrieval with citations. The live adapter belongs to M4. | M4 with M2 |
 
