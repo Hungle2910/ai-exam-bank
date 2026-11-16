@@ -1,13 +1,13 @@
 {
   "openapi": "3.1.1",
   "info": {
-    "title": "AI Exam Bank - Question bank API (M4-02)",
-    "description": "Question bank CRUD with revisions, filtering and paging, plus the routes that assign a subject to a department.\n\n**Authentication.** Sign in with `POST /auth/login` (outside this document); the session is an HttpOnly cookie. `POST` and `PUT` also need the `X-CSRF-TOKEN` header: call `GET /auth/csrf` after signing in and send the returned `token`.\n\n**Scope.** The school always comes from the signed-in account. A Teacher reads and edits only the questions they own, and writes only for subjects assigned to their department. Status is decided by the server; a new question or revision is always `DRAFT`.\n\n**Errors.** Business errors are Problem Details with a stable `code` and a `traceId`. 401 and 403 from the authentication layer and a request rejected for a missing CSRF token carry no body.",
+    "title": "AI Exam Bank - Question bank API (M4-02, M4-03)",
+    "description": "Question bank CRUD with immutable revisions, version history, filtering and paging, plus the routes that assign a subject to a department.\n\n**Authentication.** Sign in with `POST /auth/login` (outside this document); the session is an HttpOnly cookie. `POST` and `PUT` also need the `X-CSRF-TOKEN` header: call `GET /auth/csrf` after signing in and send the returned `token`.\n\n**Scope.** The school always comes from the signed-in account. A Teacher reads and edits only the questions they own, and writes only for subjects assigned to their department. Status is decided by the server; a new question or revision is always `DRAFT`.\n\n**Errors.** Business errors are Problem Details with a stable `code` and a `traceId`. 401 and 403 from the authentication layer and a request rejected for a missing CSRF token carry no body.",
     "version": "v1"
   },
   "servers": [
     {
-      "url": "http://localhost:5001/"
+      "url": "http://localhost:5000/"
     }
   ],
   "paths": {
@@ -510,6 +510,142 @@
         ]
       }
     },
+    "/api/v1/questions/{id}/revisions": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "Every revision of a question with its content, newest first",
+        "description": "Revisions are immutable: an edit is a new revision, so older entries never change. `isLatest` marks the revision the question points at; `isApprovedInUse` marks the newest approved revision, which exam selection uses even while a newer draft is waiting for review. Answer keys are included, so the caller needs the same read access as `GET /questions/{id}`; a question that does not exist and one the caller may not read both return 404.",
+        "operationId": "GetQuestionHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionHistoryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Unknown, or not readable by the caller",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+                      "title": "The question was not found.",
+                      "status": 404,
+                      "code": "QUESTION_NOT_FOUND",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/questions/{id}/revisions/{revision}": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "summary": "One revision with its content",
+        "description": "404 `QUESTION_NOT_FOUND` when the question or the revision does not exist, or when the caller may not read the question.",
+        "operationId": "GetQuestionRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionRevisionDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiProblem"
+                },
+                "examples": {
+                  "example": {
+                    "summary": "Unknown, or not readable by the caller",
+                    "value": {
+                      "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+                      "title": "The question was not found.",
+                      "status": 404,
+                      "code": "QUESTION_NOT_FOUND",
+                      "traceId": "00-582083f1f1dcf919d020899ee02964e5-055ec6cc78b72da5-00"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/admin/schools/{schoolId}/subjects": {
       "get": {
         "tags": [
@@ -813,7 +949,8 @@
           "source",
           "ownerUserId",
           "updatedAt",
-          "revisions"
+          "revisions",
+          "approvedRevision"
         ],
         "type": "object",
         "properties": {
@@ -894,6 +1031,13 @@
             "items": {
               "$ref": "#/components/schemas/QuestionRevisionResponse"
             }
+          },
+          "approvedRevision": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -913,6 +1057,42 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "QuestionHistoryResponse": {
+        "required": [
+          "id",
+          "subject",
+          "latestRevision",
+          "approvedRevision",
+          "revisions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "latestRevision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "approvedRevision": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "revisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionRevisionDetailResponse"
+            }
           }
         }
       },
@@ -1017,6 +1197,115 @@
             ],
             "description": "PUT only, required: the revision the author opened. 409 if a newer revision exists.",
             "format": "int32"
+          }
+        }
+      },
+      "QuestionRevisionDetailResponse": {
+        "required": [
+          "revision",
+          "status",
+          "origin",
+          "stem",
+          "options",
+          "correctOption",
+          "topic",
+          "difficulty",
+          "source",
+          "importBatchId",
+          "importRowNumber",
+          "createdByUserId",
+          "createdAt",
+          "isLatest",
+          "isApprovedInUse"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "enum": [
+              "DRAFT",
+              "PENDING_REVIEW",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "MANUAL",
+              "IMPORT",
+              "AI_DRAFT",
+              "SEED"
+            ],
+            "type": "string"
+          },
+          "stem": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "correctOption": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "type": "string"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/NamedRef"
+          },
+          "difficulty": {
+            "enum": [
+              "EASY",
+              "MEDIUM",
+              "HARD"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "importBatchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "importRowNumber": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isLatest": {
+            "type": "boolean",
+            "description": "True for the revision the question currently points at."
+          },
+          "isApprovedInUse": {
+            "type": "boolean",
+            "description": "True for the newest approved revision, the one exam selection uses."
           }
         }
       },
