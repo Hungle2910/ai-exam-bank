@@ -1,6 +1,6 @@
 # M4-03: Lịch sử phiên bản và chất lượng truy vấn
 
-**Status:** Backend, migration và bằng chứng truy vấn đã làm và kiểm chứng trên SQL Server cục bộ (`.\SQLEXPRESS`); chưa deploy. Chưa có UI lịch sử/so sánh và nút gửi duyệt (xem mục 7). Liên quan: [API M4-02](M4-02_QUESTION_API.md), [domain M4-01](M4-01_QUESTION_DOMAIN.md), thư mục bằng chứng [M4-03/](M4-03/).
+**Status:** Backend, migration và bằng chứng truy vấn đã làm và kiểm chứng trên SQL Server cục bộ (`.\SQLEXPRESS`); chưa deploy. UI xem/so sánh revision đã có; chưa có nút gửi duyệt (xem mục 7). Liên quan: [API M4-02](M4-02_QUESTION_API.md), [domain M4-01](M4-01_QUESTION_DOMAIN.md), thư mục bằng chứng [M4-03/](M4-03/).
 
 ## 1. Quy ước revision
 
@@ -82,6 +82,6 @@ Reads trên `QuestionRevisions` không đổi ở mọi trường hợp (không 
 ## 7. Còn lại của M4-03
 
 - Nút gửi duyệt (`POST /questions/{id}/submit-review`, thuộc M3-03) và adapter thật: chờ nhánh M3-03 merge.
-- UI xem và so sánh các revision, tích hợp vào trình soạn thảo.
+- ~~UI xem và so sánh các revision~~ (đã làm): nút Lịch sử trên danh sách mở `QuestionHistoryModal`, gọi `GET /questions/{id}/revisions`, xem nội dung từng revision và so sánh hai revision theo từng trường (`revisionDiff.ts`). Còn lại: mở lịch sử ngay trong trình soạn thảo, và chụp ảnh/video demo.
 - Sinh lại `openapi/questions.json` từ API đang chạy.
 - Video/ảnh demo revision, ghi PR, giờ thực tế.

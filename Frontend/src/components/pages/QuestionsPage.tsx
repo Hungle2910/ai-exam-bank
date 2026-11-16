@@ -6,16 +6,13 @@ import clsx from 'clsx';
 import { useToast } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApiError, fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
+import QuestionHistoryModal from './QuestionHistoryModal';
+import { DIFF, STATUS, type Difficulty, type Origin, type QStatus, type Ref, type RevisionDetail } from './questionLabels';
 
 /* ============================================================
    TYPES
    ============================================================ */
 
-type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-type QStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
-type Origin = 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
-
-interface Ref { id: string; name: string }
 interface CatalogTopic { id: string; code: string; name: string }
 interface CatalogSubject { id: string; code: string; name: string; canWrite: boolean; topics: CatalogTopic[] }
 
@@ -26,6 +23,8 @@ interface QuestionItem {
 interface RevisionInfo { revision: number; status: QStatus; origin: Origin; createdByUserId: string; createdAt: string }
 interface QuestionDetail extends QuestionItem {
   origin: Origin; options: string[]; correctOption: string; source: string | null; revisions: RevisionInfo[];
+  /** Sample data only: the full content of every revision, which the real API serves from /revisions. */
+  snapshots?: RevisionDetail[];
 }
 interface Paged { items: QuestionItem[]; page: number; pageSize: number; total: number }
 interface Filters { subjectId: string; topicId: string; difficulty: '' | Difficulty; status: '' | QStatus; text: string }
@@ -35,14 +34,6 @@ interface ListResult { key: string; data: Paged | null; error: string | null }
 const PAGE_SIZE = 20;
 const LABELS = 'ABCD';
 const NO_FILTERS: Filters = { subjectId: '', topicId: '', difficulty: '', status: '', text: '' };
-
-const DIFF: Record<Difficulty, [string, string]> = {
-  EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
-};
-const STATUS: Record<QStatus, [string, string]> = {
-  DRAFT: ['Nháp', 'badge-gray'], PENDING_REVIEW: ['Chờ duyệt', 'badge-blue'], APPROVED: ['Đã duyệt', 'badge-green'], REJECTED: ['Bị trả lại', 'badge-red'],
-};
-const ORIGIN: Record<Origin, string> = { MANUAL: 'Nhập tay', IMPORT: 'Import', AI_DRAFT: 'AI nháp', SEED: 'Dữ liệu mẫu' };
 
 /* ============================================================
    SAMPLE DATA (only used when the API is not available in development)
@@ -70,6 +61,10 @@ const mockQuestion = (
   id, revision: 1, status, stem, subject, topic, difficulty, ownerUserId: 'mock-user', updatedAt, origin: 'MANUAL',
   options, correctOption, source: null,
   revisions: [{ revision: 1, status, origin: 'MANUAL', createdByUserId: 'mock-user', createdAt: updatedAt }],
+  snapshots: [{
+    revision: 1, status, origin: 'MANUAL', stem, options, correctOption, topic, difficulty, source: null,
+    importBatchId: null, importRowNumber: null, createdByUserId: 'mock-user', createdAt: updatedAt, isLatest: true, isApprovedInUse: false,
+  }],
 });
 
 const MOCK_QUESTIONS: QuestionDetail[] = [
@@ -276,7 +271,10 @@ export default function QuestionsPage() {
         <QuestionModal id={editing === 'new' ? null : editing} catalog={catalog} isMock={isMock} mockStore={mockStore}
           onClose={() => setEditing(null)} onSaved={d => { success(editing === 'new' ? 'Đã lưu câu hỏi ở trạng thái nháp' : 'Đã lưu revision mới ở trạng thái nháp'); onSaved(d); }} />
       )}
-      {history && <HistoryModal id={history} isMock={isMock} mockStore={mockStore} onClose={() => setHistory(null)} />}
+      {history && (
+        <QuestionHistoryModal id={history} onClose={() => setHistory(null)}
+          mockRevisions={isMock ? mockStore.find(q => q.id === history)?.snapshots ?? [] : null} />
+      )}
     </div>
   );
 }
@@ -391,6 +389,11 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
           correctOption: LABELS[correct], subject: { id: subject.id, name: subject.name }, topic: { id: topic.id, name: topic.name },
           difficulty, source: source.trim() || null, ownerUserId: initial?.ownerUserId ?? 'mock-user', updatedAt: now,
           revisions: [{ revision, status: 'DRAFT', origin: 'MANUAL', createdByUserId: 'mock-user', createdAt: now }, ...(initial?.revisions ?? [])],
+          snapshots: [{
+            revision, status: 'DRAFT', origin: 'MANUAL', stem: stem.trim(), options: options.map(o => o.trim()), correctOption: LABELS[correct],
+            topic: { id: topic.id, name: topic.name }, difficulty, source: source.trim() || null, importBatchId: null, importRowNumber: null,
+            createdByUserId: 'mock-user', createdAt: now, isLatest: true, isApprovedInUse: false,
+          }, ...(initial?.snapshots ?? [])],
         };
         onSaved(saved);
         return;
@@ -484,36 +487,5 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
         <button className={clsx('btn btn-primary', saving && 'btn-loading')} disabled={saving} onClick={save} id="btn-save-draft">Lưu nháp</button>
       </div>
     </>
-  );
-}
-
-function HistoryModal({ id, isMock, mockStore, onClose }: { id: string; isMock: boolean; mockStore: QuestionDetail[]; onClose: () => void }) {
-  const { detail, error, loading, reload } = useDetail(id, isMock, mockStore);
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <div><div className="modal-title">Lịch sử revision</div><div className="modal-subtitle">{id} · mỗi revision là bất biến</div></div>
-          <button className="modal-close" onClick={onClose} id="btn-close-history" aria-label="Đóng">✕</button>
-        </div>
-        <div className="modal-body">
-          {loading && <div className="skeleton" style={{ height: 120, borderRadius: 8 }} />}
-          {error && <div role="alert">⚠ {error} <button className="btn btn-secondary btn-sm" onClick={reload} id="btn-retry-history">Thử lại</button></div>}
-          {detail?.revisions.map((r, idx) => (
-            <div key={r.revision} style={{ display: 'flex', gap: 14, paddingBottom: 16 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 99, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                background: idx === 0 ? 'var(--brand-600)' : 'var(--gray-100)', color: idx === 0 ? 'white' : 'var(--gray-500)' }}>{r.revision}</div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13.5 }}>
-                  Revision {r.revision} {idx === 0 && <span className="badge badge-blue" style={{ marginLeft: 6 }}>Hiện tại</span>}
-                  <span className={clsx('badge', STATUS[r.status][1])} style={{ marginLeft: 6 }}>{STATUS[r.status][0]}</span>
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--gray-500)' }}>{ORIGIN[r.origin]} · {formatDateTime(r.createdAt)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
