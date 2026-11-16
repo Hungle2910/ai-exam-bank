@@ -1,352 +1,1101 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { FileText, Plus, Trash2, RefreshCw, Database, ArrowLeft, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import {
+  Plus, Trash2, RefreshCw, Save,
+  Cpu, BookOpen, FileText, X, Loader2, Check
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
+import {
+  BlueprintItem,
+  BlueprintSlotItem,
+  Difficulty,
+  useWorkflowStore,
+  computeSlotStats,
+  saveBlueprintToStore,
+  assembleExamFromBlueprint,
+  setWorkflowNavIntent,
+  upsertBankQuestion,
+} from '@/lib/workflowStore';
+import {
+  enqueueBackgroundJob,
+  fetchJobStatus,
+  isTerminalJobStatus,
+} from '@/lib/jobClient';
 
-/* ============================================================
-   TYPES & MOCK
-   ============================================================ */
-
-type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-
-interface BlueprintSlot {
-  id: string;
-  subject: string;
-  topic: string;
-  difficulty: Difficulty;
-  questionCount: number;
-  pointsPerQuestion: number;
-  available?: number; // approved questions matching this slot
-}
-
-interface Blueprint {
-  id: string;
-  name: string;
-  subject: string;
-  totalPoints: number;
-  durationMinutes: number;
-  updatedAt: string;
-  slots: BlueprintSlot[];
-}
-
-const MOCK: Blueprint[] = [
-  {
-    id: 'bp-1', name: 'Kiểm tra giữa kỳ I – Toán 12', subject: 'Toán', totalPoints: 10, durationMinutes: 90, updatedAt: '2026-10-16T07:00:00Z',
-    slots: [
-      { id: 's1', subject: 'Toán', topic: 'Đạo hàm', difficulty: 'EASY', questionCount: 12, pointsPerQuestion: 0.2, available: 30 },
-      { id: 's2', subject: 'Toán', topic: 'Đạo hàm', difficulty: 'MEDIUM', questionCount: 10, pointsPerQuestion: 0.2, available: 8 },
-      { id: 's3', subject: 'Toán', topic: 'Logarit', difficulty: 'MEDIUM', questionCount: 20, pointsPerQuestion: 0.2, available: 22 },
-      { id: 's4', subject: 'Toán', topic: 'Logarit', difficulty: 'HARD', questionCount: 8, pointsPerQuestion: 0.2, available: 3 },
-    ],
-  },
-  {
-    id: 'bp-2', name: 'Đề ôn tập Hóa 11 – Chương 1', subject: 'Hóa học', totalPoints: 10, durationMinutes: 45, updatedAt: '2026-10-14T03:30:00Z',
-    slots: [
-      { id: 's5', subject: 'Hóa học', topic: 'Bảng tuần hoàn', difficulty: 'EASY', questionCount: 20, pointsPerQuestion: 0.25, available: 40 },
-      { id: 's6', subject: 'Hóa học', topic: 'Liên kết hóa học', difficulty: 'MEDIUM', questionCount: 20, pointsPerQuestion: 0.25, available: 25 },
-    ],
-  },
+const DIFF_COLS: Array<{ key: Difficulty; label: string; sub: string }> = [
+  { key: 'EASY', label: 'Mức 1 · Nhận biết (Dễ)', sub: 'Khái niệm & công thức cơ bản' },
+  { key: 'MEDIUM', label: 'Mức 2 · Thông hiểu (TB)', sub: 'Biến đổi & suy luận chuẩn' },
+  { key: 'HARD', label: 'Mức 3 · Vận dụng (Khó)', sub: 'Tổng hợp & bài toán tham số' },
 ];
 
-const DIFF: Record<Difficulty, [string, string]> = {
-  EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
+const DIFF_SHORT: Record<Difficulty, string> = {
+  EASY: 'Dễ',
+  MEDIUM: 'Trung bình',
+  HARD: 'Khó',
 };
 
 const round = (n: number) => Math.round(n * 100) / 100;
-const sumPoints = (s: BlueprintSlot[]) => round(s.reduce((a, x) => a + x.questionCount * x.pointsPerQuestion, 0));
-const sumQuestions = (s: BlueprintSlot[]) => s.reduce((a, x) => a + x.questionCount, 0);
-const missing = (s: BlueprintSlot[]) => s.filter(x => x.available !== undefined && x.available < x.questionCount);
+const sumPoints = (s: BlueprintSlotItem[]) =>
+  round(s.reduce((a, x) => a + x.questionCount * x.pointsPerQuestion, 0));
+const sumQuestions = (s: BlueprintSlotItem[]) => s.reduce((a, x) => a + x.questionCount, 0);
 
-/* ============================================================
-   PAGE
-   ============================================================ */
+export default function BlueprintsPage({ onNavigate }: { onNavigate?: (href: string) => void }) {
+  const { user, primaryRole, csrfToken } = useAuth();
+  const { success, error: showError } = useToast();
+  const wf = useWorkflowStore();
 
-export default function BlueprintsPage() {
-  const [list, setList] = useState<Blueprint[]>([]);
-  const [isMock, setIsMock] = useState(false);
+  const [apiList, setApiList] = useState<BlueprintItem[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<Blueprint | null>(null);
+  const [activeBpId, setActiveBpId] = useState<string>(() => wf.blueprints[0]?.id ?? 'bp-1');
+  const [draftBp, setDraftBp] = useState<BlueprintItem | null>(null);
+
+  // Selected cell in the 2D matrix: { topic, difficulty }
+  const [selectedCell, setSelectedCell] = useState<{
+    topic: string;
+    difficulty: Difficulty;
+  } | null>({ topic: 'Đạo hàm', difficulty: 'MEDIUM' });
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+
+  // Inline AI generation progress per cell key `${topic}::${difficulty}`
+  const [cellJobProgress, setCellJobProgress] = useState<Record<string, number>>({});
+  const [newTopicName, setNewTopicName] = useState('');
+  const [addingTopic, setAddingTopic] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    const r = await fetchOrMock<Blueprint[]>('/api/v1/blueprints', MOCK);
-    setList(r.data);
-    setIsMock(r.isMock);
-    setLoading(false);
+    try {
+      const res = await fetch('/api/v1/blueprints', { credentials: 'include' });
+      if (res.ok) {
+        const data = (await res.json()) as BlueprintItem[];
+        if (Array.isArray(data) && data.length > 0) {
+          setApiList(data);
+          return;
+        }
+      }
+      setApiList(null);
+    } catch {
+      setApiList(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      await load();
+      if (!active) return;
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [load]);
 
-  if (editing) {
+  const list = apiList ?? wf.blueprints;
+  const isMock = apiList === null;
+  const canAuthor = primaryRole === 'Teacher' || primaryRole === 'DepartmentHead';
+
+  const currentBp = useMemo(() => {
+    if (draftBp && draftBp.id === activeBpId) return draftBp;
+    return list.find(b => b.id === activeBpId) ?? list[0] ?? null;
+  }, [draftBp, activeBpId, list]);
+
+  // Distinct topics in the current blueprint
+  const topics = useMemo(() => {
+    if (!currentBp) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    currentBp.slots.forEach(s => {
+      const t = s.topic.trim() || 'Chưa đặt tên';
+      if (!seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    });
+    return out;
+  }, [currentBp]);
+
+  if (loading) {
     return (
-      <BlueprintEditor
-        initial={editing}
-        isMock={isMock}
-        onBack={() => setEditing(null)}
-        onSaved={bp => {
-          setList(prev => prev.some(p => p.id === bp.id) ? prev.map(p => p.id === bp.id ? bp : p) : [bp, ...prev]);
-          setEditing(null);
-        }}
-      />
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div className="skeleton" style={{ height: 54 }} />
+        <div className="skeleton" style={{ height: 340 }} />
+      </div>
     );
   }
 
-  const newBlueprint = (): Blueprint => ({
-    id: `bp-${Date.now()}`, name: '', subject: 'Toán', totalPoints: 10, durationMinutes: 45, updatedAt: new Date().toISOString(),
-    slots: [{ id: `s-${Date.now()}`, subject: 'Toán', topic: '', difficulty: 'EASY', questionCount: 10, pointsPerQuestion: 0.25 }],
-  });
-
-  return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">Ma trận đề</h1>
-        <p className="page-subtitle">Thiết kế ràng buộc môn / chủ đề / độ khó / số câu / điểm cho đề thi</p>
-        <div className="page-actions">
-          {isMock && <span className="badge badge-amber"><Database size={12} />Dữ liệu mẫu</span>}
-          <button className="btn btn-secondary" onClick={load} id="btn-refresh-blueprints"><RefreshCw size={14} /></button>
-          <button className="btn btn-primary" onClick={() => setEditing(newBlueprint())} id="btn-create-blueprint"><Plus size={14} />Tạo ma trận</button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {[0, 1, 2].map(i => <div key={i} className="skeleton" style={{ height: 190, borderRadius: 14 }} />)}
-        </div>
-      ) : list.length === 0 ? (
-        <div className="table-container"><div className="table-empty">
+  if (!currentBp) {
+    return (
+      <div className="table-container">
+        <div className="table-empty">
           <div className="table-empty-icon"><FileText /></div>
-          <div className="table-empty-text">Chưa có ma trận đề nào</div>
-          <div className="table-empty-sub">Tạo ma trận đầu tiên để bắt đầu lắp ráp đề thi</div>
-        </div></div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-          {list.map(bp => {
-            const pts = sumPoints(bp.slots);
-            const miss = missing(bp.slots);
-            const ok = pts === bp.totalPoints && miss.length === 0;
-            return (
-              <button key={bp.id} className="card blueprint-card" onClick={() => setEditing(bp)} id={`blueprint-${bp.id}`}
-                style={{ padding: 20, textAlign: 'left', cursor: 'pointer', border: '1px solid var(--gray-200)', transition: 'all .2s' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-900)', lineHeight: 1.4 }}>{bp.name}</div>
-                  {ok
-                    ? <span className="badge badge-green"><CheckCircle2 size={12} />Sẵn sàng</span>
-                    : <span className="badge badge-amber"><AlertTriangle size={12} />{miss.length > 0 ? `Thiếu ${miss.length} slot` : 'Lệch điểm'}</span>}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
-                  <Mini label="Số câu" value={sumQuestions(bp.slots)} />
-                  <Mini label="Tổng điểm" value={`${pts}/${bp.totalPoints}`} />
-                  <Mini label="Thời gian" value={`${bp.durationMinutes}′`} />
-                </div>
-                <DifficultyBar slots={bp.slots} />
-                <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 12 }}>
-                  {bp.subject} · {bp.slots.length} slot · cập nhật {formatDateTime(bp.updatedAt)}
-                </div>
-              </button>
-            );
-          })}
+          <div className="table-empty-text">Chưa có ma trận đề nào trên bàn soạn đề</div>
         </div>
-      )}
-      <style>{`.blueprint-card:hover { border-color: var(--brand-300, #93c5fd) !important; box-shadow: 0 8px 24px rgba(37,99,235,.08); transform: translateY(-2px); }`}</style>
-    </div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '8px 10px' }}>
-      <div style={{ fontSize: 11, color: 'var(--gray-400)', fontWeight: 500 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-900)' }}>{value}</div>
-    </div>
-  );
-}
-
-function DifficultyBar({ slots }: { slots: BlueprintSlot[] }) {
-  const total = sumQuestions(slots) || 1;
-  const by = (d: Difficulty) => slots.filter(s => s.difficulty === d).reduce((a, s) => a + s.questionCount, 0);
-  const colors: Record<Difficulty, string> = { EASY: '#10b981', MEDIUM: '#f59e0b', HARD: '#ef4444' };
-  return (
-    <div>
-      <div style={{ display: 'flex', height: 6, borderRadius: 99, overflow: 'hidden', background: 'var(--gray-100)' }}>
-        {(['EASY', 'MEDIUM', 'HARD'] as Difficulty[]).map(d => (
-          <div key={d} style={{ width: `${(by(d) / total) * 100}%`, background: colors[d], transition: 'width .3s' }} />
-        ))}
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11.5, color: 'var(--gray-500)' }}>
-        {(['EASY', 'MEDIUM', 'HARD'] as Difficulty[]).map(d => (
-          <span key={d} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 7, height: 7, borderRadius: 99, background: colors[d] }} />{DIFF[d][0]} {Math.round((by(d) / total) * 100)}%
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+    );
+  }
 
-/* ============================================================
-   EDITOR
-   ============================================================ */
+  const updateCurrentBp = (updater: (prev: BlueprintItem) => BlueprintItem) => {
+    const next = updater(currentBp);
+    setDraftBp(next);
+    saveBlueprintToStore(next);
+  };
 
-function BlueprintEditor({ initial, isMock, onBack, onSaved }: {
-  initial: Blueprint; isMock: boolean; onBack: () => void; onSaved: (bp: Blueprint) => void;
-}) {
-  const { csrfToken } = useAuth();
-  const { success, error: showError } = useToast();
-  const [bp, setBp] = useState<Blueprint>(initial);
-  const [saving, setSaving] = useState(false);
+  const getSlot = (topic: string, difficulty: Difficulty): BlueprintSlotItem | undefined =>
+    currentBp.slots.find(
+      s => s.topic.toLowerCase() === topic.toLowerCase() && s.difficulty === difficulty,
+    );
 
-  const pts = sumPoints(bp.slots);
-  const miss = missing(bp.slots);
-  const errors: string[] = [];
-  if (!bp.name.trim()) errors.push('Chưa nhập tên ma trận');
-  if (bp.slots.length === 0) errors.push('Cần ít nhất 1 slot');
-  if (bp.slots.some(s => !s.topic.trim())) errors.push('Có slot chưa nhập chủ đề');
-  if (bp.slots.some(s => s.questionCount <= 0 || s.pointsPerQuestion <= 0)) errors.push('Số câu và điểm phải > 0');
-  if (pts !== bp.totalPoints) errors.push(`Tổng điểm slot (${pts}) khác tổng điểm đề (${bp.totalPoints})`);
-
-  const setSlot = (id: string, patch: Partial<BlueprintSlot>) =>
-    setBp(p => ({ ...p, slots: p.slots.map(s => s.id === id ? { ...s, ...patch, available: undefined } : s) }));
-
-  const addSlot = () => setBp(p => ({
-    ...p, slots: [...p.slots, { id: `s-${Date.now()}`, subject: p.subject, topic: '', difficulty: 'MEDIUM', questionCount: 5, pointsPerQuestion: 0.25 }],
+  const pts = sumPoints(currentBp.slots);
+  const totalReq = sumQuestions(currentBp.slots);
+  const slotDiagnostics = currentBp.slots.map(s => ({
+    slot: s,
+    stats: computeSlotStats(s, wf.questions),
   }));
+  const missingSlots = slotDiagnostics.filter(d => d.stats.missingCount > 0);
+  const totalMissing = missingSlots.reduce((acc, d) => acc + d.stats.missingCount, 0);
+  const totalApprovedAvailable = slotDiagnostics.reduce(
+    (acc, d) => acc + Math.min(d.slot.questionCount, d.stats.approvedCount),
+    0,
+  );
 
-  const save = async () => {
-    if (errors.length) { showError(errors[0]); return; }
+  const handleSelectBlueprint = (id: string) => {
+    setActiveBpId(id);
+    setDraftBp(null);
+    const found = list.find(b => b.id === id);
+    if (found && found.slots[0]) {
+      setSelectedCell({ topic: found.slots[0].topic, difficulty: found.slots[0].difficulty });
+    }
+  };
+
+  const handleCreateNewBlueprint = () => {
+    const created: BlueprintItem = {
+      id: `bp-${Date.now().toString(36)}`,
+      name: `Ma trận đề kiểm tra ${currentBp.subject} mới`,
+      subject: currentBp.subject,
+      grade: 'Khối 12',
+      totalPoints: 2,
+      durationMinutes: 45,
+      author: user?.userName ?? 'gv.nguyen.van.a',
+      updatedAt: new Date().toISOString(),
+      slots: [
+        {
+          id: `s-${Date.now()}-1`,
+          subject: currentBp.subject,
+          topic: 'Đạo hàm',
+          difficulty: 'EASY',
+          questionCount: 2,
+          pointsPerQuestion: 0.25,
+        },
+        {
+          id: `s-${Date.now()}-2`,
+          subject: currentBp.subject,
+          topic: 'Đạo hàm',
+          difficulty: 'MEDIUM',
+          questionCount: 2,
+          pointsPerQuestion: 0.25,
+        },
+        {
+          id: `s-${Date.now()}-3`,
+          subject: currentBp.subject,
+          topic: 'Logarit',
+          difficulty: 'MEDIUM',
+          questionCount: 2,
+          pointsPerQuestion: 0.25,
+        },
+        {
+          id: `s-${Date.now()}-4`,
+          subject: currentBp.subject,
+          topic: 'Logarit',
+          difficulty: 'HARD',
+          questionCount: 1,
+          pointsPerQuestion: 0.5,
+        },
+      ],
+    };
+    saveBlueprintToStore(created);
+    setActiveBpId(created.id);
+    setDraftBp(created);
+    setSelectedCell({ topic: 'Đạo hàm', difficulty: 'MEDIUM' });
+    success('Đã mở tờ ma trận đề mới trên bàn soạn đề');
+  };
+
+  const handleSaveBlueprint = async () => {
     setSaving(true);
     try {
-      const saved = { ...bp, updatedAt: new Date().toISOString() };
-      if (!isMock) {
-        const isNew = !initial.name;
-        const res = await fetch(isNew ? '/api/v1/blueprints' : `/api/v1/blueprints/${bp.id}`, {
-          method: isNew ? 'POST' : 'PUT',
+      const saved = { ...currentBp, updatedAt: new Date().toISOString() };
+      if (!isMock && csrfToken) {
+        const res = await fetch(`/api/v1/blueprints/${encodeURIComponent(saved.id)}`, {
+          method: 'PUT',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
           body: JSON.stringify(saved),
         });
-        if (!res.ok) { showError('Không thể lưu ma trận'); return; }
+        if (!res.ok) {
+          showError('Không thể lưu ma trận lên máy chủ');
+          return;
+        }
       }
-      success('Đã lưu ma trận đề');
-      onSaved(saved);
-    } catch {
-      showError('Lỗi kết nối');
+      saveBlueprintToStore(saved);
+      success('Đã lưu tờ ma trận đặc tả đề thi');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleAssemble = () => {
+    const actor = user?.userName ?? 'gv.nguyen.van.a';
+    const { exam, ok } = assembleExamFromBlueprint(currentBp, actor, 'SCHOOL');
+    success(
+      ok
+        ? `Đã ráp đề "${exam.title}" đủ câu hỏi đạt chuẩn`
+        : `Đã tạo bản ráp "${exam.title}" (còn ô thiếu câu hỏi)`,
+    );
+    onNavigate?.('/exams');
+  };
+
+  const handleQuickInlineAi = async (slot: BlueprintSlotItem) => {
+    const cellKey = `${slot.topic}::${slot.difficulty}`;
+    if (cellJobProgress[cellKey] !== undefined) return;
+    setCellJobProgress(prev => ({ ...prev, [cellKey]: 20 }));
+
+    const { job } = await enqueueBackgroundJob({
+      jobType: 'ExamGeneration',
+      payloadReference: `slot:${slot.id}:${slot.topic}:${slot.difficulty}`,
+      idempotencyKey: `inline-gen-${slot.id}-${Date.now()}`,
+    });
+
+    let cur = job;
+    for (let i = 0; i < 4 && !isTerminalJobStatus(cur.status); i++) {
+      await new Promise(r => setTimeout(r, 220));
+      const next = await fetchJobStatus(cur.jobId);
+      if (next) {
+        cur = next;
+        setCellJobProgress(prev => ({
+          ...prev,
+          [cellKey]: next.progressPercentage ?? (i + 2) * 25,
+        }));
+      }
+    }
+
+    // Create an AI draft question in the store for this missing slot
+    upsertBankQuestion({
+      content: `Cho hàm số liên quan chủ đề ${slot.topic} (${DIFF_SHORT[slot.difficulty]}). Khẳng định nào sau đây là đúng theo định lý SGK?`,
+      options: [
+        'Hàm số thỏa mãn điều kiện cực trị và đơn điệu trên miền xác định',
+        'Hàm số không có đạo hàm tại mọi điểm thuộc tập xác định',
+        'Giá trị biểu thức luôn âm với mọi tham số thực',
+        'Phương trình tương ứng vô nghiệm trên tập số thực',
+      ],
+      correctIndex: 0,
+      explanation: `Sinh tự động theo yêu cầu bổ sung ô ${slot.topic} (${DIFF_SHORT[slot.difficulty]}).`,
+      subject: slot.subject,
+      topic: slot.topic,
+      difficulty: slot.difficulty,
+      points: slot.pointsPerQuestion,
+      source: 'AI_DRAFT',
+      actorUserName: user?.userName ?? 'gv.nguyen.van.a',
+      submitForReview: false,
+      citation: {
+        sourceId: 'kb-math12-ch1',
+        source: `SGK ${slot.subject} 12 — Chuyên đề ${slot.topic}`,
+        locator: 'Mục 1.2, tr. 14',
+        excerpt: 'Định lý cơ bản và các bước khảo sát sự biến thiên của hàm số.',
+      },
+      note: `Gợi ý AI khởi tạo trực tiếp từ ô ma trận ${slot.topic} (${DIFF_SHORT[slot.difficulty]})`,
+    });
+
+    setCellJobProgress(prev => {
+      const next = { ...prev };
+      delete next[cellKey];
+      return next;
+    });
+    success(`Đã tạo 1 bản nháp Gợi ý AI cho ô "${slot.topic} (${DIFF_SHORT[slot.difficulty]})"`);
+  };
+
+  const handleAddTopicRow = () => {
+    const trimmed = newTopicName.trim();
+    if (!trimmed) return;
+    const newSlot: BlueprintSlotItem = {
+      id: `s-${Date.now()}`,
+      subject: currentBp.subject,
+      topic: trimmed,
+      difficulty: 'EASY',
+      questionCount: 2,
+      pointsPerQuestion: 0.25,
+    };
+    updateCurrentBp(prev => ({
+      ...prev,
+      slots: [...prev.slots, newSlot],
+    }));
+    setSelectedCell({ topic: trimmed, difficulty: 'EASY' });
+    setNewTopicName('');
+    setAddingTopic(false);
+  };
+
+  const activeSlot = selectedCell
+    ? getSlot(selectedCell.topic, selectedCell.difficulty)
+    : undefined;
+  const activeSlotStats = activeSlot
+    ? computeSlotStats(activeSlot, wf.questions)
+    : null;
+
   return (
     <div>
+      {/* Editorial Document Title Bar */}
       <div className="page-header">
-        <button className="btn btn-ghost btn-sm" onClick={onBack} id="btn-back-blueprints" style={{ marginBottom: 8 }}><ArrowLeft size={14} />Danh sách</button>
-        <h1 className="page-title">{initial.name || 'Ma trận mới'}</h1>
-        <p className="page-subtitle">Mỗi slot xác định số câu cần lấy từ ngân hàng câu hỏi đã duyệt</p>
-        <div className="page-actions">
-          <button className={clsx('btn btn-primary', saving && 'btn-loading')} disabled={saving} onClick={save} id="btn-save-blueprint">
-            <Save size={14} />Lưu ma trận
+        <div>
+          <h1 className="page-title">{currentBp.name}</h1>
+          <p className="page-subtitle">
+            Ma trận đặc tả môn {currentBp.subject} ({currentBp.grade}). Bấm trực tiếp vào từng ô để đối chiếu câu hỏi hoặc yêu cầu AI gợi ý bổ sung.
+          </p>
+        </div>
+        <div className="page-actions" style={{ flexWrap: 'wrap' }}>
+          <select
+            className="form-select"
+            style={{ width: 'auto', minWidth: 230, fontWeight: 600 }}
+            value={currentBp.id}
+            onChange={e => handleSelectBlueprint(e.target.value)}
+            aria-label="Chọn hồ sơ ma trận đề"
+            id="blueprint-switcher"
+          >
+            {list.map(b => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          {canAuthor && (
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={handleCreateNewBlueprint}
+                id="btn-create-blueprint"
+              >
+                <Plus size={14} />
+                Tờ ma trận mới
+              </button>
+              <button
+                className={clsx('btn btn-secondary', saving && 'btn-loading')}
+                disabled={saving}
+                onClick={() => void handleSaveBlueprint()}
+                id="btn-save-blueprint"
+              >
+                <Save size={14} />
+                Lưu ma trận
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleAssemble}
+                id={`btn-assemble-${currentBp.id}`}
+              >
+                <FileText size={14} />
+                Ráp đề &amp; Xem bản in
+              </button>
+            </>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => void load()}
+            id="btn-refresh-blueprints"
+            title="Làm mới"
+          >
+            <RefreshCw size={14} />
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, alignItems: 'start' }} className="bp-grid">
-        <div style={{ display: 'grid', gap: 20 }}>
-          <div className="card" style={{ padding: 20, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 14 }}>
-            <Field label="Tên ma trận" id="bp-name">
-              <input id="bp-name" className="form-input" value={bp.name} onChange={e => setBp({ ...bp, name: e.target.value })} placeholder="VD: Kiểm tra cuối kỳ I – Toán 12" />
-            </Field>
-            <Field label="Môn học" id="bp-subject">
-              <input id="bp-subject" className="form-input" value={bp.subject} onChange={e => setBp({ ...bp, subject: e.target.value })} />
-            </Field>
-            <Field label="Tổng điểm" id="bp-total">
-              <input id="bp-total" type="number" min={1} step={0.5} className="form-input" value={bp.totalPoints} onChange={e => setBp({ ...bp, totalPoints: Number(e.target.value) })} />
-            </Field>
-            <Field label="Thời gian (phút)" id="bp-duration">
-              <input id="bp-duration" type="number" min={5} className="form-input" value={bp.durationMinutes} onChange={e => setBp({ ...bp, durationMinutes: Number(e.target.value) })} />
-            </Field>
+      {/* Documentary Ledger Strip (No decorative KPI cards) */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px 24px',
+          padding: '10px 16px',
+          background: '#EFECE1',
+          border: '1px solid var(--rule-base)',
+          borderRadius: 4,
+          marginBottom: 16,
+          fontSize: 13,
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <span style={{ color: 'var(--ink-600)' }}>Môn học:</span>{' '}
+          <strong>{currentBp.subject}</strong>
+        </div>
+        <div>
+          <span style={{ color: 'var(--ink-600)' }}>Thời lượng:</span>{' '}
+          <strong className="mono-num">{currentBp.durationMinutes} phút</strong>
+        </div>
+        <div>
+          <span style={{ color: 'var(--ink-600)' }}>Số câu đã duyệt / Yêu cầu:</span>{' '}
+          <strong className="mono-num">
+            {totalApprovedAvailable}/{totalReq} câu
+          </strong>
+        </div>
+        <div>
+          <span style={{ color: 'var(--ink-600)' }}>Tổng điểm ma trận:</span>{' '}
+          <strong
+            className="mono-num"
+            style={{
+              color: pts === currentBp.totalPoints ? 'var(--brand-600)' : 'var(--danger-500)',
+            }}
+          >
+            {pts.toFixed(2)} / {currentBp.totalPoints.toFixed(2)} điểm
+          </strong>
+        </div>
+        <div style={{ marginLeft: 'auto' }}>
+          {totalMissing > 0 ? (
+            <span className="badge badge-red">
+              Còn thiếu {totalMissing} câu ở {missingSlots.length} ô đặc tả
+            </span>
+          ) : (
+            <span className="badge badge-green">
+              Đủ câu hỏi đạt chuẩn để chốt đề
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Main Authoring Desk: Central 2D Matrix + Sticky Side Workbench */}
+      <div
+        className="blueprint-desk-layout"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 370px',
+          gap: 18,
+          alignItems: 'start',
+        }}
+      >
+        {/* Left / Center: 2D Matrix Table */}
+        <div className="table-container">
+          <div className="table-toolbar" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <div>
+              <strong style={{ fontFamily: 'var(--font-serif)', fontSize: 15 }}>
+                Bảng Ma trận Đặc tả 2 chiều (Chủ đề × Mức độ nhận thức)
+              </strong>
+              <span style={{ fontSize: 12, color: 'var(--ink-500)', marginLeft: 10 }}>
+                Ô có dấu góc đỏ là ô còn thiếu câu hỏi đã duyệt
+              </span>
+            </div>
+            {canAuthor && (
+              <div>
+                {addingTopic ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      className="form-input"
+                      style={{ width: 170, height: 28, fontSize: 12.5 }}
+                      placeholder="Tên chủ đề mới…"
+                      value={newTopicName}
+                      onChange={e => setNewTopicName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleAddTopicRow();
+                        if (e.key === 'Escape') setAddingTopic(false);
+                      }}
+                      autoFocus
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={handleAddTopicRow}>
+                      Thêm
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setAddingTopic(false)}>
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setAddingTopic(true)}
+                    id="btn-add-topic-row"
+                  >
+                    <Plus size={12} />
+                    Thêm dòng chủ đề
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="table-container">
-            <div className="table-toolbar">
-              <strong style={{ fontSize: 14, color: 'var(--gray-900)' }}>Slot ({bp.slots.length})</strong>
-              <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={addSlot} id="btn-add-slot"><Plus size={13} />Thêm slot</button>
-            </div>
-            <table>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="matrix-grid-table">
               <thead>
-                <tr><th>Chủ đề</th><th style={{ width: 140 }}>Độ khó</th><th style={{ width: 100 }}>Số câu</th><th style={{ width: 110 }}>Điểm/câu</th><th style={{ width: 80 }}>Điểm</th><th style={{ width: 110 }}>Khả dụng</th><th style={{ width: 44 }}></th></tr>
+                <tr>
+                  <th style={{ width: 190 }}>Mạch kiến thức / Chủ đề</th>
+                  {DIFF_COLS.map(col => (
+                    <th key={col.key}>
+                      <div>{col.label}</div>
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: 400,
+                          textTransform: 'none',
+                          color: 'var(--ink-500)',
+                          letterSpacing: 0,
+                        }}
+                      >
+                        {col.sub}
+                      </div>
+                    </th>
+                  ))}
+                  <th style={{ width: 115, textAlign: 'right' }}>Tổng chủ đề</th>
+                </tr>
               </thead>
               <tbody>
-                {bp.slots.map(s => {
-                  const short = s.available !== undefined && s.available < s.questionCount;
+                {topics.map(topic => {
+                  const rowSlots = currentBp.slots.filter(
+                    s => s.topic.toLowerCase() === topic.toLowerCase(),
+                  );
+                  const rowReq = sumQuestions(rowSlots);
+                  const rowPts = sumPoints(rowSlots);
+
                   return (
-                    <tr key={s.id} style={short ? { background: 'var(--warning-50)' } : undefined}>
-                      <td><input className="form-input" value={s.topic} onChange={e => setSlot(s.id, { topic: e.target.value })} placeholder="Chủ đề" aria-label="Chủ đề" id={`slot-topic-${s.id}`} /></td>
-                      <td>
-                        <select className="form-select" value={s.difficulty} onChange={e => setSlot(s.id, { difficulty: e.target.value as Difficulty })} aria-label="Độ khó" id={`slot-diff-${s.id}`}>
-                          {(Object.keys(DIFF) as Difficulty[]).map(d => <option key={d} value={d}>{DIFF[d][0]}</option>)}
-                        </select>
+                    <tr key={topic}>
+                      <td
+                        style={{
+                          padding: '12px 14px',
+                          background: '#F7F4EC',
+                          fontWeight: 700,
+                          color: 'var(--ink-900)',
+                          verticalAlign: 'top',
+                        }}
+                      >
+                        <div style={{ fontFamily: 'var(--font-serif)', fontSize: 14.5 }}>
+                          {topic}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink-500)', fontWeight: 400, marginTop: 2 }}>
+                          Môn {currentBp.subject}
+                        </div>
                       </td>
-                      <td><input type="number" min={1} className="form-input" value={s.questionCount} onChange={e => setSlot(s.id, { questionCount: Number(e.target.value) })} aria-label="Số câu" id={`slot-count-${s.id}`} /></td>
-                      <td><input type="number" min={0.05} step={0.05} className="form-input" value={s.pointsPerQuestion} onChange={e => setSlot(s.id, { pointsPerQuestion: Number(e.target.value) })} aria-label="Điểm mỗi câu" id={`slot-points-${s.id}`} /></td>
-                      <td style={{ fontWeight: 600 }}>{round(s.questionCount * s.pointsPerQuestion)}</td>
-                      <td>
-                        {s.available === undefined
-                          ? <span className="badge badge-gray">Chưa kiểm tra</span>
-                          : <span className={clsx('badge', short ? 'badge-amber' : 'badge-green')}>{s.available}/{s.questionCount}</span>}
-                      </td>
-                      <td>
-                        <button className="topbar-icon-btn" onClick={() => setBp(p => ({ ...p, slots: p.slots.filter(x => x.id !== s.id) }))} aria-label="Xóa slot" id={`slot-del-${s.id}`}>
-                          <Trash2 size={14} />
-                        </button>
+
+                      {DIFF_COLS.map(col => {
+                        const cellSlot = getSlot(topic, col.key);
+                        const stats = cellSlot
+                          ? computeSlotStats(cellSlot, wf.questions)
+                          : null;
+                        const isSelected =
+                          selectedCell?.topic.toLowerCase() === topic.toLowerCase() &&
+                          selectedCell?.difficulty === col.key;
+                        const isMissing = Boolean(stats && stats.missingCount > 0);
+                        const cellKey = `${topic}::${col.key}`;
+                        const runningProgress = cellJobProgress[cellKey];
+
+                        if (!cellSlot) {
+                          return (
+                            <td key={col.key}>
+                              <button
+                                type="button"
+                                className={clsx('matrix-cell-btn', isSelected && 'selected')}
+                                style={{
+                                  background: isSelected ? '#EBF3F1' : '#FAF8F2',
+                                  color: 'var(--ink-400)',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                                onClick={() => {
+                                  setSelectedCell({ topic, difficulty: col.key });
+                                  setMobilePanelOpen(true);
+                                }}
+                                id={`cell-empty-${topic}-${col.key}`}
+                              >
+                                <span style={{ fontSize: 12 }}>Không lấy câu</span>
+                                {canAuthor && (
+                                  <span style={{ fontSize: 11, color: 'var(--brand-600)', marginTop: 2 }}>
+                                    + Bấm để định nghĩa ô
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td key={col.key}>
+                            <button
+                              type="button"
+                              className={clsx(
+                                'matrix-cell-btn',
+                                isSelected && 'selected',
+                                isMissing && 'missing',
+                              )}
+                              onClick={() => {
+                                setSelectedCell({ topic, difficulty: col.key });
+                                setMobilePanelOpen(true);
+                              }}
+                              id={
+                                cellSlot.id === 's2'
+                                  ? `blueprint-${currentBp.id}`
+                                  : `matrix-cell-${cellSlot.id}`
+                              }
+                            >
+                              {isMissing && (
+                                <span
+                                  className="matrix-missing-corner"
+                                  title={`Thiếu ${stats?.missingCount} câu đã duyệt`}
+                                />
+                              )}
+
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'baseline',
+                                  width: '100%',
+                                  gap: 6,
+                                }}
+                              >
+                                <span
+                                  className="mono-num"
+                                  style={{
+                                    fontSize: 15,
+                                    fontWeight: 700,
+                                    color: isMissing ? 'var(--danger-500)' : 'var(--ink-900)',
+                                  }}
+                                >
+                                  {stats?.approvedCount ?? 0}/{cellSlot.questionCount} câu
+                                </span>
+                                <span
+                                  className="mono-num"
+                                  style={{ fontSize: 12, color: 'var(--ink-600)' }}
+                                >
+                                  {round(cellSlot.questionCount * cellSlot.pointsPerQuestion)}đ
+                                </span>
+                              </div>
+
+                              {runningProgress !== undefined ? (
+                                <div style={{ width: '100%', marginTop: 6 }}>
+                                  <div className="progress-bar">
+                                    <div
+                                      className="progress-fill"
+                                      style={{ width: `${runningProgress}%` }}
+                                    />
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--brand-600)', marginTop: 2 }}>
+                                    Đang tạo gợi ý AI ({runningProgress}%)…
+                                  </div>
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    width: '100%',
+                                    marginTop: 8,
+                                    gap: 4,
+                                  }}
+                                >
+                                  {isMissing ? (
+                                    <span
+                                      className="badge badge-red"
+                                      style={{ fontSize: 11, padding: '0 6px' }}
+                                    >
+                                      Thiếu {stats?.missingCount} câu
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="badge badge-green"
+                                      style={{ fontSize: 11, padding: '0 6px' }}
+                                    >
+                                      Đủ câu ({cellSlot.pointsPerQuestion}đ/câu)
+                                    </span>
+                                  )}
+                                  {(stats?.pendingCount ?? 0) > 0 && (
+                                    <span style={{ fontSize: 11, color: 'var(--warning-600)' }}>
+                                      +{stats?.pendingCount} chờ duyệt
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </button>
+                          </td>
+                        );
+                      })}
+
+                      <td
+                        style={{
+                          padding: '10px 12px',
+                          textAlign: 'right',
+                          background: '#F7F4EC',
+                          verticalAlign: 'middle',
+                        }}
+                      >
+                        <div className="mono-num" style={{ fontWeight: 700, fontSize: 14 }}>
+                          {rowReq} câu
+                        </div>
+                        <div className="mono-num" style={{ fontSize: 12, color: 'var(--ink-600)' }}>
+                          {rowPts.toFixed(2)} điểm
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr style={{ background: '#EAE5D7', borderTop: '2px solid var(--ink-900)' }}>
+                  <td style={{ fontWeight: 700, padding: '10px 14px' }}>
+                    Tổng cộng theo mức độ
+                  </td>
+                  {DIFF_COLS.map(col => {
+                    const colSlots = currentBp.slots.filter(s => s.difficulty === col.key);
+                    const colReq = sumQuestions(colSlots);
+                    const colPts = sumPoints(colSlots);
+                    return (
+                      <td key={col.key} style={{ padding: '10px 12px', fontWeight: 700 }}>
+                        <span className="mono-num">{colReq} câu</span>{' '}
+                        <span className="mono-num" style={{ color: 'var(--ink-600)', fontWeight: 500 }}>
+                          ({colPts.toFixed(2)}đ)
+                        </span>
+                      </td>
+                    );
+                  })}
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700 }}>
+                    <div className="mono-num">{totalReq} câu</div>
+                    <div className="mono-num" style={{ color: 'var(--brand-700)' }}>
+                      {pts.toFixed(2)}đ
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="card" style={{ padding: 20, position: 'sticky', top: 80 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Tóm tắt</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-            <Mini label="Số câu" value={sumQuestions(bp.slots)} />
-            <Mini label="Tổng điểm" value={<span style={{ color: pts === bp.totalPoints ? 'var(--accent-600)' : 'var(--danger-600)' }}>{pts}/{bp.totalPoints}</span>} />
+        {/* Right: Sticky Side Workbench Panel (Desktop inline, Mobile full-screen drawer) */}
+        <div
+          className={clsx('card workbench-side-panel', mobilePanelOpen && 'mobile-open')}
+          style={{ position: 'sticky', top: 64 }}
+        >
+          <div className="card-header">
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Khung thao tác ô ma trận
+              </div>
+              <div className="card-title">
+                {selectedCell
+                  ? `${selectedCell.topic} · ${DIFF_SHORT[selectedCell.difficulty]}`
+                  : 'Chọn một ô trên bảng ma trận'}
+              </div>
+            </div>
+            <button
+              className="topbar-icon-btn mobile-close-workbench"
+              style={{ display: 'none' }}
+              onClick={() => setMobilePanelOpen(false)}
+              aria-label="Đóng khung thao tác"
+            >
+              <X size={15} />
+            </button>
           </div>
-          <DifficultyBar slots={bp.slots} />
-          <div style={{ marginTop: 18, display: 'grid', gap: 8 }}>
-            {errors.length === 0 && miss.length === 0 ? (
-              <div style={{ display: 'flex', gap: 8, fontSize: 13, color: 'var(--accent-600)' }}><CheckCircle2 size={16} />Ma trận hợp lệ</div>
+
+          <div className="card-body">
+            {!selectedCell ? (
+              <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>
+                Bấm vào bất kỳ ô nào trong bảng ma trận bên trái để xem danh sách câu hỏi hoặc yêu cầu AI gợi ý.
+              </div>
+            ) : !activeSlot ? (
+              <div>
+                <p style={{ fontSize: 13, color: 'var(--ink-600)', marginBottom: 12 }}>
+                  Ô <strong>{selectedCell.topic}</strong> ở mức độ{' '}
+                  <strong>{DIFF_SHORT[selectedCell.difficulty]}</strong> hiện chưa lấy câu hỏi nào trong ma trận.
+                </p>
+                {canAuthor && (
+                  <button
+                    className="btn btn-primary w-full"
+                    onClick={() => {
+                      const created: BlueprintSlotItem = {
+                        id: `s-${Date.now()}`,
+                        subject: currentBp.subject,
+                        topic: selectedCell.topic,
+                        difficulty: selectedCell.difficulty,
+                        questionCount: 2,
+                        pointsPerQuestion: 0.25,
+                      };
+                      updateCurrentBp(prev => ({
+                        ...prev,
+                        slots: [...prev.slots, created],
+                      }));
+                    }}
+                    id="btn-define-slot"
+                  >
+                    <Plus size={14} />
+                    Định nghĩa ô này (2 câu × 0.25đ)
+                  </button>
+                )}
+              </div>
             ) : (
               <>
-                {errors.map((e, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12.5, color: 'var(--danger-600)' }}><AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />{e}</div>
-                ))}
-                {miss.map(s => (
-                  <div key={s.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, color: 'var(--warning-600)' }}>
-                    <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                    {s.topic} ({DIFF[s.difficulty][0]}): thiếu {s.questionCount - (s.available ?? 0)} câu — dùng Tạo đề AI để bổ sung
+                {/* Status callout for this slot */}
+                {activeSlotStats && activeSlotStats.missingCount > 0 ? (
+                  <div className="margin-note red-ink" style={{ marginBottom: 14 }}>
+                    <strong>Thiếu {activeSlotStats.missingCount} câu đã duyệt:</strong> Ô này yêu cầu{' '}
+                    <span className="mono-num">{activeSlot.questionCount}</span> câu nhưng ngân hàng chỉ có{' '}
+                    <span className="mono-num">{activeSlotStats.approvedCount}</span> câu ở trạng thái Đã duyệt.
                   </div>
-                ))}
+                ) : (
+                  <div className="margin-note green-ink" style={{ marginBottom: 14 }}>
+                    <strong>Đạt yêu cầu:</strong> Đã có đủ{' '}
+                    <span className="mono-num">
+                      {activeSlotStats?.approvedCount}/{activeSlot.questionCount}
+                    </span>{' '}
+                    câu hỏi đã duyệt cho ô này.
+                  </div>
+                )}
+
+                {/* Inline slot constraint controls */}
+                {canAuthor && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr auto',
+                      gap: 8,
+                      alignItems: 'end',
+                      marginBottom: 14,
+                      paddingBottom: 14,
+                      borderBottom: '1px solid var(--rule-light)',
+                    }}
+                  >
+                    <div>
+                      <label className="form-label" htmlFor="wb-slot-count">
+                        Số câu yêu cầu
+                      </label>
+                      <input
+                        id="wb-slot-count"
+                        type="number"
+                        min={1}
+                        className="form-input mono-num"
+                        value={activeSlot.questionCount}
+                        onChange={e =>
+                          updateCurrentBp(prev => ({
+                            ...prev,
+                            slots: prev.slots.map(s =>
+                              s.id === activeSlot.id
+                                ? { ...s, questionCount: Math.max(1, Number(e.target.value)) }
+                                : s,
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" htmlFor="wb-slot-pts">
+                        Điểm / câu
+                      </label>
+                      <input
+                        id="wb-slot-pts"
+                        type="number"
+                        min={0.05}
+                        step={0.05}
+                        className="form-input mono-num"
+                        value={activeSlot.pointsPerQuestion}
+                        onChange={e =>
+                          updateCurrentBp(prev => ({
+                            ...prev,
+                            slots: prev.slots.map(s =>
+                              s.id === activeSlot.id
+                                ? { ...s, pointsPerQuestion: Math.max(0.05, Number(e.target.value)) }
+                                : s,
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--danger-500)', height: 33 }}
+                      onClick={() =>
+                        updateCurrentBp(prev => ({
+                          ...prev,
+                          slots: prev.slots.filter(s => s.id !== activeSlot.id),
+                        }))
+                      }
+                      title="Xóa ô khỏi ma trận"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Matching Questions in Bank for this cell */}
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: 'var(--ink-600)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    marginBottom: 8,
+                  }}
+                >
+                  Câu hỏi khớp ô này trong mục lục ({activeSlotStats?.allMatchingQuestions.length ?? 0})
+                </div>
+
+                {!activeSlotStats || activeSlotStats.allMatchingQuestions.length === 0 ? (
+                  <div
+                    style={{
+                      padding: 12,
+                      background: '#F4F1E8',
+                      border: '1px dashed var(--rule-strong)',
+                      borderRadius: 3,
+                      fontSize: 12.5,
+                      color: 'var(--ink-600)',
+                      marginBottom: 14,
+                    }}
+                  >
+                    Chưa có câu hỏi nào thuộc chủ đề <strong>{activeSlot.topic}</strong> (
+                    {DIFF_SHORT[activeSlot.difficulty]}).
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: 8,
+                      maxHeight: 230,
+                      overflowY: 'auto',
+                      marginBottom: 14,
+                    }}
+                  >
+                    {activeSlotStats.allMatchingQuestions.map(q => (
+                      <div
+                        key={q.id}
+                        style={{
+                          padding: '8px 10px',
+                          background: q.status === 'APPROVED' ? '#F3F8F6' : '#FAF8F2',
+                          border: `1px solid ${
+                            q.status === 'APPROVED' ? 'var(--brand-200)' : 'var(--rule-base)'
+                          }`,
+                          borderRadius: 3,
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                          <code style={{ fontSize: 11, color: 'var(--ink-600)' }}>
+                            {q.id} · rev {q.revision}
+                          </code>
+                          <span
+                            className={clsx(
+                              'badge',
+                              q.status === 'APPROVED'
+                                ? 'badge-green'
+                                : q.status === 'REVIEW_REQUIRED'
+                                ? 'badge-amber'
+                                : 'badge-gray',
+                            )}
+                            style={{ fontSize: 10.5, padding: '0 5px' }}
+                          >
+                            {q.status === 'APPROVED' ? (
+                              <>
+                                <Check size={10} /> Đã duyệt
+                              </>
+                            ) : q.status === 'REVIEW_REQUIRED' ? (
+                              'Chờ duyệt'
+                            ) : (
+                              'Bản nháp'
+                            )}
+                          </span>
+                        </div>
+                        <div style={{ color: 'var(--ink-900)', fontWeight: 500, lineHeight: 1.4 }}>
+                          {q.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Workbench Actions: Open in Question Index or Request AI Suggestion */}
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {canAuthor && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={
+                          cellJobProgress[`${activeSlot.topic}::${activeSlot.difficulty}`] !==
+                          undefined
+                        }
+                        onClick={() => void handleQuickInlineAi(activeSlot)}
+                        id="btn-inline-ai-slot"
+                      >
+                        {cellJobProgress[`${activeSlot.topic}::${activeSlot.difficulty}`] !==
+                        undefined ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Cpu size={13} />
+                        )}
+                        Tạo nháp nhanh tại ô
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setWorkflowNavIntent({
+                            blueprintId: currentBp.id,
+                            slotIds: [activeSlot.id],
+                            subject: activeSlot.subject,
+                            topic: activeSlot.topic,
+                            difficulty: activeSlot.difficulty,
+                          });
+                          onNavigate?.('/generate');
+                        }}
+                        id="btn-slot-ask-ai"
+                      >
+                        <Cpu size={13} />
+                        Mở bàn rà soát gợi ý AI
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm w-full"
+                    onClick={() => {
+                      setWorkflowNavIntent({
+                        blueprintId: currentBp.id,
+                        slotIds: [activeSlot.id],
+                        subject: activeSlot.subject,
+                        topic: activeSlot.topic,
+                        difficulty: activeSlot.difficulty,
+                      });
+                      onNavigate?.('/questions');
+                    }}
+                    id="btn-slot-open-bank"
+                  >
+                    <BookOpen size={13} />
+                    Tìm trong Mục lục câu hỏi ({activeSlot.topic})
+                  </button>
+                </div>
               </>
             )}
           </div>
         </div>
       </div>
-      <style>{`@media (max-width: 1100px) { .bp-grid { grid-template-columns: 1fr !important; } }`}</style>
-    </div>
-  );
-}
 
-function Field({ label, id, children }: { label: string; id: string; children: React.ReactNode }) {
-  return (
-    <div className="form-group" style={{ marginBottom: 0 }}>
-      <label className="form-label" htmlFor={id}>{label}</label>
-      {children}
+      <style>{`
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 960px) {
+          .blueprint-desk-layout {
+            grid-template-columns: 1fr !important;
+          }
+          .workbench-side-panel {
+            display: none;
+          }
+          .workbench-side-panel.mobile-open {
+            display: block !important;
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 120 !important;
+            border-radius: 0 !important;
+            overflow-y: auto !important;
+          }
+          .mobile-close-workbench {
+            display: inline-flex !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import {
-  Plus, Search, MoreHorizontal, Edit2, Trash2, Building2, Users, ChevronRight, RefreshCw
+  Plus, Search, MoreHorizontal, Edit2, Building2, Users, ChevronRight, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -27,7 +27,7 @@ interface Department {
    SCHOOLS PAGE
    ============================================================ */
 
-export default function SchoolsPage() {
+export default function SchoolsPage({ onNavigate }: { onNavigate?: (href: string) => void }) {
   const { csrfToken, primaryRole, apiFetch } = useAuth();
   const { success, error: showError } = useToast();
 
@@ -82,8 +82,10 @@ export default function SchoolsPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Trường học</h1>
-        <p className="page-subtitle">Quản lý danh sách trường và bộ môn trong hệ thống</p>
+        <div>
+          <h1 className="page-title">Trường học</h1>
+          <p className="page-subtitle">Quản lý danh sách trường và bộ môn trong hệ thống</p>
+        </div>
         <div className="page-actions">
           <button
             className="btn btn-secondary"
@@ -151,13 +153,14 @@ export default function SchoolsPage() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{
-                          width: 32, height: 32,
-                          background: 'var(--brand-50)',
-                          borderRadius: 8,
+                          width: 30, height: 30,
+                          background: '#EFECE1',
+                          border: '1px solid var(--rule-base)',
+                          borderRadius: 3,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           color: 'var(--brand-600)', flexShrink: 0
                         }}>
-                          <Building2 size={15} />
+                          <Building2 size={14} />
                         </div>
                         <span style={{ fontWeight: 600, color: 'var(--gray-900)' }}>{school.name}</span>
                       </div>
@@ -186,8 +189,7 @@ export default function SchoolsPage() {
                     <td>
                       <SchoolRowMenu
                         schoolId={school.id}
-                        csrfToken={csrfToken}
-                        onRefresh={fetchSchools}
+                        onNavigate={onNavigate}
                       />
                     </td>
                   </tr>
@@ -220,7 +222,7 @@ export default function SchoolsPage() {
    SCHOOL ROW MENU
    ============================================================ */
 
-function SchoolRowMenu({ schoolId, csrfToken, onRefresh }: { schoolId: string; csrfToken: string | null; onRefresh: () => void }) {
+function SchoolRowMenu({ schoolId, onNavigate }: { schoolId: string; onNavigate?: (href: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="dropdown-trigger">
@@ -236,11 +238,11 @@ function SchoolRowMenu({ schoolId, csrfToken, onRefresh }: { schoolId: string; c
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 70 }} onClick={() => setOpen(false)} />
           <div className="dropdown-menu">
-            <div className="dropdown-item">
+            <div className="dropdown-item" onClick={() => setOpen(false)}>
               <Edit2 size={14} />
               Đổi tên
             </div>
-            <div className="dropdown-item">
+            <div className="dropdown-item" onClick={() => { setOpen(false); onNavigate?.('/admin/users'); }}>
               <Users size={14} />
               Xem người dùng
             </div>

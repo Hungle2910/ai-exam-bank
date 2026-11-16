@@ -1,169 +1,890 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Cpu, Sparkles, Check, X, Pencil, BookMarked, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Cpu, Check, X, Pencil, BookMarked, Loader2,
+  RotateCcw, ArrowRight
+} from 'lucide-react';
 import clsx from 'clsx';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import {
+  Difficulty,
+  QuestionCitation,
+  useWorkflowStore,
+  computeSlotStats,
+  upsertBankQuestion,
+  appendLocalAudit,
+} from '@/lib/workflowStore';
+import {
+  AI_SAFETY_POLICY_VERSION,
+  JobApiItem,
+  enqueueBackgroundJob,
+  fetchJobStatus,
+  isTerminalJobStatus,
+  retryBackgroundJob,
+  cancelBackgroundJob,
+  validateAiDraftSafety,
+} from '@/lib/jobClient';
 
-/* ============================================================
-   AI GENERATION (Bedrock RAG) — UI with simulated job
-   ============================================================ */
+const DIFF: Record<Difficulty, [string, string]> = {
+  EASY: ['Dễ', 'badge-green'],
+  MEDIUM: ['Trung bình', 'badge-amber'],
+  HARD: ['Khó', 'badge-red'],
+};
 
-type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-const DIFF: Record<Difficulty, [string, string]> = { EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'] };
+interface MissingSlotCandidate {
+  id: string;
+  blueprintId: string;
+  blueprintName: string;
+  subject: string;
+  topic: string;
+  difficulty: Difficulty;
+  pointsPerQuestion: number;
+  requiredCount: number;
+  approvedCount: number;
+  missingCount: number;
+}
 
-interface MissingSlot { id: string; blueprint: string; topic: string; difficulty: Difficulty; need: number }
-interface Suggestion {
-  id: string; slotId: string; content: string; options: string[]; correctIndex: number;
-  citation: { source: string; page: string; excerpt: string };
+interface GeneratedSuggestion {
+  id: string;
+  slotId: string;
+  subject: string;
+  topic: string;
+  difficulty: Difficulty;
+  points: number;
+  content: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  citation: QuestionCitation;
   decision?: 'ACCEPTED' | 'DISCARDED';
 }
 
-const SLOTS: MissingSlot[] = [
-  { id: 's2', blueprint: 'Giữa kỳ I – Toán 12', topic: 'Đạo hàm', difficulty: 'MEDIUM', need: 2 },
-  { id: 's4', blueprint: 'Giữa kỳ I – Toán 12', topic: 'Logarit', difficulty: 'HARD', need: 5 },
+const RAG_TEMPLATES: Array<{
+  subject: string;
+  topic: string;
+  difficulty: Difficulty;
+  content: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  citation: QuestionCitation;
+}> = [
+  {
+    subject: 'Toán',
+    topic: 'Đạo hàm',
+    difficulty: 'MEDIUM',
+    content: 'Hàm số y = x⁴ − 2x² + 1 có bao nhiêu điểm cực trị trên tập số thực ℝ?',
+    options: ['3 điểm cực trị', '1 điểm cực trị', '2 điểm cực trị', '0 điểm cực trị'],
+    correctIndex: 0,
+    explanation: 'y′ = 4x³ − 4x = 4x(x² − 1) = 0 có 3 nghiệm phân biệt x = 0, x = ±1 và y′ đổi dấu qua cả 3 điểm.',
+    citation: {
+      sourceId: 'kb-math12-ch1',
+      source: 'SGK Giải tích 12 — Chương I: Ứng dụng đạo hàm',
+      locator: 'Bài 2: Cực trị của hàm số, tr. 13',
+      excerpt: 'Nếu f′(x) đổi dấu khi x qua x₀ thì hàm số đạt cực trị tại điểm x₀.',
+    },
+  },
+  {
+    subject: 'Toán',
+    topic: 'Đạo hàm',
+    difficulty: 'MEDIUM',
+    content: 'Giá trị lớn nhất của hàm số y = −x² + 4x − 1 trên đoạn [0; 3] bằng bao nhiêu?',
+    options: ['3', '2', '−1', '4'],
+    correctIndex: 0,
+    explanation: 'y′ = −2x + 4 = 0 ⇔ x = 2 ∈ [0; 3]. Ta có y(0) = −1, y(2) = 3, y(3) = 2 ⇒ max = 3.',
+    citation: {
+      sourceId: 'kb-math12-ch1',
+      source: 'SGK Giải tích 12 — Chương I: Ứng dụng đạo hàm',
+      locator: 'Bài 3: Giá trị lớn nhất và giá trị nhỏ nhất của hàm số, tr. 20',
+      excerpt: 'Muốn tìm GTLN, GTNN của hàm số liên tục trên đoạn [a; b], ta tính giá trị tại các điểm tới hạn và hai đầu mút.',
+    },
+  },
+  {
+    subject: 'Toán',
+    topic: 'Logarit',
+    difficulty: 'HARD',
+    content: 'Tổng tất cả các nghiệm thực của phương trình log₂²x − 3log₂x + 2 = 0 bằng bao nhiêu?',
+    options: ['6', '3', '4', '2'],
+    correctIndex: 0,
+    explanation: 'Đặt t = log₂x ⇒ t² − 3t + 2 = 0 ⇔ t = 1 hoặc t = 2 ⇒ x = 2¹ = 2 hoặc x = 2² = 4. Tổng hai nghiệm là 2 + 4 = 6.',
+    citation: {
+      sourceId: 'kb-math12-ch2',
+      source: 'SGK Giải tích 12 — Chương II: Hàm số lũy thừa, mũ và logarit',
+      locator: 'Bài 5: Phương trình mũ và phương trình logarit, tr. 82',
+      excerpt: 'Phương pháp đặt ẩn phụ t = logₐx (x > 0): giải phương trình đại số theo t rồi suy ra x = a^t.',
+    },
+  },
+  {
+    subject: 'Toán',
+    topic: 'Đạo hàm',
+    difficulty: 'EASY',
+    content: 'Đạo hàm của hàm số y = x⁴ − 4x tại điểm x = 1 bằng?',
+    options: ['0', '4', '−3', '1'],
+    correctIndex: 0,
+    explanation: 'y′(x) = 4x³ − 4 ⇒ y′(1) = 4(1)³ − 4 = 0.',
+    citation: {
+      sourceId: 'kb-math12-ch1',
+      source: 'SGK Giải tích 12 — Chương I: Ứng dụng đạo hàm',
+      locator: 'Mục 1.1, tr. 6',
+      excerpt: 'Công thức đạo hàm hàm lũy thừa (x^n)′ = n·x^(n−1).',
+    },
+  },
 ];
 
-const TEMPLATES: Omit<Suggestion, 'id' | 'slotId'>[] = [
-  { content: 'Hàm số y = x⁴ − 2x² có bao nhiêu điểm cực trị?', options: ['1', '2', '3', '0'], correctIndex: 2, citation: { source: 'SGK Giải tích 12', page: 'tr. 13', excerpt: 'Điểm cực trị là nghiệm của y′ = 0 mà y′ đổi dấu…' } },
-  { content: 'Giá trị lớn nhất của y = −x² + 4x trên [0; 3] là?', options: ['3', '4', '0', '5'], correctIndex: 1, citation: { source: 'SGK Giải tích 12', page: 'tr. 20', excerpt: 'GTLN trên đoạn đạt tại điểm tới hạn hoặc đầu mút…' } },
-  { content: 'Nghiệm của phương trình log₃(2x − 1) = 2 là?', options: ['x = 5', 'x = 4', 'x = 4,5', 'x = 3'], correctIndex: 0, citation: { source: 'SGK Giải tích 12', page: 'tr. 82', excerpt: 'logₐ b = c ⇔ b = aᶜ với a > 0, a ≠ 1…' } },
-];
+const ACTIVE_GEN_JOB_KEY = 'ai-exam-bank:active-gen-job-id';
 
-export default function GeneratePage() {
-  const { success } = useToast();
-  const [selected, setSelected] = useState<string[]>(SLOTS.map(s => s.id));
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+export default function GeneratePage({ onNavigate }: { onNavigate?: (href: string) => void }) {
+  const { user } = useAuth();
+  const { success, error: showError } = useToast();
+  const wf = useWorkflowStore();
+
+  const missingSlots = useMemo<MissingSlotCandidate[]>(() => {
+    const out: MissingSlotCandidate[] = [];
+    wf.blueprints.forEach(bp => {
+      bp.slots.forEach(s => {
+        const stats = computeSlotStats(s, wf.questions);
+        if (stats.missingCount > 0) {
+          out.push({
+            id: s.id,
+            blueprintId: bp.id,
+            blueprintName: bp.name,
+            subject: s.subject,
+            topic: s.topic,
+            difficulty: s.difficulty,
+            pointsPerQuestion: s.pointsPerQuestion,
+            requiredCount: s.questionCount,
+            approvedCount: stats.approvedCount,
+            missingCount: stats.missingCount,
+          });
+        }
+      });
+    });
+    return out;
+  }, [wf.blueprints, wf.questions]);
+
+  const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>(() => {
+    if (wf.navIntent?.slotIds?.length) return wf.navIntent.slotIds;
+    return missingSlots.map(s => s.id);
+  });
+
+  const [activeJob, setActiveJob] = useState<JobApiItem | null>(null);
+  const [simulateErrorMode, setSimulateErrorMode] = useState(false);
+  const [suggestions, setSuggestions] = useState<GeneratedSuggestion[]>(() => {
+    // Provide initial draft suggestions on desk if navigated from a missing slot
+    if (missingSlots.length === 0) return [];
+    const firstSlot = missingSlots[0];
+    return [
+      {
+        id: `sug-${firstSlot.id}-1`,
+        slotId: firstSlot.id,
+        subject: firstSlot.subject,
+        topic: firstSlot.topic,
+        difficulty: firstSlot.difficulty,
+        points: firstSlot.pointsPerQuestion,
+        content: RAG_TEMPLATES[0].content,
+        options: [...RAG_TEMPLATES[0].options],
+        correctIndex: RAG_TEMPLATES[0].correctIndex,
+        explanation: RAG_TEMPLATES[0].explanation,
+        citation: RAG_TEMPLATES[0].citation,
+      },
+    ];
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const run = () => {
-    setRunning(true); setProgress(0); setSuggestions([]);
-    const t = setInterval(() => setProgress(p => {
-      if (p >= 100) {
-        clearInterval(t); setRunning(false);
-        const out: Suggestion[] = [];
-        selected.forEach(sid => {
-          const slot = SLOTS.find(s => s.id === sid)!;
-          for (let i = 0; i < Math.min(slot.need, 3); i++) out.push({ ...TEMPLATES[(out.length) % TEMPLATES.length], id: `${sid}-${i}`, slotId: sid });
-        });
-        setSuggestions(out);
-        return 100;
+  const materializeSuggestions = useCallback(
+    (slotIds: string[]) => {
+      const targetSlots =
+        missingSlots.filter(s => slotIds.includes(s.id)).length > 0
+          ? missingSlots.filter(s => slotIds.includes(s.id))
+          : missingSlots;
+
+      const built: GeneratedSuggestion[] = [];
+      targetSlots.forEach(slot => {
+        const matchingTemplates = RAG_TEMPLATES.filter(
+          t => t.topic.toLowerCase() === slot.topic.toLowerCase() && t.difficulty === slot.difficulty,
+        );
+        const pool = matchingTemplates.length > 0 ? matchingTemplates : RAG_TEMPLATES;
+        const count = Math.min(slot.missingCount, 2);
+        for (let i = 0; i < count; i++) {
+          const tpl = pool[(built.length + i) % pool.length];
+          built.push({
+            id: `sug-${slot.id}-${i + 1}`,
+            slotId: slot.id,
+            subject: slot.subject,
+            topic: slot.topic,
+            difficulty: slot.difficulty,
+            points: slot.pointsPerQuestion,
+            content: tpl.content,
+            options: [...tpl.options],
+            correctIndex: tpl.correctIndex,
+            explanation: tpl.explanation,
+            citation: tpl.citation,
+          });
+        }
+      });
+      setSuggestions(built);
+    },
+    [missingSlots],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedJobId = window.localStorage.getItem(ACTIVE_GEN_JOB_KEY);
+    if (!savedJobId) return;
+
+    let active = true;
+    fetchJobStatus(savedJobId).then(job => {
+      if (!active || !job) return;
+      setActiveJob(job);
+      if (job.status === 'Completed') {
+        materializeSuggestions(selectedSlotIds);
       }
-      return p + 5;
-    }), 100);
+    });
+    return () => {
+      active = false;
+    };
+  }, [materializeSuggestions, selectedSlotIds]);
+
+  useEffect(() => {
+    if (!activeJob || isTerminalJobStatus(activeJob.status)) return;
+
+    const timer = setInterval(async () => {
+      const updated = await fetchJobStatus(activeJob.jobId);
+      if (!updated) return;
+      setActiveJob(updated);
+      if (updated.status === 'Completed') {
+        materializeSuggestions(selectedSlotIds);
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(ACTIVE_GEN_JOB_KEY);
+        }
+      }
+    }, 900);
+
+    return () => clearInterval(timer);
+  }, [activeJob, materializeSuggestions, selectedSlotIds]);
+
+  const isRunning = activeJob !== null && !isTerminalJobStatus(activeJob.status);
+
+  const startGeneration = async () => {
+    if (isRunning || selectedSlotIds.length === 0) return;
+    setSuggestions([]);
+    const payload = simulateErrorMode
+      ? `slots:${selectedSlotIds.join(',')}:simulate-bedrock-throttled`
+      : `slots:${selectedSlotIds.join(',')}:rag-v1`;
+    const idempotencyKey = `gen-${selectedSlotIds.join('-')}-${Date.now()}`;
+
+    const { job } = await enqueueBackgroundJob({
+      jobType: 'ExamGeneration',
+      payloadReference: payload,
+      idempotencyKey,
+    });
+    setActiveJob(job);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(ACTIVE_GEN_JOB_KEY, job.jobId);
+    }
+
+    appendLocalAudit({
+      actor: user?.userName ?? 'gv.nguyen.van.a',
+      action: 'DRAFT_GENERATED',
+      target: job.jobId.slice(0, 12),
+      detail: `Yêu cầu AI gợi ý câu hỏi cho ${selectedSlotIds.length} ô thiếu`,
+      schoolName: 'Trường THPT Nguyễn Du',
+      correlationId: job.jobId,
+    });
   };
 
-  const decide = (id: string, d: Suggestion['decision']) => setSuggestions(p => p.map(s => s.id === id ? { ...s, decision: d } : s));
-  const accepted = suggestions.filter(s => s.decision === 'ACCEPTED').length;
-  const pending = suggestions.filter(s => !s.decision).length;
-  const phase = running ? ['Truy xuất tài liệu (Knowledge Base)…', 'Sinh câu hỏi với Bedrock…', 'Kiểm tra trùng lặp…'][Math.min(2, Math.floor(progress / 34))] : '';
+  const handleRetryJob = async () => {
+    if (!activeJob) return;
+    const retried = await retryBackgroundJob(
+      activeJob.jobId,
+      'Người dùng bấm Thử lại trên bàn Rà soát gợi ý AI',
+    );
+    if (!retried) {
+      showError('Tác vụ không đủ điều kiện thử lại');
+      return;
+    }
+    setActiveJob(retried);
+    if (retried.status === 'Completed') {
+      materializeSuggestions(selectedSlotIds);
+      success('Đã khôi phục tác vụ và tạo gợi ý AI thành công');
+    }
+  };
+
+  const handleCancelJob = async () => {
+    if (!activeJob) return;
+    await cancelBackgroundJob(activeJob.jobId);
+    const updated = await fetchJobStatus(activeJob.jobId);
+    if (updated) setActiveJob(updated);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(ACTIVE_GEN_JOB_KEY);
+    }
+  };
+
+  const decideSuggestion = (id: string, decision: GeneratedSuggestion['decision']) => {
+    setSuggestions(prev => prev.map(s => (s.id === id ? { ...s, decision } : s)));
+  };
+
+  const acceptedSuggestions = suggestions.filter(s => s.decision === 'ACCEPTED');
+  const pendingSuggestions = suggestions.filter(s => !s.decision);
+
+  const commitAccepted = (submitForReview: boolean) => {
+    if (acceptedSuggestions.length === 0) return;
+    const actor = user?.userName ?? 'gv.nguyen.van.a';
+
+    for (const item of acceptedSuggestions) {
+      const gate = validateAiDraftSafety({
+        stem: item.content,
+        options: item.options,
+        correctIndex: item.correctIndex,
+        explanation: item.explanation,
+      });
+      if (!gate.succeeded) {
+        showError(`Bộ lọc an toàn chặn câu "${item.id}": ${gate.error}`);
+        return;
+      }
+    }
+
+    acceptedSuggestions.forEach(item => {
+      upsertBankQuestion({
+        content: item.content,
+        options: item.options,
+        correctIndex: item.correctIndex,
+        explanation: item.explanation,
+        subject: item.subject,
+        topic: item.topic,
+        difficulty: item.difficulty,
+        points: item.points,
+        source: 'AI_DRAFT',
+        actorUserName: actor,
+        submitForReview,
+        citation: item.citation,
+        note: `Bản nháp gợi ý AI (${AI_SAFETY_POLICY_VERSION}) cho ô ${item.topic} (${item.difficulty})`,
+      });
+    });
+
+    setSuggestions(prev => prev.filter(s => s.decision !== 'ACCEPTED'));
+    success(
+      submitForReview
+        ? `Đã lưu và gửi ${acceptedSuggestions.length} câu hỏi sang Bàn duyệt câu hỏi`
+        : `Đã lưu ${acceptedSuggestions.length} câu hỏi vào Mục lục ở trạng thái Bản nháp`,
+    );
+  };
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Tạo đề AI</h1>
-        <p className="page-subtitle">Bedrock RAG gợi ý câu hỏi cho slot còn thiếu — giáo viên luôn là người quyết định</p>
+        <div>
+          <h1 className="page-title">Bàn rà soát gợi ý câu hỏi từ AI</h1>
+          <p className="page-subtitle">
+            Mỗi gợi ý được đặt cạnh đoạn trích sách giáo khoa và ghi chú kiểm tra; giáo viên chỉnh sửa hoặc xác nhận trước khi đưa vào mục lục
+          </p>
+        </div>
+        <div className="page-actions">
+          <span className="badge badge-gray mono-num">
+            Quy tắc: {AI_SAFETY_POLICY_VERSION}
+          </span>
+        </div>
       </div>
 
-      <div style={{ background: 'linear-gradient(135deg, #f5f3ff, var(--brand-50))', border: '1px solid #ddd6fe', borderRadius: 12, padding: '12px 16px', marginBottom: 20, display: 'flex', gap: 10, alignItems: 'center', fontSize: 13, color: '#5b21b6' }}>
-        <Sparkles size={16} />AI chỉ tạo <strong>bản nháp</strong>. Câu được chấp nhận sẽ vào hàng chờ duyệt như câu hỏi thông thường.
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, alignItems: 'start' }} className="gen-grid">
-        <div className="card" style={{ padding: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Slot đang thiếu</div>
-          <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-            {SLOTS.map(s => (
-              <label key={s.id} style={{ display: 'flex', gap: 10, padding: 12, borderRadius: 10, cursor: 'pointer', border: `1px solid ${selected.includes(s.id) ? 'var(--brand-500)' : 'var(--gray-200)'}`, background: selected.includes(s.id) ? 'var(--brand-50)' : 'white' }}>
-                <input type="checkbox" checked={selected.includes(s.id)} disabled={running} id={`slot-select-${s.id}`}
-                  onChange={e => setSelected(p => e.target.checked ? [...p, s.id] : p.filter(x => x !== s.id))} />
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.topic} <span className={clsx('badge', DIFF[s.difficulty][1])}>{DIFF[s.difficulty][0]}</span></div>
-                  <div style={{ fontSize: 12, color: 'var(--gray-500)' }}>{s.blueprint} · thiếu <strong style={{ color: 'var(--warning-600)' }}>{s.need}</strong> câu</div>
-                </div>
-              </label>
-            ))}
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 18, alignItems: 'start' }}
+        className="gen-grid"
+      >
+        {/* Left: Missing Matrix Slots & Inline Progress */}
+        <div className="card" style={{ padding: 16 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              fontWeight: 700,
+              color: 'var(--ink-600)',
+              textTransform: 'uppercase',
+              letterSpacing: '.05em',
+              marginBottom: 10,
+              borderBottom: '1px solid var(--rule-base)',
+              paddingBottom: 6,
+            }}
+          >
+            Ô ma trận đang yêu cầu gợi ý ({missingSlots.length})
           </div>
-          <button className={clsx('btn btn-primary')} style={{ width: '100%', background: 'linear-gradient(135deg, #7c3aed, var(--brand-600))' }} disabled={running || selected.length === 0} onClick={run} id="btn-run-generate">
-            {running ? <Loader2 size={14} className="spin" /> : <Cpu size={14} />}{running ? 'Đang tạo…' : 'Tạo gợi ý bằng AI'}
-          </button>
-          {running && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ height: 6, background: 'var(--gray-100)', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #7c3aed, var(--brand-500))', transition: 'width .1s' }} />
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 6 }}>{phase}</div>
+
+          {missingSlots.length === 0 ? (
+            <div className="margin-note green-ink" style={{ marginBottom: 12 }}>
+              Các ô trong ma trận hiện tại đã đủ câu hỏi đạt chuẩn.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+              {missingSlots.map(s => {
+                const checked = selectedSlotIds.includes(s.id);
+                const slotProcessing = isRunning && checked;
+                return (
+                  <label
+                    key={s.id}
+                    style={{
+                      display: 'block',
+                      padding: '10px 12px',
+                      borderRadius: 3,
+                      cursor: isRunning ? 'not-allowed' : 'pointer',
+                      border: `1px solid ${
+                        checked ? 'var(--brand-600)' : 'var(--rule-base)'
+                      }`,
+                      background: checked ? '#EBF3F1' : 'var(--paper-sheet)',
+                      position: 'relative',
+                    }}
+                  >
+                    <span className="matrix-missing-corner" />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isRunning}
+                        id={`slot-select-${s.id}`}
+                        style={{ marginTop: 3 }}
+                        onChange={e =>
+                          setSelectedSlotIds(prev =>
+                            e.target.checked
+                              ? [...prev, s.id]
+                              : prev.filter(x => x !== s.id),
+                          )
+                        }
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-900)' }}>
+                          {s.subject} · {s.topic}{' '}
+                          <span className={clsx('badge', DIFF[s.difficulty][1])}>
+                            {DIFF[s.difficulty][0]}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--ink-600)', marginTop: 2 }}>
+                          Có <span className="mono-num">{s.approvedCount}/{s.requiredCount}</span> câu ·{' '}
+                          <strong style={{ color: 'var(--danger-500)' }}>
+                            Thiếu {s.missingCount} câu
+                          </strong>
+                        </div>
+
+                        {/* Inline progress right inside the matrix slot card */}
+                        {slotProcessing && (
+                          <div style={{ marginTop: 8 }}>
+                            <div className="progress-bar">
+                              <div
+                                className="progress-fill"
+                                style={{
+                                  width: `${activeJob?.progressPercentage ?? 35}%`,
+                                }}
+                              />
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--brand-700)', marginTop: 3 }}>
+                              Đang truy xuất SGK &amp; sinh bản nháp ({activeJob?.progressPercentage ?? 35}%)…
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           )}
-          {suggestions.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--gray-100)', display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 13 }}>Đã chấp nhận <strong>{accepted}</strong> · còn <strong>{pending}</strong> chờ xem</div>
-              <button className="btn btn-success btn-sm" disabled={accepted === 0} id="btn-submit-accepted"
-                onClick={() => { success(`Đã gửi ${accepted} câu vào hàng chờ duyệt`); setSuggestions(p => p.filter(s => s.decision !== 'ACCEPTED')); }}>
-                Gửi {accepted} câu đi duyệt
+
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              color: 'var(--ink-600)',
+              marginBottom: 10,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={simulateErrorMode}
+              disabled={isRunning}
+              onChange={e => setSimulateErrorMode(e.target.checked)}
+              id="chk-simulate-ai-error"
+            />
+            Mô phỏng gián đoạn kết nối Bedrock (kiểm tra nút Thử lại)
+          </label>
+
+          <button
+            className={clsx('btn btn-primary w-full', isRunning && 'btn-loading')}
+            disabled={isRunning || selectedSlotIds.length === 0}
+            onClick={() => void startGeneration()}
+            id="btn-run-generate"
+          >
+            {isRunning ? <Loader2 size={14} className="spin" /> : <Cpu size={14} />}
+            {isRunning ? 'Đang sinh bản thảo gợi ý…' : 'Yêu cầu AI gợi ý câu hỏi mới'}
+          </button>
+
+          {activeJob && activeJob.status === 'Failed' && (
+            <div className="margin-note red-ink" style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 700 }}>
+                Lỗi tác vụ ({activeJob.errorCode ?? 'TIMEOUT'}):
+              </div>
+              <div style={{ marginTop: 2 }}>{activeJob.safeMessage}</div>
+              {activeJob.actionableReason && (
+                <div style={{ marginTop: 4, fontSize: 11.5 }}>{activeJob.actionableReason}</div>
+              )}
+              <button
+                className="btn btn-primary btn-sm w-full"
+                style={{ marginTop: 8 }}
+                onClick={() => void handleRetryJob()}
+                id="btn-retry-generate-job"
+              >
+                <RotateCcw size={12} />
+                Thử lại yêu cầu
               </button>
             </div>
           )}
+
+          {isRunning && (
+            <button
+              className="btn btn-ghost btn-sm w-full"
+              style={{ marginTop: 6 }}
+              onClick={() => void handleCancelJob()}
+              id="btn-cancel-generate-job"
+            >
+              Dừng yêu cầu đang chạy
+            </button>
+          )}
+
+          {suggestions.length > 0 && (
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 12,
+                borderTop: '1px solid var(--rule-base)',
+                display: 'grid',
+                gap: 8,
+              }}
+            >
+              <div style={{ fontSize: 12.5 }}>
+                Đã đánh dấu nhận: <strong className="mono-num">{acceptedSuggestions.length}</strong> · Chờ kiểm tra:{' '}
+                <strong className="mono-num">{pendingSuggestions.length}</strong>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={acceptedSuggestions.length === 0}
+                onClick={() => commitAccepted(false)}
+                id="btn-save-accepted-draft"
+              >
+                Lưu {acceptedSuggestions.length} câu làm Bản nháp
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={acceptedSuggestions.length === 0}
+                onClick={() => commitAccepted(true)}
+                id="btn-submit-accepted"
+              >
+                Lưu &amp; Gửi {acceptedSuggestions.length} câu đi thẩm định
+              </button>
+              {onNavigate && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onNavigate('/review')}
+                  id="btn-goto-review-from-gen"
+                >
+                  Sang Bàn duyệt câu hỏi <ArrowRight size={12} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
+        {/* Right: 2-Column Draft Review Sheets (Question Left | Reference & Check Notes Right) */}
         <div style={{ display: 'grid', gap: 14 }}>
-          {suggestions.length === 0 && !running && (
-            <div className="table-container"><div className="table-empty">
-              <div className="table-empty-icon"><Sparkles /></div>
-              <div className="table-empty-text">Chưa có gợi ý</div>
-              <div className="table-empty-sub">Chọn slot và bấm “Tạo gợi ý bằng AI”</div>
-            </div></div>
+          {suggestions.length === 0 && !isRunning && (
+            <div className="table-container">
+              <div className="table-empty">
+                <div className="table-empty-icon">
+                  <Cpu />
+                </div>
+                <div className="table-empty-text">Chưa có tờ bản thảo gợi ý nào trên bàn</div>
+                <div className="table-empty-sub">
+                  Chọn ô ma trận thiếu câu bên trái và bấm “Yêu cầu AI gợi ý câu hỏi mới”
+                </div>
+              </div>
+            </div>
           )}
-          {running && [0, 1].map(i => <div key={i} className="skeleton" style={{ height: 200, borderRadius: 14 }} />)}
+
+          {isRunning &&
+            [0, 1].map(i => (
+              <div key={i} className="skeleton" style={{ height: 200 }} />
+            ))}
+
           {suggestions.map(s => {
-            const slot = SLOTS.find(x => x.id === s.slotId)!;
             const isEditing = editingId === s.id;
+            const gate = validateAiDraftSafety({
+              stem: s.content,
+              options: s.options,
+              correctIndex: s.correctIndex,
+              explanation: s.explanation,
+            });
+
             return (
-              <div key={s.id} className="card" style={{ padding: 20, opacity: s.decision === 'DISCARDED' ? 0.5 : 1, transition: 'opacity .2s',
-                borderLeft: `3px solid ${s.decision === 'ACCEPTED' ? 'var(--accent-600)' : s.decision === 'DISCARDED' ? 'var(--gray-300, #d1d5db)' : '#7c3aed'}` }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <span className="badge badge-purple"><Sparkles size={11} />AI Draft</span>
-                  <span className="badge badge-blue">{slot.topic}</span>
-                  <span className={clsx('badge', DIFF[slot.difficulty][1])}>{DIFF[slot.difficulty][0]}</span>
-                  {s.decision === 'ACCEPTED' && <span className="badge badge-green"><Check size={11} />Đã chấp nhận</span>}
-                </div>
-                {isEditing ? (
-                  <textarea className="form-input" rows={2} value={s.content} id={`edit-content-${s.id}`} autoFocus
-                    onChange={e => setSuggestions(p => p.map(x => x.id === s.id ? { ...x, content: e.target.value } : x))} style={{ marginBottom: 10 }} />
-                ) : (
-                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--gray-900)', marginBottom: 10 }}>{s.content}</div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
-                  {s.options.map((o, i) => (
-                    <div key={i} style={{ fontSize: 13, padding: '6px 10px', borderRadius: 8, background: i === s.correctIndex ? 'var(--accent-50)' : 'var(--gray-50)', color: i === s.correctIndex ? 'var(--accent-600)' : 'var(--gray-700)', fontWeight: i === s.correctIndex ? 600 : 400 }}>
-                      {String.fromCharCode(65 + i)}. {o}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ background: 'var(--gray-50)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, color: 'var(--gray-600)', display: 'flex', gap: 8, marginBottom: 14 }}>
-                  <BookMarked size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--brand-600)' }} />
-                  <div><strong>{s.citation.source}</strong>, {s.citation.page} — <em>“{s.citation.excerpt}”</em></div>
-                </div>
-                {!s.decision ? (
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => decide(s.id, 'DISCARDED')} id={`btn-discard-${s.id}`}><X size={13} />Bỏ</button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingId(isEditing ? null : s.id)} id={`btn-edit-${s.id}`}><Pencil size={13} />{isEditing ? 'Xong' : 'Sửa'}</button>
-                    <button className="btn btn-success btn-sm" onClick={() => { decide(s.id, 'ACCEPTED'); setEditingId(null); }} id={`btn-accept-${s.id}`}><Check size={13} />Chấp nhận</button>
+              <div
+                key={s.id}
+                className="draft-review-sheet"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.35fr 300px',
+                  background: 'var(--paper-sheet)',
+                  border: `1px solid ${
+                    s.decision === 'ACCEPTED'
+                      ? 'var(--brand-600)'
+                      : 'var(--rule-strong)'
+                  }`,
+                  borderRadius: 4,
+                  opacity: s.decision === 'DISCARDED' ? 0.55 : 1,
+                }}
+              >
+                {/* Left Column: Draft Question & Options */}
+                <div style={{ padding: '16px 20px', borderRight: '1px solid var(--rule-base)' }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className="badge badge-amber">Gợi ý AI</span>
+                    <span className="badge badge-gray">
+                      {s.decision === 'ACCEPTED'
+                        ? 'Đã kiểm tra · Chờ lưu'
+                        : s.decision === 'DISCARDED'
+                        ? 'Đã gạch bỏ'
+                        : 'Chờ kiểm tra'}
+                    </span>
+                    <span className="badge badge-gray">
+                      {s.subject} / {s.topic}
+                    </span>
+                    <span className={clsx('badge', DIFF[s.difficulty][1])}>
+                      {DIFF[s.difficulty][0]} ({s.points}đ)
+                    </span>
                   </div>
-                ) : (
-                  <div style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" onClick={() => decide(s.id, undefined)} id={`btn-undo-${s.id}`}>Hoàn tác</button></div>
-                )}
+
+                  {isEditing ? (
+                    <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                      <label className="form-label" htmlFor={`edit-content-${s.id}`}>
+                        Hiệu đính câu dẫn:
+                      </label>
+                      <textarea
+                        className="form-input"
+                        rows={2}
+                        value={s.content}
+                        id={`edit-content-${s.id}`}
+                        onChange={e =>
+                          setSuggestions(prev =>
+                            prev.map(x =>
+                              x.id === s.id ? { ...x, content: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {s.options.map((opt, idx) => (
+                          <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm mono-num"
+                              style={{
+                                background:
+                                  s.correctIndex === idx ? 'var(--brand-600)' : '#EAE5D9',
+                                color: s.correctIndex === idx ? '#FFFFFF' : 'var(--ink-800)',
+                              }}
+                              onClick={() =>
+                                setSuggestions(prev =>
+                                  prev.map(x =>
+                                    x.id === s.id ? { ...x, correctIndex: idx } : x,
+                                  ),
+                                )
+                              }
+                            >
+                              {String.fromCharCode(65 + idx)}
+                            </button>
+                            <input
+                              className="form-input"
+                              value={opt}
+                              onChange={e =>
+                                setSuggestions(prev =>
+                                  prev.map(x => {
+                                    if (x.id !== s.id) return x;
+                                    const nextOpts = [...x.options];
+                                    nextOpts[idx] = e.target.value;
+                                    return { ...x, options: nextOpts };
+                                  }),
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          fontFamily: 'var(--font-serif)',
+                          fontSize: 16.5,
+                          fontWeight: 600,
+                          color: 'var(--ink-900)',
+                          marginBottom: 12,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {s.content}
+                      </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: 8,
+                          marginBottom: 10,
+                        }}
+                      >
+                        {s.options.map((o, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              fontSize: 13.5,
+                              padding: '7px 10px',
+                              borderRadius: 3,
+                              border: `1px solid ${
+                                i === s.correctIndex ? 'var(--brand-600)' : 'var(--rule-base)'
+                              }`,
+                              background:
+                                i === s.correctIndex ? 'var(--brand-50)' : '#FFFFFF',
+                              color:
+                                i === s.correctIndex ? 'var(--brand-700)' : 'var(--ink-800)',
+                              fontWeight: i === s.correctIndex ? 600 : 400,
+                            }}
+                          >
+                            <strong>{String.fromCharCode(65 + i)}.</strong> {o}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {s.explanation && (
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>
+                      <strong>Hướng dẫn giải dự kiến:</strong> {s.explanation}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column: Source Reference & Verification Notes */}
+                <div
+                  style={{
+                    padding: '14px 16px',
+                    background: '#F4F0E5',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        color: 'var(--ink-500)',
+                        letterSpacing: '0.05em',
+                        marginBottom: 6,
+                      }}
+                    >
+                      Nguồn tham chiếu &amp; Ghi chú rà soát
+                    </div>
+
+                    <div
+                      style={{
+                        padding: '8px 10px',
+                        background: 'var(--paper-sheet)',
+                        border: '1px solid var(--rule-base)',
+                        borderRadius: 3,
+                        fontSize: 12,
+                        color: 'var(--ink-800)',
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontWeight: 700, marginBottom: 3 }}>
+                        <BookMarked size={13} style={{ color: 'var(--brand-600)' }} />
+                        <span>{s.citation.source}</span>
+                      </div>
+                      <div style={{ color: 'var(--ink-600)', marginBottom: 3 }}>
+                        Vị trí: <code>{s.citation.locator}</code>
+                      </div>
+                      <div style={{ fontStyle: 'italic', color: 'var(--ink-700)' }}>
+                        “{s.citation.excerpt}”
+                      </div>
+                    </div>
+
+                    <div
+                      className={clsx('margin-note', gate.succeeded ? 'green-ink' : 'red-ink')}
+                      style={{ padding: '6px 9px', fontSize: 11.5 }}
+                    >
+                      {gate.succeeded
+                        ? 'Đã qua kiểm tra 4 phương án phân biệt; giáo viên đối chiếu lại kiến thức.'
+                        : `Cảnh báo: ${gate.error}`}
+                    </div>
+                  </div>
+
+                  {!s.decision ? (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: 'var(--danger-500)' }}
+                        onClick={() => decideSuggestion(s.id, 'DISCARDED')}
+                        id={`btn-discard-${s.id}`}
+                      >
+                        <X size={13} />
+                        Bỏ
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setEditingId(isEditing ? null : s.id)}
+                        id={`btn-edit-${s.id}`}
+                      >
+                        <Pencil size={13} />
+                        {isEditing ? 'Xong' : 'Chỉnh câu'}
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={!gate.succeeded}
+                        onClick={() => {
+                          decideSuggestion(s.id, 'ACCEPTED');
+                          setEditingId(null);
+                        }}
+                        id={`btn-accept-${s.id}`}
+                      >
+                        <Check size={13} />
+                        Nhận vào nháp
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'right' }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => decideSuggestion(s.id, undefined)}
+                        id={`btn-undo-${s.id}`}
+                      >
+                        Hoàn tác lựa chọn
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
-          {suggestions.length > 0 && selected.some(id => (SLOTS.find(s => s.id === id)?.need ?? 0) > 3) && (
-            <div style={{ display: 'flex', gap: 8, fontSize: 12.5, color: 'var(--warning-600)' }}><AlertTriangle size={14} />Mỗi lượt tạo tối đa 3 gợi ý/slot. Chạy lại để có thêm.</div>
-          )}
         </div>
       </div>
-      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @media (max-width: 1000px) { .gen-grid { grid-template-columns: 1fr !important; } }`}</style>
+
+      <style>{`
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 1050px) {
+          .draft-review-sheet { grid-template-columns: 1fr !important; }
+          .gen-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }

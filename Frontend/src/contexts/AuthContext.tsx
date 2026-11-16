@@ -25,7 +25,9 @@ export interface AuthContextType {
   csrfToken: string | null;
   loading: boolean;
   sessionExpired: boolean;
+  isDemoSession?: boolean;
   login: (userName: string, password: string) => Promise<void>;
+  loginDemoRole?: (role: AppRole, userName?: string) => void;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
   apiFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -53,7 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [isDemoSession, setIsDemoSession] = useState(false);
   const authenticated = useRef(false);
+  const demoSessionRef = useRef(false);
   const authVersion = useRef(0);
 
   const fetchCsrf = useCallback(async () => {
@@ -125,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkOnReturn = () => {
-      if (authenticated.current && document.visibilityState === 'visible') void fetchMe();
+      if (authenticated.current && !demoSessionRef.current && document.visibilityState === 'visible') void fetchMe();
     };
     window.addEventListener('focus', checkOnReturn);
     document.addEventListener('visibilitychange', checkOnReturn);
@@ -134,6 +138,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener('visibilitychange', checkOnReturn);
     };
   }, [fetchMe]);
+
+  const loginDemoRole = useCallback((role: AppRole, customUserName?: string) => {
+    const defaultNames: Record<AppRole, string> = {
+      Teacher: 'gv.nguyen.van.a',
+      DepartmentHead: 'tbm.toan.thpt.a',
+      SchoolAdmin: 'admin.thpt.a',
+      MinistryAdmin: 'demo.user',
+    };
+    const schoolId = role === 'MinistryAdmin' ? null : 'school-hn-01';
+    const departmentId = role === 'Teacher' || role === 'DepartmentHead' ? 'dept-math-01' : null;
+    authVersion.current += 1;
+    authenticated.current = true;
+    demoSessionRef.current = true;
+    setIsDemoSession(true);
+    setSessionExpired(false);
+    setCsrfToken(prev => prev ?? 'demo-csrf-token');
+    setUser({
+      id: `demo-${role.toLowerCase()}`,
+      userName: customUserName ?? defaultNames[role],
+      roles: [{ role, schoolId, departmentId }],
+    });
+  }, []);
 
   const login = useCallback(async (userName: string, password: string) => {
     const token = csrfToken ?? await fetchCsrf();
@@ -154,12 +180,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) throw new Error('Đăng nhập thất bại. Vui lòng thử lại');
 
     authVersion.current += 1;
+    demoSessionRef.current = false;
+    setIsDemoSession(false);
     await fetchMe();
     await fetchCsrf(); // rotate token
     setSessionExpired(false);
   }, [csrfToken, fetchCsrf, fetchMe]);
 
   const logout = useCallback(async () => {
+    if (demoSessionRef.current) {
+      authVersion.current += 1;
+      authenticated.current = false;
+      demoSessionRef.current = false;
+      setIsDemoSession(false);
+      setUser(null);
+      setSessionExpired(false);
+      setCsrfToken(null);
+      return;
+    }
+
     const token = csrfToken ?? await fetchCsrf();
     if (!token) throw new Error('Không thể lấy CSRF token');
 
@@ -185,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
-    <AuthContext.Provider value={{ user, csrfToken, loading, sessionExpired, login, logout, refetch, apiFetch, primaryRole }}>
+    <AuthContext.Provider value={{ user, csrfToken, loading, sessionExpired, isDemoSession, login, loginDemoRole, logout, refetch, apiFetch, primaryRole }}>
       {children}
     </AuthContext.Provider>
   );

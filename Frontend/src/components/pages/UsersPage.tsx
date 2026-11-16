@@ -45,7 +45,7 @@ const assignableRoles = (primaryRole: AppRole | null): AppRole[] =>
    USERS PAGE
    ============================================================ */
 
-export default function UsersPage() {
+export default function UsersPage({ onNavigate }: { onNavigate?: (href: string) => void }) {
   const { csrfToken, primaryRole, apiFetch } = useAuth();
   const { success, error: showError } = useToast();
 
@@ -100,8 +100,10 @@ export default function UsersPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Người dùng</h1>
-        <p className="page-subtitle">Quản lý tài khoản và phân quyền trong trường</p>
+        <div>
+          <h1 className="page-title">Người dùng</h1>
+          <p className="page-subtitle">Quản lý tài khoản và phân quyền trong trường</p>
+        </div>
         <div className="page-actions">
           <select
             className="form-select"
@@ -213,7 +215,7 @@ export default function UsersPage() {
                     </span>
                   </td>
                   <td>
-                    <UserRowMenu userId={u.id} schoolId={selectedSchool} csrfToken={csrfToken} onRefresh={() => fetchUsers(selectedSchool)} />
+                    <UserRowMenu userId={u.id} onNavigate={onNavigate} />
                   </td>
                 </tr>
               ))}
@@ -246,13 +248,13 @@ export default function UsersPage() {
 
 function UserAvatar({ name }: { name: string }) {
   const initials = name.slice(0, 2).toUpperCase();
-  const hue = name.charCodeAt(0) * 13 % 360;
   return (
     <div style={{
-      width: 32, height: 32, borderRadius: '50%',
-      background: `hsl(${hue}, 65%, 55%)`,
+      width: 30, height: 30, borderRadius: 3,
+      background: 'var(--ink-900)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 12, fontWeight: 700, color: 'white', flexShrink: 0,
+      fontSize: 11, fontWeight: 700, color: '#FCFBF7', flexShrink: 0,
+      fontFamily: 'var(--font-mono)',
     }}>
       {initials}
     </div>
@@ -263,8 +265,8 @@ function UserAvatar({ name }: { name: string }) {
    USER ROW MENU
    ============================================================ */
 
-function UserRowMenu({ userId, schoolId, csrfToken, onRefresh }: {
-  userId: string; schoolId: string; csrfToken: string | null; onRefresh: () => void;
+function UserRowMenu({ userId, onNavigate }: {
+  userId: string; onNavigate?: (href: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -276,10 +278,10 @@ function UserRowMenu({ userId, schoolId, csrfToken, onRefresh }: {
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 70 }} onClick={() => setOpen(false)} />
           <div className="dropdown-menu">
-            <div className="dropdown-item"><UserCheck size={14} />Thêm quyền</div>
-            <div className="dropdown-item"><Shield size={14} />Xem audit</div>
+            <div className="dropdown-item" onClick={() => { setOpen(false); onNavigate?.('/admin/roles'); }}><UserCheck size={14} />Thêm quyền</div>
+            <div className="dropdown-item" onClick={() => { setOpen(false); onNavigate?.('/audit'); }}><Shield size={14} />Xem audit</div>
             <div className="dropdown-divider" />
-            <div className="dropdown-item danger"><UserX size={14} />Vô hiệu hóa</div>
+            <div className="dropdown-item danger" onClick={() => setOpen(false)}><UserX size={14} />Vô hiệu hóa</div>
           </div>
         </>
       )}

@@ -125,8 +125,10 @@ export default function RolesPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Phân quyền</h1>
-        <p className="page-subtitle">Xem và quản lý vai trò người dùng trong từng trường</p>
+        <div>
+          <h1 className="page-title">Phân quyền</h1>
+          <p className="page-subtitle">Xem và quản lý vai trò người dùng trong từng trường</p>
+        </div>
         <div className="page-actions">
           <select
             className="form-select"
