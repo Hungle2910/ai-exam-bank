@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using AiExamBank.Persistence.Questions;
 
 namespace AiExamBank.Persistence;
 
@@ -14,6 +15,12 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
     public DbSet<SchoolEntity> Schools => Set<SchoolEntity>();
     public DbSet<DepartmentEntity> Departments => Set<DepartmentEntity>();
     public DbSet<RoleAssignmentAuditEntity> RoleAssignmentAudits => Set<RoleAssignmentAuditEntity>();
+    public DbSet<SubjectEntity> Subjects => Set<SubjectEntity>();
+    public DbSet<TopicEntity> Topics => Set<TopicEntity>();
+    public DbSet<SchoolSubjectEntity> SchoolSubjects => Set<SchoolSubjectEntity>();
+    public DbSet<QuestionEntity> Questions => Set<QuestionEntity>();
+    public DbSet<QuestionRevisionEntity> QuestionRevisions => Set<QuestionRevisionEntity>();
+    public DbSet<QuestionOptionEntity> QuestionOptions => Set<QuestionOptionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) //liên kết mỗi vai trò với một người dùng và lưu tên vai trò dạng chữ
     {
@@ -85,5 +92,7 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
                 .HasForeignKey(x => x.TargetUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.ApplyQuestionBank();
     }
 }
