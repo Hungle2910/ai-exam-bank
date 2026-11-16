@@ -84,6 +84,7 @@ internal static class QuestionBankModel
             entity.HasKey(x => new { x.QuestionId, x.Revision });
             entity.Property(x => x.Difficulty).HasConversion<string>().HasMaxLength(16);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(x => x.ReviewVersion).IsConcurrencyToken();
             entity.Property(x => x.Origin).HasConversion<string>().HasMaxLength(16);
             entity.Property(x => x.Stem).HasMaxLength(QuestionRules.MaxStemLength).IsRequired();
             entity.Property(x => x.CorrectOption).HasMaxLength(1).IsRequired();

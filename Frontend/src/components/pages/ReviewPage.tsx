@@ -24,17 +24,16 @@ interface ReviewItem {
   subject: string;
   topic: string;
   difficulty: Difficulty;
-  points: number;
   author: string;
   submittedAt: string;
   status: ReviewStatus;
-  source: 'MANUAL' | 'IMPORT' | 'AI';
+  source: 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
 }
 
 const DIFF_LABEL: Record<Difficulty, [string, string]> = {
   EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
 };
-const SOURCE_LABEL = { MANUAL: ['Thủ công', 'badge-gray'], IMPORT: ['CSV', 'badge-teal'], AI: ['AI Draft', 'badge-purple'] } as const;
+const SOURCE_LABEL = { MANUAL: ['Thủ công', 'badge-gray'], IMPORT: ['CSV', 'badge-teal'], AI_DRAFT: ['AI Draft', 'badge-purple'], SEED: ['Dữ liệu mẫu', 'badge-gray'] } as const;
 
 /* ============================================================
    PAGE
@@ -171,7 +170,6 @@ export default function ReviewPage() {
                 <span className={clsx('badge', SOURCE_LABEL[selected.source][1])}>{SOURCE_LABEL[selected.source][0]}</span>
                 <span className="badge badge-blue">{selected.subject} / {selected.topic}</span>
                 <span className={clsx('badge', DIFF_LABEL[selected.difficulty][1])}>{DIFF_LABEL[selected.difficulty][0]}</span>
-                <span className="badge badge-teal">{selected.points} điểm</span>
               </div>
 
               <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--gray-900)', lineHeight: 1.5, marginBottom: 18 }}>{selected.content}</h2>

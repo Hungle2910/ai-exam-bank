@@ -20,6 +20,9 @@ public sealed record ReviewDecisionApiRequest(
         if (Decision == ReviewDecision.Reject && string.IsNullOrWhiteSpace(Reason))//rỗng hoặc chỉ có khoảng trắng, trả thông báo lỗi.
             return "Reason is required when rejecting.";
 
+        if (Reason?.Length > 2000)
+            return "Reason must be 2000 characters or fewer.";
+
         return null;
     }
 }
