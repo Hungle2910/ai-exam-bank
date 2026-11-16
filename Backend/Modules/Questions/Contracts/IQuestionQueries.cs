@@ -42,7 +42,40 @@ public sealed record QuestionDetail(
     string? SourceText,
     Guid OwnerUserId,
     DateTimeOffset UpdatedAtUtc,
-    IReadOnlyList<QuestionRevisionSummary> Revisions);
+    IReadOnlyList<QuestionRevisionSummary> Revisions,
+    int? ApprovedRevision = null);
+
+/// <summary>
+/// One immutable revision with its full content, as the history view shows and compares it.
+/// <see cref="IsLatest"/> marks the revision the question currently points at; <see cref="IsApprovedInUse"/> marks
+/// the newest approved revision, the one exam selection uses while a newer draft is being reviewed.
+/// </summary>
+public sealed record QuestionRevisionDetail(
+    int Revision,
+    QuestionStatus Status,
+    QuestionOrigin Origin,
+    string Stem,
+    IReadOnlyList<string> Options,
+    char CorrectOption,
+    Guid TopicId,
+    string TopicName,
+    Difficulty Difficulty,
+    string? SourceText,
+    Guid? ImportBatchId,
+    int? ImportRowNumber,
+    Guid CreatedByUserId,
+    DateTimeOffset CreatedAtUtc,
+    bool IsLatest,
+    bool IsApprovedInUse);
+
+/// <summary>Every revision of a question, newest first. <see cref="ApprovedRevision"/> is null until one is approved.</summary>
+public sealed record QuestionHistory(
+    Guid QuestionId,
+    Guid SubjectId,
+    string SubjectName,
+    int LatestRevision,
+    int? ApprovedRevision,
+    IReadOnlyList<QuestionRevisionDetail> Revisions);
 
 /// <summary>
 /// Filters for the bank list. The school comes from the authenticated actor, never from the request,
@@ -109,4 +142,14 @@ public interface IQuestionQueries
 
     /// <summary>Null when the question does not exist or the actor may not read it, so existence is not revealed.</summary>
     Task<QuestionDetail?> GetAsync(Guid actorUserId, Guid questionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every revision with its content, newest first. Null when the question does not exist or the actor may not
+    /// read it. Answer keys of old revisions are as sensitive as the latest one, so the same read check applies.
+    /// </summary>
+    Task<QuestionHistory?> GetHistoryAsync(Guid actorUserId, Guid questionId, CancellationToken cancellationToken = default);
+
+    /// <summary>One revision with its content. Null when the question or revision is missing, or the actor may not read the question.</summary>
+    Task<QuestionRevisionDetail?> GetRevisionAsync(
+        Guid actorUserId, Guid questionId, int revision, CancellationToken cancellationToken = default);
 }

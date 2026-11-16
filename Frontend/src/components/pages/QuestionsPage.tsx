@@ -6,16 +6,13 @@ import clsx from 'clsx';
 import { useToast } from '@/contexts/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ApiError, fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
+import QuestionHistoryModal from './QuestionHistoryModal';
+import { DIFF, STATUS, type Difficulty, type Origin, type QStatus, type Ref, type RevisionDetail } from './questionLabels';
 
 /* ============================================================
    TYPES
    ============================================================ */
 
-type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
-type QStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
-type Origin = 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
-
-interface Ref { id: string; name: string }
 interface CatalogTopic { id: string; code: string; name: string }
 interface CatalogSubject { id: string; code: string; name: string; canWrite: boolean; topics: CatalogTopic[] }
 
@@ -26,6 +23,8 @@ interface QuestionItem {
 interface RevisionInfo { revision: number; status: QStatus; origin: Origin; createdByUserId: string; createdAt: string }
 interface QuestionDetail extends QuestionItem {
   origin: Origin; options: string[]; correctOption: string; source: string | null; revisions: RevisionInfo[];
+  /** Sample data only: the full content of every revision, which the real API serves from /revisions. */
+  snapshots?: RevisionDetail[];
 }
 interface Paged { items: QuestionItem[]; page: number; pageSize: number; total: number }
 interface Filters { subjectId: string; topicId: string; difficulty: '' | Difficulty; status: '' | QStatus; text: string }
@@ -35,14 +34,6 @@ interface ListResult { key: string; data: Paged | null; error: string | null }
 const PAGE_SIZE = 20;
 const LABELS = 'ABCD';
 const NO_FILTERS: Filters = { subjectId: '', topicId: '', difficulty: '', status: '', text: '' };
-
-const DIFF: Record<Difficulty, [string, string]> = {
-  EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
-};
-const STATUS: Record<QStatus, [string, string]> = {
-  DRAFT: ['Nháp', 'badge-gray'], PENDING_REVIEW: ['Chờ duyệt', 'badge-blue'], APPROVED: ['Đã duyệt', 'badge-green'], REJECTED: ['Bị trả lại', 'badge-red'],
-};
-const ORIGIN: Record<Origin, string> = { MANUAL: 'Nhập tay', IMPORT: 'Import', AI_DRAFT: 'AI nháp', SEED: 'Dữ liệu mẫu' };
 
 /* ============================================================
    SAMPLE DATA (only used when the API is not available in development)
@@ -70,6 +61,10 @@ const mockQuestion = (
   id, revision: 1, status, stem, subject, topic, difficulty, ownerUserId: 'mock-user', updatedAt, origin: 'MANUAL',
   options, correctOption, source: null,
   revisions: [{ revision: 1, status, origin: 'MANUAL', createdByUserId: 'mock-user', createdAt: updatedAt }],
+  snapshots: [{
+    revision: 1, status, origin: 'MANUAL', stem, options, correctOption, topic, difficulty, source: null,
+    importBatchId: null, importRowNumber: null, createdByUserId: 'mock-user', createdAt: updatedAt, isLatest: true, isApprovedInUse: false,
+  }],
 });
 
 const MOCK_QUESTIONS: QuestionDetail[] = [
@@ -179,21 +174,29 @@ export default function QuestionsPage() {
     setEditing(null); load();
   };
 
-  const submitForReview = async (q: QuestionItem) => {
+  // Resolves true when the server accepted the submission, so a caller (the history modal) can refresh itself.
+  const submitRevision = async (id: string, revision: number): Promise<boolean> => {
+    let accepted = false;
     try {
       // Bản nháp mới có review version 1; server kiểm tra cả revision lẫn version.
       // Nếu câu đã đổi, server trả 409 và danh sách được tải lại.
-      const response = await apiFetch(`/api/v1/questions/${q.id}/submit-review`, {
+      const response = await apiFetch(`/api/v1/questions/${id}/submit-review`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
-        body: JSON.stringify({ revision: q.revision, expectedVersion: 1 }),
+        body: JSON.stringify({ revision, expectedVersion: 1 }),
       });
+      accepted = response.ok;
       if (response.ok) success('Đã gửi câu hỏi để duyệt');
       else if (response.status === 409) showError('Câu hỏi đã thay đổi. Hãy kiểm tra lại');
       else showError('Không gửi duyệt được câu hỏi');
     } catch { showError('Không kết nối được máy chủ'); }
     load();
+    return accepted;
   };
+  const submitForReview = (q: QuestionItem) => submitRevision(q.id, q.revision);
+  // Same rule as the button in the list: only the owner, and only for a real API.
+  const historyOwner = history ? data?.items.find(q => q.id === history)?.ownerUserId : undefined;
+  const canSubmitFromHistory = !isMock && !!user && !!historyOwner && historyOwner.toLowerCase() === user.id.toLowerCase();
 
   return (
     <div>
@@ -292,9 +295,13 @@ export default function QuestionsPage() {
 
       {editing && (
         <QuestionModal id={editing === 'new' ? null : editing} catalog={catalog} isMock={isMock} mockStore={mockStore}
-          onClose={() => setEditing(null)} onSaved={d => { success(editing === 'new' ? 'Đã lưu câu hỏi ở trạng thái nháp' : 'Đã lưu revision mới ở trạng thái nháp'); onSaved(d); }} />
+          onClose={() => setEditing(null)} onShowHistory={setHistory} onSaved={d => { success(editing === 'new' ? 'Đã lưu câu hỏi ở trạng thái nháp' : 'Đã lưu revision mới ở trạng thái nháp'); onSaved(d); }} />
       )}
-      {history && <HistoryModal id={history} isMock={isMock} mockStore={mockStore} onClose={() => setHistory(null)} />}
+      {history && (
+        <QuestionHistoryModal id={history} onClose={() => setHistory(null)}
+          onSubmitReview={canSubmitFromHistory ? revision => submitRevision(history, revision) : undefined}
+          mockRevisions={isMock ? mockStore.find(q => q.id === history)?.snapshots ?? [] : null} />
+      )}
     </div>
   );
 }
@@ -339,9 +346,9 @@ function useDetail(id: string | null, isMock: boolean, mockStore: QuestionDetail
    MODALS
    ============================================================ */
 
-function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved }: {
+function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved, onShowHistory }: {
   id: string | null; catalog: CatalogSubject[]; isMock: boolean; mockStore: QuestionDetail[];
-  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void;
+  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onShowHistory: (id: string) => void;
 }) {
   const { detail, error: loadError, loading, reload } = useDetail(id, isMock, mockStore);
   const isNew = id === null;
@@ -355,15 +362,15 @@ function QuestionModal({ id, catalog, isMock, mockStore, onClose, onSaved }: {
               <button className="btn btn-secondary btn-sm" onClick={reload} id="btn-retry-detail">Thử lại</button>{' '}
               <button className="btn btn-secondary btn-sm" onClick={onClose} id="btn-close-question">Đóng</button>
             </div>
-          ) : <QuestionForm key={detail?.id ?? 'new'} initial={isNew ? null : detail} catalog={catalog} isMock={isMock} onClose={onClose} onSaved={onSaved} onReload={reload} />}
+          ) : <QuestionForm key={detail?.id ?? 'new'} initial={isNew ? null : detail} catalog={catalog} isMock={isMock} onClose={onClose} onSaved={onSaved} onReload={reload} onShowHistory={onShowHistory} />}
       </div>
     </div>
   );
 }
 
-function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: {
+function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload, onShowHistory }: {
   initial: QuestionDetail | null; catalog: CatalogSubject[]; isMock: boolean;
-  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onReload: () => void;
+  onClose: () => void; onSaved: (mockDetail?: QuestionDetail) => void; onReload: () => void; onShowHistory: (id: string) => void;
 }) {
   const { csrfToken, apiFetch } = useAuth();
   const isNew = initial === null;
@@ -409,6 +416,11 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
           correctOption: LABELS[correct], subject: { id: subject.id, name: subject.name }, topic: { id: topic.id, name: topic.name },
           difficulty, source: source.trim() || null, ownerUserId: initial?.ownerUserId ?? 'mock-user', updatedAt: now,
           revisions: [{ revision, status: 'DRAFT', origin: 'MANUAL', createdByUserId: 'mock-user', createdAt: now }, ...(initial?.revisions ?? [])],
+          snapshots: [{
+            revision, status: 'DRAFT', origin: 'MANUAL', stem: stem.trim(), options: options.map(o => o.trim()), correctOption: LABELS[correct],
+            topic: { id: topic.id, name: topic.name }, difficulty, source: source.trim() || null, importBatchId: null, importRowNumber: null,
+            createdByUserId: 'mock-user', createdAt: now, isLatest: true, isApprovedInUse: false,
+          }, ...(initial?.snapshots ?? [])],
         };
         onSaved(saved);
         return;
@@ -498,40 +510,11 @@ function QuestionForm({ initial, catalog, isMock, onClose, onSaved, onReload }: 
           {fieldError('source')}</div>
       </div>
       <div className="modal-footer">
+        {/* The history opens above this form, which stays mounted, so what the author has typed is kept. */}
+        {!isNew && <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => onShowHistory(initial.id)} id="btn-editor-history"><History size={14} />Lịch sử revision</button>}
         <button className="btn btn-secondary" onClick={onClose} id="btn-cancel-question">Hủy</button>
         <button className={clsx('btn btn-primary', saving && 'btn-loading')} disabled={saving} onClick={save} id="btn-save-draft">Lưu nháp</button>
       </div>
     </>
-  );
-}
-
-function HistoryModal({ id, isMock, mockStore, onClose }: { id: string; isMock: boolean; mockStore: QuestionDetail[]; onClose: () => void }) {
-  const { detail, error, loading, reload } = useDetail(id, isMock, mockStore);
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <div><div className="modal-title">Lịch sử revision</div><div className="modal-subtitle">{id} · mỗi revision là bất biến</div></div>
-          <button className="modal-close" onClick={onClose} id="btn-close-history" aria-label="Đóng">✕</button>
-        </div>
-        <div className="modal-body">
-          {loading && <div className="skeleton" style={{ height: 120, borderRadius: 8 }} />}
-          {error && <div role="alert">⚠ {error} <button className="btn btn-secondary btn-sm" onClick={reload} id="btn-retry-history">Thử lại</button></div>}
-          {detail?.revisions.map((r, idx) => (
-            <div key={r.revision} style={{ display: 'flex', gap: 14, paddingBottom: 16 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 99, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                background: idx === 0 ? 'var(--brand-600)' : 'var(--gray-100)', color: idx === 0 ? 'white' : 'var(--gray-500)' }}>{r.revision}</div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 13.5 }}>
-                  Revision {r.revision} {idx === 0 && <span className="badge badge-blue" style={{ marginLeft: 6 }}>Hiện tại</span>}
-                  <span className={clsx('badge', STATUS[r.status][1])} style={{ marginLeft: 6 }}>{STATUS[r.status][0]}</span>
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--gray-500)' }}>{ORIGIN[r.origin]} · {formatDateTime(r.createdAt)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
