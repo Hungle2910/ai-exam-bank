@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace AiExamBank.Persistence.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class ExamSelectionRerunTests
 {
     private static AiExamBankDbContext Open()
