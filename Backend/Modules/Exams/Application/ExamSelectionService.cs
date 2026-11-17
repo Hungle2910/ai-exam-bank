@@ -45,7 +45,10 @@ public sealed class ExamSelectionService(IApprovedQuestionReader reader)
                 foreach (var candidate in batch) excluded.Add(candidate.Revision.QuestionId);
                 foreach (var candidate in batch.OrderBy(q => Rank(seed, q.Revision.QuestionId), StringComparer.Ordinal))
                 {
-                    if (candidate.SchoolId != schoolId || candidate.DepartmentId != departmentId ||
+                    // The reader filters by school only. A question created under an earlier subject-to-department
+                    // mapping keeps its old department, so skip it instead of failing every exam for the subject.
+                    if (candidate.DepartmentId != departmentId) continue;
+                    if (candidate.SchoolId != schoolId ||
                         candidate.SubjectId != matrix.SubjectId || candidate.TopicId != slot.TopicId || candidate.Difficulty != difficulty)
                         throw new InvalidOperationException("Approved reader returned a question outside the authorized matrix scope.");
                     // Pin and revalidate the exact revision, not the mutable question head.
