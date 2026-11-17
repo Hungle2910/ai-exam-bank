@@ -67,7 +67,7 @@ jobs:
           "$RUNNER_TEMP/blueprint-tools/dotnet-ef" database update --no-build --configuration Release \
             --project Persistence/AiExamBank.Persistence --startup-project Api
           dotnet test tests/Persistence.Tests --configuration Release --no-build --no-restore \
-            --filter FullyQualifiedName~BlueprintPersistenceTests
+            --filter "FullyQualifiedName~BlueprintPersistenceTests|FullyQualifiedName~ExamSelectionRerunTests"
           dotnet run --project Api --configuration Release --no-build --no-launch-profile -- --bootstrap-ministry-admin
           dotnet run --project Api --configuration Release --no-build --no-launch-profile --urls http://127.0.0.1:65529 &
           api_pid=$!
