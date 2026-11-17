@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Shield, Search, RefreshCw, Download, Database, UserPlus, UserMinus, CheckCircle2, XCircle, LogIn } from 'lucide-react';
+import { Shield, Search, RefreshCw, Download, UserPlus, UserMinus } from 'lucide-react';
 import clsx from 'clsx';
-import { fetchOrMock, formatDateTime } from '@/lib/fetchOrMock';
+import { formatDateTime } from '@/lib/fetchOrMock';
 
-/* ============================================================
-   TYPES & MOCK
-   ============================================================ */
+/* Role assignment audit records returned by the authenticated API. */
 
-type AuditAction = 'ROLE_GRANTED' | 'ROLE_REVOKED' | 'QUESTION_APPROVED' | 'QUESTION_REJECTED' | 'LOGIN';
+type AuditAction = 'ROLE_GRANTED' | 'ROLE_REVOKED';
 
 interface AuditEntry {
   id: string;
@@ -21,42 +19,47 @@ interface AuditEntry {
   schoolName: string;
 }
 
-const MOCK: AuditEntry[] = [
-  { id: 'a1', occurredAt: '2026-10-17T03:42:00Z', actor: 'admin.thpt.a', action: 'ROLE_GRANTED', target: 'gv.tran.thi.b', detail: 'Cấp vai trò Trưởng Bộ Môn (Toán)', schoolName: 'THPT Nguyễn Huệ' },
-  { id: 'a2', occurredAt: '2026-10-17T02:15:00Z', actor: 'tbm.toan', action: 'QUESTION_APPROVED', target: 'q-1004 rev 1', detail: 'Duyệt câu hỏi Logarit', schoolName: 'THPT Nguyễn Huệ' },
-  { id: 'a3', occurredAt: '2026-10-16T09:58:00Z', actor: 'tbm.van', action: 'QUESTION_REJECTED', target: 'q-1005 rev 1', detail: 'Lý do: Thiếu trích dẫn nguồn tài liệu', schoolName: 'THPT Lê Lợi' },
-  { id: 'a4', occurredAt: '2026-10-16T08:01:00Z', actor: 'ministry.admin', action: 'ROLE_REVOKED', target: 'gv.cu.x', detail: 'Thu hồi vai trò Giáo viên', schoolName: 'THPT Lê Lợi' },
-  { id: 'a5', occurredAt: '2026-10-16T07:30:00Z', actor: 'gv.nguyen.van.a', action: 'LOGIN', target: '—', detail: 'Đăng nhập thành công', schoolName: 'THPT Nguyễn Huệ' },
-  { id: 'a6', occurredAt: '2026-10-15T15:12:00Z', actor: 'admin.thpt.a', action: 'ROLE_GRANTED', target: 'gv.le.van.c', detail: 'Cấp vai trò Giáo viên', schoolName: 'THPT Nguyễn Huệ' },
-];
-
 const ACTION_META: Record<AuditAction, { label: string; badge: string; icon: React.ReactNode }> = {
   ROLE_GRANTED: { label: 'Cấp quyền', badge: 'badge-blue', icon: <UserPlus size={13} /> },
   ROLE_REVOKED: { label: 'Thu hồi quyền', badge: 'badge-amber', icon: <UserMinus size={13} /> },
-  QUESTION_APPROVED: { label: 'Duyệt', badge: 'badge-green', icon: <CheckCircle2 size={13} /> },
-  QUESTION_REJECTED: { label: 'Trả lại', badge: 'badge-red', icon: <XCircle size={13} /> },
-  LOGIN: { label: 'Đăng nhập', badge: 'badge-gray', icon: <LogIn size={13} /> },
 };
 
 /* ============================================================
    PAGE
    ============================================================ */
 
+function isAuditEntry(value: unknown): value is AuditEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === 'string' && typeof row.occurredAt === 'string' &&
+    typeof row.actor === 'string' && typeof row.target === 'string' &&
+    typeof row.detail === 'string' && typeof row.schoolName === 'string' &&
+    (row.action === 'ROLE_GRANTED' || row.action === 'ROLE_REVOKED');
+}
+
 export default function AuditPage() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [isMock, setIsMock] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [action, setAction] = useState<'' | AuditAction>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const r = await fetchOrMock<AuditEntry[]>('/api/v1/audit', MOCK);
-    setEntries(r.data);
-    setIsMock(r.isMock);
-    setLoading(false);
+  const load = useCallback(() => {
+    void fetch('/api/v1/audit/role-assignments?pageSize=100', { credentials: 'include' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Audit API failed');
+        const data: unknown = await response.json();
+        if (!Array.isArray(data) || !data.every(isAuditEntry)) throw new Error('Invalid audit response');
+        setEntries(data);
+        setLoadError(false);
+      })
+      .catch(() => {
+        setEntries([]);
+        setLoadError(true);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -74,7 +77,10 @@ export default function AuditPage() {
   const exportCsv = () => {
     const header = 'Thời gian,Tác nhân,Hành động,Đối tượng,Chi tiết,Trường';
     const rows = filtered.map(e => [formatDateTime(e.occurredAt), e.actor, ACTION_META[e.action].label, e.target, e.detail, e.schoolName]
-      .map(v => `"${v.replace(/"/g, '""')}"`).join(','));
+      .map(v => {
+        const safe = /^[\s\u0000-\u001f]*[=+\-@]/.test(v) ? `'${v}` : v;
+        return `"${safe.replace(/"/g, '""')}"`;
+      }).join(','));
     const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -87,10 +93,10 @@ export default function AuditPage() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Audit Log</h1>
-        <p className="page-subtitle">Lịch sử bất biến mọi thao tác phân quyền và duyệt câu hỏi</p>
+        <p className="page-subtitle">Lịch sử phân quyền đã lưu trong hệ thống (100 bản ghi mới nhất)</p>
         <div className="page-actions">
-          {isMock && <span className="badge badge-amber"><Database size={12} />Dữ liệu mẫu</span>}
-          <button className="btn btn-secondary" onClick={load} id="btn-refresh-audit"><RefreshCw size={14} /></button>
+          {loadError && <span className="badge badge-amber">Không tải được nhật ký; hãy thử lại</span>}
+          <button className="btn btn-secondary" onClick={() => { setLoading(true); load(); }} id="btn-refresh-audit"><RefreshCw size={14} /></button>
           <button className="btn btn-primary" onClick={exportCsv} disabled={filtered.length === 0} id="btn-export-audit">
             <Download size={14} />Xuất CSV
           </button>

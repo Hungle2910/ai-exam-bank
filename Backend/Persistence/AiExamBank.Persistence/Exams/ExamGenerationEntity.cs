@@ -1,5 +1,12 @@
 namespace AiExamBank.Persistence.Exams;
 
+public static class ExamGenerationStatus
+{
+    public const string Queued = "QUEUED";
+    public const string Partial = "PARTIAL";
+    public const string NeedsReview = "NEEDS_REVIEW";
+}
+
 public sealed class ExamGenerationEntity
 {
     public Guid Id { get; set; }
@@ -11,7 +18,7 @@ public sealed class ExamGenerationEntity
     public string MatrixJson { get; set; } = "";
     public string IdempotencyKey { get; set; } = "";
     public int Seed { get; set; }
-    public string Status { get; set; } = "QUEUED";
+    public string Status { get; set; } = ExamGenerationStatus.Queued;
     public Guid? JobId { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public byte[] RowVersion { get; set; } = [];
