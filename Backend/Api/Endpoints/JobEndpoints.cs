@@ -75,7 +75,12 @@ public sealed record JobApiResponse(
     string? ErrorCode,
     string? SafeMessage,
     bool? IsRetryEligible = null,
-    string? ActionableReason = null);
+    string? ActionableReason = null,
+    int AttemptCount = 0,
+    string? RetryReason = null,
+    string? ResultUrl = null,
+    bool IsRecoveredFromFailure = false,
+    DateTimeOffset? UpdatedAt = null);
 
 /// <summary>
 /// Định nghĩa các HTTP Endpoints quản lý và tra cứu tác vụ ngầm thuộc chuẩn M5-02.
@@ -241,7 +246,12 @@ public static class JobEndpoints
                     status.ErrorCode,
                     status.SafeMessage,
                     status.IsRetryEligible,
-                    status.ActionableReason));
+                    status.ActionableReason,
+                    status.AttemptCount,
+                    status.RetryReason,
+                    status.ResultUrl,
+                    status.IsRecoveredFromFailure,
+                    status.UpdatedAt));
             }
             catch (KeyNotFoundException)
             {
@@ -356,7 +366,12 @@ public static class JobEndpoints
                     j.ErrorCode,
                     j.SafeMessage,
                     j.IsRetryEligible,
-                    j.ActionableReason)).ToList();
+                    j.ActionableReason,
+                    j.AttemptCount,
+                    j.RetryReason,
+                    j.ResultUrl,
+                    j.IsRecoveredFromFailure,
+                    j.UpdatedAt)).ToList();
 
                 return Results.Ok(response);
             }
@@ -515,7 +530,12 @@ public static class JobEndpoints
                     retriedStatus.ErrorCode,
                     retriedStatus.SafeMessage,
                     retriedStatus.IsRetryEligible,
-                    retriedStatus.ActionableReason));
+                    retriedStatus.ActionableReason,
+                    retriedStatus.AttemptCount,
+                    retriedStatus.RetryReason,
+                    retriedStatus.ResultUrl,
+                    retriedStatus.IsRecoveredFromFailure,
+                    retriedStatus.UpdatedAt));
             }
             catch (KeyNotFoundException)
             {

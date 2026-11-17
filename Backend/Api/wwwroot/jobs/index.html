@@ -21,7 +21,7 @@
             </div>
             <div>
                 <h1>AI Exam Bank</h1>
-                <span class="badge-role">M5-05 Application Metrics, Alarms & SNS</span>
+                <span class="badge-role">M5-06 Recovery Drill &amp; Jobs UX MVP</span>
             </div>
         </div>
 
@@ -246,9 +246,19 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="modalDrillPreset">Kịch bản diễn tập (Failure Drill Preset):</label>
+                    <select id="modalDrillPreset">
+                        <option value="normal" selected>✅ Chạy bình thường (Normal Execution)</option>
+                        <option value="timeout-after-write">🔁 Drill 1: Timeout-After-Write Idempotency (Check-Before-Write)</option>
+                        <option value="bedrock-throttled">⚡ Drill 2: AI Provider Throttling 429 &amp; Circuit Breaker</option>
+                        <option value="s3-access-denied">🚫 Drill 3: Permanent S3 403 / Validation Error (No Retry)</option>
+                        <option value="transient-error">⏳ Drill 4: Transient Error &amp; Exponential Backoff</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label for="modalPayloadRef">Tham chiếu dữ liệu (Payload Reference):</label>
                     <input type="text" id="modalPayloadRef" value="s3://ai-exam-bank/blueprints/blueprint-math-12.json" required>
-                    <small class="form-hint">Dùng "simulate-transient-error" để thử nghiệm retry sau 1 phút; "simulate-permanent-error" để kiểm tra lỗi nghiệp vụ.</small>
+                    <small class="form-hint">Chọn Kịch bản diễn tập ở trên hoặc tự nhập Payload Reference để kiểm thử cơ chế phục hồi.</small>
                 </div>
                 <div class="form-group">
                     <label for="modalIdempotencyKey">Khóa chống trùng lặp (Idempotency Key):</label>

@@ -1079,3 +1079,109 @@ body {
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.25);
 }
 
+
+
+/* ==========================================================================
+   M5-06 Recovery Drill & Jobs UX MVP Styles
+   ========================================================================== */
+.result-link-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.result-link-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #34d399;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.result-link-pill:hover {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: #10b981;
+    transform: translateY(-1px);
+}
+
+.badge-recovered {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.badge-recovering {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(56, 189, 248, 0.16);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.attempt-count-pill {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.15);
+    color: #cbd5e1;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.result-highlight-box {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.28);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.recovery-banner {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.recovery-banner.recovered-success {
+    background: rgba(245, 158, 11, 0.1);
+    border-left: 4px solid #f59e0b;
+    color: #fde68a;
+}
+
+.recovery-banner.recovering-pending {
+    background: rgba(56, 189, 248, 0.1);
+    border-left: 4px solid #38bdf8;
+    color: #bae6fd;
+}
+
+.recovery-banner-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+    font-size: 0.86rem;
+}
+
+.attempt-card.attempt-abandoned {
+    border-left: 3px solid #f59e0b;
+    background: rgba(245, 158, 11, 0.06);
+}

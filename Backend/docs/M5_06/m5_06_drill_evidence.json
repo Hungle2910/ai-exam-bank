@@ -1,0 +1,63 @@
+{
+  "engineVersion": "job-engine/v1.6-mvp-local-slice",
+  "releaseTag": "v1.6.0-local-slice",
+  "drillExecutionTimeUtc": "2026-11-17T09:22:33.843972+00:00",
+  "gateStatus": "PARTIAL_LOCAL_SIMULATED",
+  "evidenceScope": "Local Job Engine & Simulated Handler Contract (Staging/AWS & Real DB Persistence Pending)",
+  "simulated": true,
+  "liveAws": false,
+  "realDatabasePersistenceVerified": false,
+  "scenarios": [
+    {
+      "scenarioId": "M5-06-DRILL-01",
+      "name": "Worker Crash & Stale Lease Recovery with Zombie Worker Fencing (Local Store)",
+      "status": "PASSED_LOCAL",
+      "attempt1State": "Abandoned (STALE_LEASE_RECOVERED)",
+      "attempt2State": "Completed",
+      "zombieLeaseTokenFenced": true,
+      "uxResultUrl": "/jobs/?jobId=<jobId>&resultId=exam-snap-<jobId>&jobType=ExamGeneration",
+      "isRecoveredFromFailure": true
+    },
+    {
+      "scenarioId": "M5-06-DRILL-02",
+      "name": "Timeout-After-Write Handler Contract (Simulated ResultId Reuse)",
+      "status": "PASSED_SIMULATED",
+      "simulatedExamResultReused": true,
+      "simulatedCsvBatchResultReused": true,
+      "realDbPersistenceIntegrated": false
+    },
+    {
+      "scenarioId": "M5-06-DRILL-03",
+      "name": "AI Provider Throttling (429) & Circuit Breaker Trip/Recovery",
+      "status": "PASSED_LOCAL",
+      "tripThreshold": "5 consecutive failures",
+      "deferredJobAttemptBudgetPreserved": true,
+      "snsAlertRecordedOnlyAfterPublishSuccess": true,
+      "cooldownRecoveryState": "Closed"
+    },
+    {
+      "scenarioId": "M5-06-DRILL-04",
+      "name": "Permanent Validation & S3 Access Denied (403) + CWE-209 Redaction",
+      "status": "PASSED_LOCAL",
+      "isRetryEligible": false,
+      "forcedRetryHttpStatus": 409,
+      "secretsRedacted": true
+    },
+    {
+      "scenarioId": "M5-06-DRILL-05",
+      "name": "User Cancellation & Zero-Trust Scoped Manual Retry",
+      "status": "PASSED_LOCAL",
+      "crossScopeBlocked": true,
+      "ownerManualRetryAllowed": true,
+      "noAutoApproveOrFinalizePrivilegeEscalation": true
+    },
+    {
+      "scenarioId": "M5-06-RESTART-CONSISTENCY",
+      "name": "FileJobStore Cross-Restart State & Result Link Preservation",
+      "status": "PASSED_LOCAL",
+      "jobsPreserved": true,
+      "attemptsPreserved": true,
+      "telemetrySummaryPreserved": true
+    }
+  ]
+}
