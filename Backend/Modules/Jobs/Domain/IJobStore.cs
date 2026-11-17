@@ -150,4 +150,32 @@ public interface IJobStore
     /// <param name="cancellationToken">Token hủy thao tác.</param>
     /// <returns>Danh sách các lượt chạy của tác vụ.</returns>
     Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tính toán tổng hợp số liệu thống kê độ tin cậy từ toàn bộ các Job và Attempt bền vững trong kho lưu trữ.
+    /// Giúp API Host và Worker Host dù chạy ở hai tiến trình độc lập vẫn có chung một góc nhìn số liệu đồng nhất.
+    /// </summary>
+    /// <param name="cancellationToken">Token hủy thao tác.</param>
+    /// <returns>Bản tổng hợp số liệu thống kê JobStoreMetricsSummary.</returns>
+    Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ghi nhận trạng thái Circuit Breaker của Provider vào kho lưu trữ dùng chung để chia sẻ giữa API và Worker.
+    /// </summary>
+    Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lấy danh sách trạng thái Circuit Breaker từ kho lưu trữ dùng chung liên tiến trình.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lưu vết cảnh báo sự cố đã phát vào kho lưu trữ dùng chung liên tiến trình để hiển thị trên Dashboard.
+    /// </summary>
+    Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lấy danh sách các cảnh báo sự cố gần đây từ kho lưu trữ dùng chung liên tiến trình.
+    /// </summary>
+    Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default);
 }

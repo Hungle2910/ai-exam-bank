@@ -7,7 +7,14 @@ if (-not $adminName -or -not $password) { throw 'Provide isolated test administr
 function Login([string]$name) {
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     $token = (Invoke-RestMethod "$BaseUrl/auth/csrf" -WebSession $session).token
-    $null = Invoke-WebRequest "$BaseUrl/auth/login" -Method Post -WebSession $session -Headers @{'X-CSRF-TOKEN'=$token} -ContentType 'application/json' -Body (@{userName=$name;password=$password} | ConvertTo-Json)
+    $loggedIn = $false
+    for ($attempt = 0; $attempt -lt 15; $attempt++) {
+        $response = Invoke-WebRequest "$BaseUrl/auth/login" -Method Post -WebSession $session -Headers @{'X-CSRF-TOKEN'=$token} -ContentType 'application/json' -Body (@{userName=$name;password=$password} | ConvertTo-Json) -SkipHttpErrorCheck
+        if ([int]$response.StatusCode -eq 204) { $loggedIn = $true; break }
+        if ([int]$response.StatusCode -ne 429) { throw "Login for $name failed with HTTP $($response.StatusCode)." }
+        Start-Sleep -Seconds 5
+    }
+    if (-not $loggedIn) { throw "Login rate limit did not clear for $name." }
     $token = (Invoke-RestMethod "$BaseUrl/auth/csrf" -WebSession $session).token
     return @{Session=$session;Headers=@{'X-CSRF-TOKEN'=$token}}
 }
@@ -24,6 +31,10 @@ $admin = Login $adminName
 $school = Call $admin POST '/api/v1/admin/schools' @{name="Blueprint smoke $suffix"} 201
 $schoolPath = "/api/v1/admin/schools/$($school.id)"
 $dept = Call $admin POST "$schoolPath/departments" @{name='Math'} 201
+$otherDept = Call $admin POST "$schoolPath/departments" @{name='Other department'} 201
+$foreignSchool = Call $admin POST '/api/v1/admin/schools' @{name="Foreign school $suffix"} 201
+$foreignPath = "/api/v1/admin/schools/$($foreignSchool.id)"
+$foreignDept = Call $admin POST "$foreignPath/departments" @{name='Math'} 201
 $null = Call $admin PUT "$schoolPath/subjects/8ab2a612-3558-435f-9e60-ef3f8e24a8a8" @{departmentId=$dept.id} 201
 $schoolAdminName = "bp.admin.$suffix"
 $null = Call $admin POST "$schoolPath/users" @{userName=$schoolAdminName;password=$password;role='SchoolAdmin'} 201
@@ -32,12 +43,24 @@ $teacherName = "bp.teacher.$suffix"
 $teacherUser = Call $schoolAdmin POST "$schoolPath/users" @{userName=$teacherName;password=$password;role='Teacher';departmentId=$dept.id} 201
 $otherName = "bp.other.$suffix"
 $null = Call $schoolAdmin POST "$schoolPath/users" @{userName=$otherName;password=$password;role='Teacher';departmentId=$dept.id} 201
+$otherDeptName = "bp.otherdept.$suffix"
+$null = Call $schoolAdmin POST "$schoolPath/users" @{userName=$otherDeptName;password=$password;role='Teacher';departmentId=$otherDept.id} 201
+$foreignAdminName = "bp.foreignadmin.$suffix"
+$null = Call $admin POST "$foreignPath/users" @{userName=$foreignAdminName;password=$password;role='SchoolAdmin'} 201
+$foreignAdmin = Login $foreignAdminName
+$foreignTeacherName = "bp.foreignteacher.$suffix"
+$null = Call $foreignAdmin POST "$foreignPath/users" @{userName=$foreignTeacherName;password=$password;role='Teacher';departmentId=$foreignDept.id} 201
 $teacher = Login $teacherName
 $catalog = @(Call $teacher GET '/api/v1/catalog' $null 200)
 $matrix = @{name='Blueprint smoke';subjectId=$catalog[0].id;durationMinutes=45;totalQuestions=3;totalPoints=0.75;slots=@(@{topicId=$catalog[0].topics[0].id;difficulty='EASY';questionCount=3;pointsPerQuestion=0.25})}
 $saved = Call $teacher POST '/api/v1/blueprints' $matrix 201
 $path = "/api/v1/blueprints/$($saved.id)"
 $null = Call $teacher GET $path $null 200
+$questionBody = @{stem="M3 week 2 scope check $suffix";options=@('A1','B1','C1','D1');correctOption='A';difficulty='EASY';subjectId=$catalog[0].id;topicId=$catalog[0].topics[0].id;source='M3 isolated smoke'}
+$question = Call $teacher POST '/api/v1/questions' $questionBody 201
+if ($question.status -ne 'DRAFT') { throw 'New question did not start in DRAFT.' }
+$questionPath = "/api/v1/questions/$($question.id)"
+$null = Call $teacher GET $questionPath $null 200
 $matrix.version = $saved.version
 $matrix.name = 'Saved update'
 $secondEditor = Login $teacherName
@@ -68,8 +91,24 @@ $null = Call $schoolAdmin POST '/api/v1/blueprints' $matrix 403
 $other = Login $otherName
 $null = Call $other GET $path $null 404
 $null = Call $other POST "$path/archive" @{version=$updated.version} 404
+$otherDeptTeacher = Login $otherDeptName
+$foreignTeacher = Login $foreignTeacherName
+foreach ($outsider in @($other, $otherDeptTeacher, $foreignTeacher)) {
+    $null = Call $outsider GET $path $null 404
+    $null = Call $outsider PUT $path $matrix 404
+    $null = Call $outsider GET $questionPath $null 404
+    $null = Call $outsider PUT $questionPath ($questionBody + @{baseRevision=1}) 404
+    $blueprints = Call $outsider GET '/api/v1/blueprints' $null 200
+    if ($blueprints.items.id -contains $saved.id) { throw 'Another actor can list the blueprint.' }
+    $questions = Call $outsider GET '/api/v1/questions' $null 200
+    if ($questions.items.id -contains $question.id) { throw 'Another actor can list the question.' }
+}
+$null = Call $otherDeptTeacher POST '/api/v1/blueprints' $matrix 400
+$null = Call $otherDeptTeacher POST '/api/v1/questions' $questionBody 403
+$null = Call $foreignTeacher POST '/api/v1/questions' $questionBody 400
 $anonymous = @{Session=(New-Object Microsoft.PowerShell.Commands.WebRequestSession);Headers=@{}}
 $null = Call $anonymous GET $path $null 401
+$null = Call $anonymous GET $questionPath $null 401
 $noCsrfSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $noCsrfSession.Cookies = $teacher.Session.Cookies
 $noCsrf = @{Session=$noCsrfSession;Headers=@{}}
@@ -87,4 +126,7 @@ $null = Call $schoolAdmin DELETE "/api/v1/admin/role-assignments/$($teacherUser.
 $null = Call $teacher GET $path $null 404
 $null = Call $teacher PUT $path $matrix 404
 $null = Call $teacher POST '/api/v1/blueprints' $matrix 403
-Write-Host 'Blueprint HTTP smoke passed; fixtures retained in the isolated database.'
+$null = Call $teacher GET $questionPath $null 404
+$null = Call $teacher PUT $questionPath ($questionBody + @{baseRevision=1}) 404
+$null = Call $teacher POST '/api/v1/questions' $questionBody 403
+Write-Host 'M3 week 2 Blueprint and Question HTTP scope smoke passed; fixtures retained in the isolated database.'

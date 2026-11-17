@@ -15,10 +15,12 @@ namespace AiExamBank.Api.Authentication;
 /// <param name="UserId">Mã định danh người dùng.</param>
 /// <param name="ScopeId">Mã phạm vi (trường / tổ chức / kỳ thi) được ủy quyền.</param>
 /// <param name="ScopeKind">Loại phạm vi phân quyền (School hoặc MinistryExam).</param>
+/// <param name="Role">Vai trò phân quyền được cấp rõ ràng (ví dụ: Admin, User).</param>
 public sealed record TrustedDevIdentity(
     string UserId,
     string ScopeId,
-    JobScopeKind ScopeKind = JobScopeKind.School);
+    JobScopeKind ScopeKind = JobScopeKind.School,
+    string Role = "User");
 
 /// <summary>
 /// Trình xử lý xác thực danh tính cho dịch vụ Job Engine (JobEngine Authentication Handler).
@@ -43,12 +45,12 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
     public static readonly IReadOnlyDictionary<string, TrustedDevIdentity> DevelopmentTokens =
         new Dictionary<string, TrustedDevIdentity>(StringComparer.Ordinal)
         {
-            ["dev-system-token-hn"] = new("system-user", "school-hn-01", JobScopeKind.School),
-            ["dev-teacher-hn-token"] = new("teacher-hn", "school-hn-01", JobScopeKind.School),
-            ["dev-teacher-sg-token"] = new("teacher-sg", "school-sg-02", JobScopeKind.School),
-            ["smoke-test-token-hn"] = new("smoke-tester", "school-hn-01", JobScopeKind.School),
-            ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02", JobScopeKind.School),
-            ["dev-ministry-token"] = new("ministry-officer", "national-exam-2026", JobScopeKind.MinistryExam)
+            ["dev-system-token-hn"] = new("system-user", "school-hn-01", JobScopeKind.School, "Admin"),
+            ["dev-teacher-hn-token"] = new("teacher-hn", "school-hn-01", JobScopeKind.School, "User"),
+            ["dev-teacher-sg-token"] = new("teacher-sg", "school-sg-02", JobScopeKind.School, "User"),
+            ["smoke-test-token-hn"] = new("smoke-tester", "school-hn-01", JobScopeKind.School, "User"),
+            ["smoke-test-token-sg"] = new("smoke-tester-sg", "school-sg-02", JobScopeKind.School, "User"),
+            ["dev-ministry-token"] = new("ministry-officer", "national-exam-2026", JobScopeKind.MinistryExam, "Admin")
         };
 
     [Obsolete("Use DevelopmentTokens or configure tokens via IConfiguration")]
@@ -92,6 +94,7 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
         // Trong môi trường Production/Staging: Bắt buộc đọc từ cấu hình bí mật (IConfiguration: JobEngine:TrustedTokens:<token>).
         // Token dev tĩnh tuyệt đối không được cấp quyền ngoài môi trường Development (CWE-798).
         TrustedDevIdentity? identityConfig = null;
+        string[]? configuredPermissions = null;
 
         var secretSection = _configuration.GetSection($"JobEngine:TrustedTokens:{token}");
         if (secretSection.Exists())
@@ -99,6 +102,9 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             var userId = secretSection["UserId"];
             var scopeId = secretSection["ScopeId"];
             var scopeKindStr = secretSection["ScopeKind"];
+            var roleStr = secretSection["Role"];
+            var role = string.IsNullOrWhiteSpace(roleStr) ? "User" : roleStr.Trim();
+
             var scopeKind = JobScopeKind.School;
             if (!string.IsNullOrWhiteSpace(scopeKindStr) &&
                 Enum.TryParse<JobScopeKind>(scopeKindStr, ignoreCase: true, out var parsedKind) &&
@@ -109,8 +115,11 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
 
             if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(scopeId))
             {
-                identityConfig = new TrustedDevIdentity(userId, scopeId, scopeKind);
+                identityConfig = new TrustedDevIdentity(userId, scopeId, scopeKind, role);
             }
+
+            configuredPermissions = secretSection.GetSection("Permissions").Get<string[]>()
+                ?? (string.IsNullOrWhiteSpace(secretSection["Permission"]) ? null : new[] { secretSection["Permission"]! });
         }
 
         if (identityConfig is null && _environment.IsDevelopment())
@@ -136,8 +145,28 @@ public sealed class JobEngineAuthenticationHandler : AuthenticationHandler<Authe
             new("scope_kind", identityConfig.ScopeKind.ToString()),
             new("scope_id", identityConfig.ScopeId),
             new("school_id", identityConfig.ScopeId),
-            new("scope", identityConfig.ScopeId)
+            new("scope", identityConfig.ScopeId),
+            new(ClaimTypes.Role, identityConfig.Role),
+            new("role", identityConfig.Role)
         };
+
+        if (string.Equals(identityConfig.Role, "Admin", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(identityConfig.Role, "SystemAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            claims.Add(new("permission", JobSecurityPolicies.MetricsPermission));
+            claims.Add(new("permission", JobSecurityPolicies.AdminPermission));
+        }
+
+        if (configuredPermissions is not null)
+        {
+            foreach (var perm in configuredPermissions)
+            {
+                if (!string.IsNullOrWhiteSpace(perm))
+                {
+                    claims.Add(new("permission", perm.Trim()));
+                }
+            }
+        }
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
