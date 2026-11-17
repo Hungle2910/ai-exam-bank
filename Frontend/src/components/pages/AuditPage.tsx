@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+<<<<<<< HEAD
 import {
   Shield, Search, RefreshCw, Download, UserPlus, UserMinus,
   CheckCircle2, XCircle, LogIn, FileText, Upload, Cpu, Database
@@ -10,6 +11,15 @@ import { formatDateTime } from '@/lib/fetchOrMock';
 import { useWorkflowStore, LocalAuditItem } from '@/lib/workflowStore';
 
 type AuditAction = LocalAuditItem['action'];
+=======
+import { Shield, Search, RefreshCw, Download, UserPlus, UserMinus } from 'lucide-react';
+import clsx from 'clsx';
+import { formatDateTime } from '@/lib/fetchOrMock';
+
+/* Role assignment audit records returned by the authenticated API. */
+
+type AuditAction = 'ROLE_GRANTED' | 'ROLE_REVOKED';
+>>>>>>> origin/dev
 
 interface AuditEntry {
   id: string;
@@ -22,6 +32,7 @@ interface AuditEntry {
   correlationId?: string;
 }
 
+<<<<<<< HEAD
 const ACTION_META: Record<
   AuditAction,
   { label: string; badge: string; icon: React.ReactNode }
@@ -39,6 +50,11 @@ const ACTION_META: Record<
   EXAM_FINALIZED: { label: 'Chốt đề bất biến', badge: 'badge-green', icon: <CheckCircle2 size={13} /> },
   EXAM_SELECTED: { label: 'Chọn đề kỳ thi', badge: 'badge-green', icon: <CheckCircle2 size={13} /> },
   EXAM_RETURNED: { label: 'Trả lại đề thi', badge: 'badge-red', icon: <XCircle size={13} /> },
+=======
+const ACTION_META: Record<AuditAction, { label: string; badge: string; icon: React.ReactNode }> = {
+  ROLE_GRANTED: { label: 'Cấp quyền', badge: 'badge-blue', icon: <UserPlus size={13} /> },
+  ROLE_REVOKED: { label: 'Thu hồi quyền', badge: 'badge-amber', icon: <UserMinus size={13} /> },
+>>>>>>> origin/dev
 };
 
 function isAuditEntry(value: unknown): value is AuditEntry {
@@ -57,9 +73,22 @@ function isAuditEntry(value: unknown): value is AuditEntry {
   );
 }
 
+function isAuditEntry(value: unknown): value is AuditEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.id === 'string' && typeof row.occurredAt === 'string' &&
+    typeof row.actor === 'string' && typeof row.target === 'string' &&
+    typeof row.detail === 'string' && typeof row.schoolName === 'string' &&
+    (row.action === 'ROLE_GRANTED' || row.action === 'ROLE_REVOKED');
+}
+
 export default function AuditPage() {
+<<<<<<< HEAD
   const wf = useWorkflowStore();
   const [apiEntries, setApiEntries] = useState<AuditEntry[]>([]);
+=======
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+>>>>>>> origin/dev
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sandboxMode, setSandboxMode] = useState(false);
@@ -69,6 +98,7 @@ export default function AuditPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
+<<<<<<< HEAD
   const fetchAudit = useCallback(async () => {
     try {
       const response = await fetch('/api/v1/audit/role-assignments?pageSize=100', { credentials: 'include' });
@@ -86,6 +116,22 @@ export default function AuditPage() {
     } finally {
       setLoading(false);
     }
+=======
+  const load = useCallback(() => {
+    void fetch('/api/v1/audit/role-assignments?pageSize=100', { credentials: 'include' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Audit API failed');
+        const data: unknown = await response.json();
+        if (!Array.isArray(data) || !data.every(isAuditEntry)) throw new Error('Invalid audit response');
+        setEntries(data);
+        setLoadError(false);
+      })
+      .catch(() => {
+        setEntries([]);
+        setLoadError(true);
+      })
+      .finally(() => setLoading(false));
+>>>>>>> origin/dev
   }, []);
 
   useEffect(() => {
@@ -119,6 +165,7 @@ export default function AuditPage() {
   const exportCsv = () => {
     if (sandboxMode || filtered.length === 0) return;
     const header = 'Thời gian,Tác nhân,Hành động,Đối tượng,Chi tiết,Trường';
+<<<<<<< HEAD
     const rows = filtered.map(e =>
       [
         formatDateTime(e.occurredAt),
@@ -137,6 +184,14 @@ export default function AuditPage() {
     const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], {
       type: 'text/csv;charset=utf-8',
     });
+=======
+    const rows = filtered.map(e => [formatDateTime(e.occurredAt), e.actor, ACTION_META[e.action].label, e.target, e.detail, e.schoolName]
+      .map(v => {
+        const safe = /^[\s\u0000-\u001f]*[=+\-@]/.test(v) ? `'${v}` : v;
+        return `"${safe.replace(/"/g, '""')}"`;
+      }).join(','));
+    const blob = new Blob(['\uFEFF' + [header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
+>>>>>>> origin/dev
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -147,6 +202,7 @@ export default function AuditPage() {
   return (
     <div>
       <div className="page-header">
+<<<<<<< HEAD
         <div>
           <h1 className="page-title">Audit Log</h1>
           <p className="page-subtitle">
@@ -178,6 +234,15 @@ export default function AuditPage() {
           >
             <Download size={14} />
             Xuất CSV
+=======
+        <h1 className="page-title">Audit Log</h1>
+        <p className="page-subtitle">Lịch sử phân quyền đã lưu trong hệ thống (100 bản ghi mới nhất)</p>
+        <div className="page-actions">
+          {loadError && <span className="badge badge-amber">Không tải được nhật ký; hãy thử lại</span>}
+          <button className="btn btn-secondary" onClick={() => { setLoading(true); load(); }} id="btn-refresh-audit"><RefreshCw size={14} /></button>
+          <button className="btn btn-primary" onClick={exportCsv} disabled={filtered.length === 0} id="btn-export-audit">
+            <Download size={14} />Xuất CSV
+>>>>>>> origin/dev
           </button>
         </div>
       </div>

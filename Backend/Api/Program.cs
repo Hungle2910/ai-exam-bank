@@ -1,4 +1,5 @@
 using AiExamBank.Persistence;
+using AiExamBank.Persistence.Questions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using AiExamBank.Api;
@@ -33,6 +34,9 @@ if (sessionLifetimeSeconds is < 1 or > 86400)
 builder.Services.AddDbContext<AiExamBankDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddScoped<ResourceAuthorizationService>();
+builder.Services.AddQuestionBank();
+builder.Services.AddQuestionBankOpenApi();
+builder.Services.AddScoped<AiExamBank.Persistence.Exams.BlueprintStore>();
 builder.Services.AddInfrastructureHealth();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme) //cấu hình cookie để lưu phiên đăng nhập
@@ -92,10 +96,45 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddProblemDetails();
+
+// Cấu hình Telemetry Metrics và Amazon SNS Alerting cho Job Engine (M5-05)
+builder.Services.AddSingleton<JobMetrics>(sp =>
+{
+    var env = sp.GetRequiredService<IHostEnvironment>();
+    var logger = sp.GetRequiredService<ILogger<JobMetrics>>();
+    return new JobMetrics(env.EnvironmentName, msg => logger.LogInformation("{Message}", msg));
+});
+builder.Services.AddSingleton<IJobMetrics>(sp => sp.GetRequiredService<JobMetrics>());
+builder.Services.Configure<SnsAlertOptions>(builder.Configuration.GetSection("Jobs:SnsAlerts"));
+
+// Đăng ký client AWS SNS HTTP thực tế phục vụ xuất bản thông báo khi tắt chế độ mô phỏng
+builder.Services.AddHttpClient("AwsSnsClient");
+builder.Services.AddSingleton<IAwsSnsClient>(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var logger = sp.GetRequiredService<ILogger<DefaultAwsSnsClient>>();
+    return new DefaultAwsSnsClient(httpClientFactory.CreateClient("AwsSnsClient"), opts, msg => logger.LogInformation("{Message}", msg));
+});
+
+builder.Services.AddSingleton<ISnsAlertPublisher>(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SnsAlertOptions>>().Value;
+    var logger = sp.GetRequiredService<ILogger<SnsAlertPublisher>>();
+    var awsClient = sp.GetRequiredService<IAwsSnsClient>();
+    return new SnsAlertPublisher(opts, awsClient, () => sp.GetService<IJobStore>(), msg => logger.LogInformation("{Message}", msg));
+});
+
 var configuredStorePath = JobEnginePathDefaults.ResolveStorePath(builder.Configuration["Jobs:StorePath"]);
-builder.Services.AddSingleton<IJobStore>(_ => new FileJobStore(configuredStorePath));
+builder.Services.AddSingleton<IJobStore>(sp => new FileJobStore(
+    configuredStorePath,
+    metrics: sp.GetRequiredService<IJobMetrics>(),
+    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>()));
 builder.Services.AddSingleton<JobRegistry>();
-builder.Services.AddSingleton<IAiProviderCircuitBreaker, InMemoryCircuitBreaker>();
+builder.Services.AddSingleton<IAiProviderCircuitBreaker>(sp => new InMemoryCircuitBreaker(
+    metrics: sp.GetRequiredService<IJobMetrics>(),
+    alertPublisher: sp.GetRequiredService<ISnsAlertPublisher>(),
+    store: sp.GetRequiredService<IJobStore>()));
 var allowFailureSimulation = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("Jobs:AllowFailureSimulation");
 
@@ -112,7 +151,10 @@ builder.Services.AddSingleton<IJobRegistry>(sp =>
         registry.Register(handler);
     return registry;
 });
-builder.Services.AddSingleton<JobService>();
+builder.Services.AddSingleton<JobService>(sp => new JobService(
+    sp.GetRequiredService<IJobStore>(),
+    sp.GetRequiredService<IJobMetrics>(),
+    sp.GetRequiredService<ISnsAlertPublisher>()));
 builder.Services.AddSingleton<IJobPublisher>(sp => sp.GetRequiredService<JobService>());
 builder.Services.AddSingleton<IJobTracker>(sp => sp.GetRequiredService<JobService>());
 if (!builder.Configuration.GetValue<bool>("Jobs:DisableEmbeddedWorker"))
@@ -145,6 +187,7 @@ app.MapJobEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
+    app.MapOpenApi("/openapi/{documentName}.json").AllowAnonymous();
     app.MapGet("/health/db", async (AiExamBankDbContext db) =>
         await db.Database.CanConnectAsync()
             ? Results.Ok(new { status = "connected" })
@@ -181,7 +224,12 @@ app.MapGet("/auth/me", async (
 app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
     TypedResults.Ok(new { token = antiforgery.GetAndStoreTokens(context).RequestToken }));
 
+app.MapQuestionEndpoints();
+app.MapBlueprintEndpoints();
+app.MapReviewEndpoints();
+app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
+app.MapRoleAuditEndpoints();
 app.MapSchoolAdministrationEndpoints();
 app.MapUserAdministrationEndpoints();
 

@@ -22,10 +22,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchOrMock<T>(url: string, mock: T): Promise<{ data: T; isMock: boolean }> {
+type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+/** Pass `useAuth().apiFetch` as `fetcher` so a 401 ends the session instead of only failing the call. */
+export async function fetchOrMock<T>(url: string, mock: T, fetcher: Fetcher = fetch): Promise<{ data: T; isMock: boolean }> {
   let res: Response;
   try {
-    res = await fetch(url, { credentials: 'include' });
+    res = await fetcher(url, { credentials: 'include' });
   } catch {
     if (MOCK_ENABLED) return { data: mock, isMock: true };
     throw new ApiError(0, 'Không kết nối được máy chủ');

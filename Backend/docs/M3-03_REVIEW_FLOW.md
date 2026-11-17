@@ -1,5 +1,35 @@
 # M3-03 — Question review flow
 
+## Implementation update (2026-11-16)
+
+M4-02 is now on `dev`. This branch maps the Review module's `ReviewRequired` state to
+the persisted `PendingReview` state, exposes submit/pending/decision routes, and stores
+one durable `ReviewDecision` for each decided revision. The browser supplies neither
+the reviewer identity nor school/department scope; the API loads them from the session
+and current database assignments.
+
+Each new draft starts with `ReviewVersion = 1`. Submit changes it to 2; approve or reject
+changes it to 3. This long token belongs to the revision and is distinct from M4's
+byte-array `Question.RowVersion`. EF checks the original `ReviewVersion` in the SQL
+update. Decision status and audit row are saved in one transaction, so a stale second
+reviewer receives 409 without creating another decision. A unique database index on
+`(QuestionId, Revision)` adds a second guard. Submit also updates the question row so
+its existing `RowVersion` detects a concurrent edit.
+
+The pending API pages and filters by the reviewer's assigned departments and excludes
+the question owner and revision author. The question list has a submit button, and the
+review page uses the real pending and decision routes. The earlier sections below are
+the design record; their statements that M4-02 was unmerged are historical.
+
+Local verification on 2026-11-16: migration applied to an isolated LocalDB database,
+then `Backend/tools/m303_smoke.ps1` exercised authenticated draft creation, submit
+(200), reviewer queue (one item), teacher decision (403), approve (200), stale retry
+(409), and final `APPROVED` detail. Two DepartmentHead sessions raced on a second
+revision: one returned 200 and one 409. The isolated database was dropped afterward.
+Backend build passed; Review domain tests 6/6, Persistence tests 13/13, frontend review
+and question tests 6/6, and TypeScript check passed. Remaining team-level evidence:
+approved-only exam selection through M1-03 and an integrated browser walkthrough.
+
 ## Current implementation and dependency
 
 `ReviewWorkflow` in the Review module now checks the transition, current role scope,
@@ -78,7 +108,14 @@ before wiring the route. Do not silently cast the rowversion to a number.
 Six `ReviewWorkflowTests` pass for valid transitions, owner/scope/self-review,
 missing reject reason, stale revision/version and a second sequential decision.
 These are pure domain tests, not proof of database concurrency or live API behavior.
+The Review page now has a pending/detail UI baseline: it requests the proposed
+pending endpoint, sends a decision with revision and expected version, and reloads
+on a 409. Three frontend tests cover API unavailability, decision payload and stale
+response. It does not display mock review decisions or claim a server-side transition.
+The pending response shape and version token must be reconciled with M4 before the
+UI can be used against real data.
+
 After M4-02 is merged into `dev`: map persisted status to the agreed state,
 implement the transaction and routes, add integration tests with two concurrent
-reviewers and 403/409 responses, then build the pending/detail UI baseline. AWS
+reviewers and 403/409 responses, then verify the UI with the real endpoint. AWS
 and live database evidence remain pending.

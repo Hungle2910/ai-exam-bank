@@ -1,14 +1,19 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+<<<<<<< HEAD
 import {
   ClipboardCheck, Check, X, RefreshCw, Search, Clock,
   Database, BookMarked, ShieldAlert, FileText
 } from 'lucide-react';
+=======
+import { ClipboardCheck, Check, X, RefreshCw, Search, Clock } from 'lucide-react';
+>>>>>>> origin/dev
 import clsx from 'clsx';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDateTime } from '@/lib/fetchOrMock';
+<<<<<<< HEAD
 import {
   useWorkflowStore,
   decideQuestionReviewInStore,
@@ -17,6 +22,14 @@ import {
   ReviewDecisionRecord,
 } from '@/lib/workflowStore';
 
+=======
+
+/* ============================================================
+   TYPES
+   ============================================================ */
+
+type ReviewStatus = 'REVIEW_REQUIRED' | 'APPROVED' | 'REJECTED';
+>>>>>>> origin/dev
 type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 type SourceKind = 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
 
@@ -33,17 +46,23 @@ interface ReviewItem {
   author: string;
   ownerUserName?: string;
   submittedAt: string;
+<<<<<<< HEAD
   status: 'REVIEW_REQUIRED';
   source: SourceKind;
   explanation?: string;
   citation?: QuestionCitation;
   revisions?: QuestionRevisionRecord[];
   decisions?: ReviewDecisionRecord[];
+=======
+  status: ReviewStatus;
+  source: 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
+>>>>>>> origin/dev
 }
 
 function isReviewItem(value: unknown): value is ReviewItem {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
+<<<<<<< HEAD
   return (
     typeof item.id === 'string' &&
     item.id.length > 0 &&
@@ -69,6 +88,20 @@ function isReviewItem(value: unknown): value is ReviewItem {
       item.source === 'AI_DRAFT' ||
       item.source === 'SEED')
   );
+=======
+  return typeof item.id === 'string' && item.id.length > 0 &&
+    Number.isInteger(item.revision) && Number(item.revision) > 0 &&
+    Number.isInteger(item.version) && Number(item.version) > 0 &&
+    typeof item.content === 'string' &&
+    Array.isArray(item.options) && item.options.length === 4 &&
+    item.options.every(option => typeof option === 'string') &&
+    Number.isInteger(item.correctIndex) && Number(item.correctIndex) >= 0 && Number(item.correctIndex) < 4 &&
+    typeof item.subject === 'string' && typeof item.topic === 'string' &&
+    (item.difficulty === 'EASY' || item.difficulty === 'MEDIUM' || item.difficulty === 'HARD') &&
+    typeof item.author === 'string' && typeof item.submittedAt === 'string' &&
+    item.status === 'REVIEW_REQUIRED' &&
+    (item.source === 'MANUAL' || item.source === 'IMPORT' || item.source === 'AI_DRAFT' || item.source === 'SEED');
+>>>>>>> origin/dev
 }
 
 const DIFF_LABEL: Record<Difficulty, [string, string]> = {
@@ -76,6 +109,10 @@ const DIFF_LABEL: Record<Difficulty, [string, string]> = {
   MEDIUM: ['Trung bình', 'badge-amber'],
   HARD: ['Khó', 'badge-red'],
 };
+<<<<<<< HEAD
+=======
+const SOURCE_LABEL = { MANUAL: ['Thủ công', 'badge-gray'], IMPORT: ['CSV', 'badge-teal'], AI_DRAFT: ['AI Draft', 'badge-purple'], SEED: ['Dữ liệu mẫu', 'badge-gray'] } as const;
+>>>>>>> origin/dev
 
 const SOURCE_LABEL: Record<SourceKind, [string, string]> = {
   MANUAL: ['Soạn tay', 'badge-gray'],
@@ -89,6 +126,7 @@ export default function ReviewPage() {
   const csrfToken = auth?.csrfToken ?? null;
   const currentUserName = auth?.user?.userName ?? null;
   const { success, error: showError } = useToast();
+<<<<<<< HEAD
   const wf = useWorkflowStore();
 
   const [apiItems, setApiItems] = useState<ReviewItem[]>([]);
@@ -96,15 +134,22 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true);
   const [sandboxMode, setSandboxMode] = useState(false);
 
+=======
+  const [items, setItems] = useState<ReviewItem[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(true);
+>>>>>>> origin/dev
   const [search, setSearch] = useState('');
   const [diffFilter, setDiffFilter] = useState<'' | Difficulty>('');
   const [sourceFilter, setSourceFilter] = useState<'' | SourceKind>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [lastApprovedNote, setLastApprovedNote] = useState<string | null>(null);
 
+<<<<<<< HEAD
   const fetchPending = useCallback(async () => {
     try {
       const response = await fetch('/api/v1/reviews/pending', { credentials: 'include' });
@@ -118,6 +163,19 @@ export default function ReviewPage() {
       setSandboxMode(false);
     } catch {
       setApiItems([]);
+=======
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/v1/reviews/pending?page=1&pageSize=20', { credentials: 'include' });
+      if (!response.ok) throw new Error(`Review API returned ${response.status}`);
+      const data: unknown = await response.json();
+      if (!Array.isArray(data) || !data.every(isReviewItem)) throw new Error('Invalid review response');
+      setItems(data);
+      setLoadError(false);
+    } catch {
+      setItems([]);
+>>>>>>> origin/dev
       setLoadError(true);
     } finally {
       setLoading(false);
@@ -125,6 +183,7 @@ export default function ReviewPage() {
   }, []);
 
   useEffect(() => {
+<<<<<<< HEAD
     let active = true;
     const run = async () => {
       await fetchPending();
@@ -168,6 +227,15 @@ export default function ReviewPage() {
         i.topic.toLowerCase().includes(search.toLowerCase())) &&
       (!diffFilter || i.difficulty === diffFilter) &&
       (!sourceFilter || i.source === sourceFilter),
+=======
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const visible = items.filter(i =>
+    i.status === 'REVIEW_REQUIRED' &&
+    (i.content.toLowerCase().includes(search.toLowerCase()) || i.subject.toLowerCase().includes(search.toLowerCase())),
+>>>>>>> origin/dev
   );
   const selected = items.find(i => i.id === selectedId) ?? visible[0] ?? null;
 
@@ -177,6 +245,7 @@ export default function ReviewPage() {
     (selected?.author === currentUserName || selected?.ownerUserName === currentUserName);
 
   const decide = async (approve: boolean) => {
+<<<<<<< HEAD
     if (!selected || busy) return;
     if (!approve && !reason.trim()) {
       showError('Vui lòng nhập lý do trả lại');
@@ -249,6 +318,25 @@ export default function ReviewPage() {
       setRejecting(false);
       setReason('');
       setSelectedId(null);
+=======
+    if (!selected) return;
+    if (!approve && !reason.trim()) { showError('Vui lòng nhập lý do trả lại'); return; }
+    if (!csrfToken) { showError('Phiên bảo mật chưa sẵn sàng. Hãy tải lại trang.'); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/v1/reviews/${encodeURIComponent(selected.id)}/revisions/${selected.revision}/decision`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+        body: JSON.stringify({ decision: approve ? 'Approve' : 'Reject', reason: approve ? undefined : reason.trim(), expectedVersion: selected.version }),
+      });
+      if (res.status === 409) { setConfirming(false); showError('Câu hỏi đã được người khác xử lý. Đang tải lại…'); await load(); return; }
+      if (res.status === 401 || res.status === 403) { setConfirming(false); showError('Phiên hoặc quyền duyệt đã thay đổi. Đang tải lại…'); await load(); return; }
+      if (!res.ok) { showError('Không thể lưu quyết định'); return; }
+      await load();
+      success(approve ? 'Đã duyệt câu hỏi' : 'Đã trả lại câu hỏi');
+      setRejecting(false); setConfirming(false); setReason(''); setSelectedId(null);
+>>>>>>> origin/dev
     } catch {
       showError('Lỗi kết nối');
     } finally {
@@ -266,6 +354,7 @@ export default function ReviewPage() {
           </p>
         </div>
         <div className="page-actions">
+<<<<<<< HEAD
           {sandboxMode && (
             <span className="badge badge-amber">
               <Database size={12} />
@@ -309,6 +398,14 @@ export default function ReviewPage() {
         className="review-desk-grid"
       >
         {/* Left: Queue Index */}
+=======
+          <button className="btn btn-secondary" onClick={load} id="btn-refresh-review"><RefreshCw size={14} /></button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: 20, alignItems: 'start' }} className="review-grid">
+        {/* List */}
+>>>>>>> origin/dev
         <div className="table-container">
           <div className="table-toolbar" style={{ flexWrap: 'wrap', gap: 6 }}>
             <div className="search-bar" style={{ width: '100%' }}>
@@ -349,6 +446,7 @@ export default function ReviewPage() {
           </div>
 
           {loading ? (
+<<<<<<< HEAD
             <div style={{ padding: 14 }}>
               {[0, 1, 2].map(i => (
                 <div
@@ -377,6 +475,11 @@ export default function ReviewPage() {
                 Mở hồ sơ chờ duyệt trên bàn ({sandboxItems.length} câu)
               </button>
             </div>
+=======
+            <div style={{ padding: 16 }}>{[0, 1, 2].map(i => <div key={i} className="skeleton" style={{ height: 64, marginBottom: 10, borderRadius: 8 }} />)}</div>
+          ) : loadError ? (
+            <div className="table-empty"><div className="table-empty-text">Không tải được hàng chờ duyệt. Vui lòng thử lại.</div></div>
+>>>>>>> origin/dev
           ) : visible.length === 0 ? (
             <div className="table-empty">
               <div className="table-empty-icon">
@@ -387,6 +490,7 @@ export default function ReviewPage() {
             </div>
           ) : (
             <div>
+<<<<<<< HEAD
               {visible.map(i => {
                 const isCurrent = selected?.id === i.id;
                 return (
@@ -442,10 +546,35 @@ export default function ReviewPage() {
                   </button>
                 );
               })}
+=======
+              {visible.map(i => (
+                <button key={i.id} onClick={() => { setSelectedId(i.id); setRejecting(false); setConfirming(false); setReason(''); }} id={`review-item-${i.id}`}
+                  className="review-list-item"
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', cursor: 'pointer',
+                    borderBottom: '1px solid var(--gray-100)',
+                    background: selected?.id === i.id ? 'var(--brand-50)' : 'white',
+                    borderLeft: `3px solid ${selected?.id === i.id ? 'var(--brand-500)' : 'transparent'}`,
+                    transition: 'background .15s',
+                  }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--gray-900)', marginBottom: 6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {i.content}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className="badge badge-blue">{i.subject}</span>
+                    <span className={clsx('badge', DIFF_LABEL[i.difficulty][1])}>{DIFF_LABEL[i.difficulty][0]}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--gray-400)', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={11} />{formatDateTime(i.submittedAt)}
+                    </span>
+                  </div>
+                </button>
+              ))}
+>>>>>>> origin/dev
             </div>
           )}
         </div>
 
+<<<<<<< HEAD
         {/* Right: Manuscript Sheet + Marginalia Notes Column */}
         {!selected ? (
           <div className="card" style={{ padding: 36 }}>
@@ -501,6 +630,19 @@ export default function ReviewPage() {
                     {DIFF_LABEL[selected.difficulty][0]}
                   </span>
                 </div>
+=======
+        {/* Detail */}
+        <div className="card" style={{ padding: 24 }}>
+          {!selected ? (
+            <div className="table-empty"><div className="table-empty-text">Chọn một câu hỏi để xem chi tiết</div></div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                <span className="badge badge-gray">{selected.id} · rev {selected.revision}</span>
+                <span className={clsx('badge', SOURCE_LABEL[selected.source][1])}>{SOURCE_LABEL[selected.source][0]}</span>
+                <span className="badge badge-blue">{selected.subject} / {selected.topic}</span>
+                <span className={clsx('badge', DIFF_LABEL[selected.difficulty][1])}>{DIFF_LABEL[selected.difficulty][0]}</span>
+>>>>>>> origin/dev
               </div>
 
               <div style={{ fontSize: 12.5, color: 'var(--ink-600)', marginBottom: 12 }}>
@@ -578,6 +720,7 @@ export default function ReviewPage() {
                 })}
               </div>
 
+<<<<<<< HEAD
               {selected.explanation && (
                 <div className="margin-note" style={{ marginBottom: 14 }}>
                   <strong>Lời giải / Căn cứ đáp án:</strong> {selected.explanation}
@@ -651,6 +794,30 @@ export default function ReviewPage() {
                   </span>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {rejecting ? (
+=======
+              <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginBottom: 20 }}>
+                Tác giả <strong style={{ color: 'var(--gray-700)' }}>{selected.author}</strong> · gửi lúc {formatDateTime(selected.submittedAt)}
+              </div>
+
+              {selected.status === 'REVIEW_REQUIRED' && (
+                <div style={{ borderTop: '1px solid var(--gray-100)', paddingTop: 18 }}>
+                  {rejecting && (
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="reject-reason">Lý do trả lại <span className="required">*</span></label>
+                      <textarea id="reject-reason" className="form-input" rows={3} value={reason} onChange={e => setReason(e.target.value)}
+                        placeholder="VD: Đáp án B cũng đúng, cần sửa phương án nhiễu" autoFocus style={{ resize: 'vertical' }} />
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    {confirming ? (
+                      <>
+                        <button className="btn btn-secondary" onClick={() => setConfirming(false)} id="btn-cancel-approve">Hủy</button>
+                        <button className={clsx('btn btn-success', busy && 'btn-loading')} disabled={busy} onClick={() => decide(true)} id="btn-confirm-approve">
+                          <Check size={14} />Xác nhận duyệt revision {selected.revision}
+                        </button>
+                      </>
+                    ) : rejecting ? (
+>>>>>>> origin/dev
                       <>
                         <button
                           className="btn btn-secondary"
@@ -674,6 +841,7 @@ export default function ReviewPage() {
                       </>
                     ) : (
                       <>
+<<<<<<< HEAD
                         <button
                           className="btn btn-secondary"
                           style={{ color: 'var(--danger-500)', borderColor: 'var(--danger-200)' }}
@@ -691,6 +859,11 @@ export default function ReviewPage() {
                         >
                           <Check size={14} />
                           Duyệt
+=======
+                        <button className="btn btn-secondary" onClick={() => { setRejecting(true); setConfirming(false); }} id="btn-reject"><X size={14} />Trả lại</button>
+                        <button className={clsx('btn btn-success', busy && 'btn-loading')} disabled={busy} onClick={() => setConfirming(true)} id="btn-approve">
+                          <Check size={14} />Duyệt
+>>>>>>> origin/dev
                         </button>
                       </>
                     )}

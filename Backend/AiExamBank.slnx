@@ -35,6 +35,9 @@
   <Folder Name="/tests/Architecture.Tests/">
     <Project Path="tests/Architecture.Tests/AiExamBank.Architecture.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Persistence.Tests/">
+    <Project Path="tests/Persistence.Tests/AiExamBank.Persistence.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Modules/" />
   <Folder Name="/tests/Modules/Exams.Tests/">
     <Project Path="tests/Modules/Exams.Tests/AiExamBank.Modules.Exams.Tests.csproj" />
@@ -44,6 +47,9 @@
   </Folder>
   <Folder Name="/tests/Modules/Jobs.Tests/">
     <Project Path="tests/Modules/Jobs.Tests/AiExamBank.Modules.Jobs.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/Knowledge.Tests/">
+    <Project Path="tests/Modules/Knowledge.Tests/AiExamBank.Modules.Knowledge.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Modules/Questions.Tests/">
     <Project Path="tests/Modules/Questions.Tests/AiExamBank.Modules.Questions.Tests.csproj" />
