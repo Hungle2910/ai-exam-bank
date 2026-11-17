@@ -46,12 +46,14 @@ $sa = Login $schoolAdminName
 $teacherName = "m303.teacher.$suffix"
 $headName = "m303.head.$suffix"
 $head2Name = "m303.head2.$suffix"
-Expect (Call $sa 'Post' "/api/v1/admin/schools/$schoolId/users" @{
+$teacherAccount = Call $sa 'Post' "/api/v1/admin/schools/$schoolId/users" @{
     userName = $teacherName; password = $Password; role = 'Teacher'; departmentId = $departmentId
-}) 201 'create teacher'
-Expect (Call $sa 'Post' "/api/v1/admin/schools/$schoolId/users" @{
+}
+Expect $teacherAccount 201 'create teacher'
+$headAccount = Call $sa 'Post' "/api/v1/admin/schools/$schoolId/users" @{
     userName = $headName; password = $Password; role = 'DepartmentHead'; departmentId = $departmentId
-}) 201 'create reviewer'
+}
+Expect $headAccount 201 'create reviewer'
 Expect (Call $sa 'Post' "/api/v1/admin/schools/$schoolId/users" @{
     userName = $head2Name; password = $Password; role = 'DepartmentHead'; departmentId = $departmentId
 }) 201 'create second reviewer'
@@ -105,9 +107,33 @@ $job2 = Start-ThreadJob -ScriptBlock $request -ArgumentList $decisionUrl, $head2
 $race = @((Receive-Job $job1 -Wait -AutoRemoveJob), (Receive-Job $job2 -Wait -AutoRemoveJob)) | Sort-Object
 if (($race -join ',') -ne '200,409') { throw "concurrent decisions returned $($race -join ',')" }
 
+# M3-07: a stale authenticated session must lose review access immediately after role revocation.
+$created3 = Call $teacher 'Post' '/api/v1/questions' @{
+    stem = 'Ham so nao co dao ham bang 4x^3?'
+    options = @('x', 'x^2', 'x^3', 'x^4'); correctOption = 'D'; difficulty = 'EASY'
+    subjectId = $mathId; topicId = '223f2355-059b-4195-80e0-6056ea6115f6'
+}
+Expect $created3 201 'create third draft'
+$question3 = $created3.Body.id
+Expect (Call $teacher 'Post' "/api/v1/questions/$question3/submit-review" @{ revision = 1; expectedVersion = 1 }) 200 'submit third review'
+Expect (Call $sa 'Delete' "/api/v1/admin/role-assignments/$($headAccount.Body.assignmentId)" $null) 204 'revoke reviewer'
+Expect (Call $head 'Get' '/api/v1/reviews/pending' $null) 403 'revoked reviewer queue'
+Expect (Call $head 'Post' "/api/v1/reviews/$question3/revisions/1/decision" @{ decision = 'Approve'; expectedVersion = 2 }) 403 'revoked reviewer decision'
+
+# A teacher who is later granted DepartmentHead must still be unable to approve their own revision.
+Expect (Call $sa 'Post' "/api/v1/admin/users/$($teacherAccount.Body.id)/role-assignments" @{
+    role = 'DepartmentHead'; schoolId = $schoolId; departmentId = $departmentId
+}) 201 'grant author reviewer role'
+$ownQueue = Call $teacher 'Get' '/api/v1/reviews/pending' $null
+Expect $ownQueue 200 'author reviewer queue'
+if (@($ownQueue.Body | Where-Object id -eq $question3).Count -ne 0) { throw 'Self-review in pending queue' }
+Expect (Call $teacher 'Post' "/api/v1/reviews/$question3/revisions/1/decision" @{ decision = 'Approve'; expectedVersion = 2 }) 403 'self-review decision'
+Expect (Call $head2 'Post' "/api/v1/reviews/$question3/revisions/1/decision" @{ decision = 'Approve'; expectedVersion = 2 }) 200 'other reviewer approval'
+
 [pscustomobject]@{
     QuestionId = $questionId; Submit = $submitted.Status; Pending = @($pending.Body).Count
     TeacherDecision = $teacherDecision.Status; Approve = $approved.Status
     StaleDecision = $stale.Status; FinalStatus = $detail.Body.status
     ConcurrentDecisions = ($race -join ',')
+    RevokedReviewer = 403; SelfReview = 403
 } | ConvertTo-Json -Compress

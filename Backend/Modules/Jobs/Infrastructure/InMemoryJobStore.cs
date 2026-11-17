@@ -15,16 +15,28 @@ public sealed class InMemoryJobStore : IJobStore
     private readonly Dictionary<Guid, BackgroundJob> _jobs = new();
     private readonly Dictionary<string, Guid> _idempotencyIndex = new();
     private readonly Dictionary<Guid, List<JobAttempt>> _attempts = new();
+    private readonly Dictionary<string, string> _circuitBreakerStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<IncidentAlert> _recentAlerts = new();
     private readonly Func<DateTimeOffset> _clock;
+    private readonly IJobMetrics? _metrics;
+    private readonly ISnsAlertPublisher? _alertPublisher;
 
     /// <summary>
     /// Khởi tạo In-Memory Job Store với đồng hồ thời gian (mặc định dùng DateTimeOffset.UtcNow).
-    /// Cho phép truyền mock clock để kiểm thử chính xác các tình huống quá hạn lease và retry backoff.
+    /// Cho phép truyền mock clock để kiểm thử chính xác các tình huống quá hạn lease và retry backoff,
+    /// cùng với IJobMetrics và ISnsAlertPublisher để đo lường và phát cảnh báo sự cố.
     /// </summary>
     /// <param name="clock">Hàm lấy thời gian hiện tại.</param>
-    public InMemoryJobStore(Func<DateTimeOffset>? clock = null)
+    /// <param name="metrics">Hệ thống đo lường metrics tùy chọn.</param>
+    /// <param name="alertPublisher">Dịch vụ phát cảnh báo sự cố SNS tùy chọn.</param>
+    public InMemoryJobStore(
+        Func<DateTimeOffset>? clock = null,
+        IJobMetrics? metrics = null,
+        ISnsAlertPublisher? alertPublisher = null)
     {
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _metrics = metrics;
+        _alertPublisher = alertPublisher;
     }
 
     /// <inheritdoc />
@@ -80,6 +92,8 @@ public sealed class InMemoryJobStore : IJobStore
             _jobs[newJob.Id] = newJob;
             _idempotencyIndex[idempotencyKey] = newJob.Id;
             _attempts[newJob.Id] = new List<JobAttempt>();
+
+            _metrics?.RecordJobEnqueued(newJob.Type, newJob.Scope.Kind.ToString());
 
             return Task.FromResult(CloneJob(newJob));
         }
@@ -215,6 +229,8 @@ public sealed class InMemoryJobStore : IJobStore
             eligibleJob.AttemptCount = eligibleJob.AttemptCount + 1;
             eligibleJob.UpdatedAt = now;
 
+            _metrics?.RecordJobStarted(eligibleJob.Type);
+
             if (!_attempts.TryGetValue(eligibleJob.Id, out var list))
             {
                 list = new List<JobAttempt>();
@@ -301,7 +317,8 @@ public sealed class InMemoryJobStore : IJobStore
 
             currentAttempt.Status = AttemptStatus.Completed;
             currentAttempt.FinishedAt = now;
-            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            var durationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            currentAttempt.ExecutionDurationMs = durationMs;
 
             job.Status = JobStatus.Completed;
             job.ErrorCode = null;
@@ -309,6 +326,8 @@ public sealed class InMemoryJobStore : IJobStore
             job.ResultId = resultId;
             job.ProgressPercentage = 100;
             job.UpdatedAt = now;
+
+            _metrics?.RecordJobCompleted(job.Type, durationMs);
 
             return Task.FromResult(true);
         }
@@ -338,7 +357,10 @@ public sealed class InMemoryJobStore : IJobStore
             currentAttempt.ErrorCode = errorCode;
             currentAttempt.SafeErrorMessage = sanitizedMessage;
             currentAttempt.FinishedAt = now;
-            currentAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            var durationMs = Math.Max(0, (long)(now - currentAttempt.StartedAt).TotalMilliseconds);
+            currentAttempt.ExecutionDurationMs = durationMs;
+
+            _metrics?.RecordJobFailed(job.Type, ErrorClassifier.Classify(errorCode).ToString(), errorCode, durationMs);
 
             // Khi Circuit Breaker đang ngắt mạch (Open), job bị từ chối trước khi gọi tới AI Provider.
             // Do đó hoàn lại AttemptCount (không tiêu hao ngân sách retry), giữ job ở trạng thái Pending
@@ -370,12 +392,27 @@ public sealed class InMemoryJobStore : IJobStore
             }
             else
             {
+                var isBudgetExhausted = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts;
                 job.Status = JobStatus.Failed;
-                job.ErrorCode = shouldRetry && job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts
-                    ? "RETRY_BUDGET_EXHAUSTED"
-                    : errorCode;
+                job.ErrorCode = isBudgetExhausted ? "RETRY_BUDGET_EXHAUSTED" : errorCode;
                 job.SafeErrorMessage = sanitizedMessage;
                 job.UpdatedAt = now;
+
+                if (isBudgetExhausted && _alertPublisher != null)
+                {
+                    _ = Task.Run(() => _alertPublisher.PublishIncidentAlertAsync(new IncidentAlert
+                    {
+                        IncidentType = IncidentTypes.RetryBudgetExhausted,
+                        Severity = IncidentSeverity.Warning,
+                        Title = $"Job [{job.Type}] Retry Budget Exhausted ({job.Id})",
+                        Details = $"Job {job.Id} failed after reaching maximum attempts ({BackoffJitterCalculator.DefaultMaxAttempts}). Last error: {errorCode}. Safe message: {sanitizedMessage}.",
+                        JobType = job.Type,
+                        ErrorCode = "RETRY_BUDGET_EXHAUSTED",
+                        RecommendedAction = "Inspect job payload, target data, and error logs. Retry manually via Status UI once root cause is addressed.",
+                        RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_03/M5_03_RETRY_IDEMPOTENCY_DESIGN.md",
+                        TimestampUtc = now
+                    }));
+                }
             }
 
             return Task.FromResult(true);
@@ -453,6 +490,8 @@ public sealed class InMemoryJobStore : IJobStore
                     lastAttempt.FinishedAt = now;
                     recoveredCount++;
 
+                    _metrics?.RecordLeaseRecovery(job.Type);
+
                     lastAttempt.ExecutionDurationMs = Math.Max(0, (long)(now - lastAttempt.StartedAt).TotalMilliseconds);
 
                     if (job.AttemptCount >= BackoffJitterCalculator.DefaultMaxAttempts)
@@ -480,6 +519,21 @@ public sealed class InMemoryJobStore : IJobStore
             }
         }
 
+        if (recoveredCount >= 3 && _alertPublisher != null)
+        {
+            _ = Task.Run(() => _alertPublisher.PublishIncidentAlertAsync(new IncidentAlert
+            {
+                IncidentType = IncidentTypes.StaleLeaseDetected,
+                Severity = IncidentSeverity.Warning,
+                Title = $"Multiple Stale Worker Leases Detected ({recoveredCount} jobs recovered)",
+                Details = $"Detected {recoveredCount} jobs with expired worker leases in a single scan. This indicates worker node crash, unhandled SIGKILL, or severe network partition.",
+                ErrorCode = AwsErrorCodes.StaleLeaseRecovered,
+                RecommendedAction = "Verify EC2/Container worker process status, disk pressure, and CPU utilization in AWS CloudWatch.",
+                RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md",
+                TimestampUtc = now
+            }));
+        }
+
         return Task.FromResult(recoveredCount);
     }
 
@@ -496,6 +550,133 @@ public sealed class InMemoryJobStore : IJobStore
 
             return Task.FromResult<IReadOnlyList<JobAttempt>>(Array.Empty<JobAttempt>());
         }
+    }
+
+    /// <inheritdoc />
+    public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var totalJobs = (long)_jobs.Count;
+            var pendingJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Pending);
+            var runningJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Running);
+            var completedJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Completed);
+            var failedJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Failed);
+            var cancelledJobs = (long)_jobs.Values.Count(j => j.Status == JobStatus.Cancelled);
+            var totalAttempts = (long)_attempts.Values.Sum(l => l.Count);
+            var staleRecoveries = (long)_attempts.Values.Sum(l => l.Count(a => a.ErrorCode == AwsErrorCodes.StaleLeaseRecovered || a.Status == AttemptStatus.Abandoned));
+
+            var durations = _attempts.Values
+                .SelectMany(l => l)
+                .Where(a => a.ExecutionDurationMs.HasValue && a.ExecutionDurationMs.Value >= 0)
+                .Select(a => (double)a.ExecutionDurationMs!.Value)
+                .ToArray();
+
+            Array.Sort(durations);
+
+            double avg = 0;
+            double p50 = 0;
+            double p90 = 0;
+            double p95 = 0;
+
+            if (durations.Length > 0)
+            {
+                double sum = 0;
+                foreach (var d in durations) sum += d;
+                avg = Math.Round(sum / durations.Length, 2);
+                p50 = Math.Round(GetPercentile(durations, 0.50), 2);
+                p90 = Math.Round(GetPercentile(durations, 0.90), 2);
+                p95 = Math.Round(GetPercentile(durations, 0.95), 2);
+            }
+
+            var terminal = completedJobs + failedJobs;
+            double successRate = terminal > 0 ? Math.Round((double)completedJobs / terminal * 100.0, 1) : 100.0;
+            double failureRate = terminal > 0 ? Math.Round((double)failedJobs / terminal * 100.0, 1) : 0.0;
+
+            var summary = new JobStoreMetricsSummary
+            {
+                TotalJobs = totalJobs,
+                PendingJobs = pendingJobs,
+                RunningJobs = runningJobs,
+                CompletedJobs = completedJobs,
+                FailedJobs = failedJobs,
+                CancelledJobs = cancelledJobs,
+                TotalAttempts = totalAttempts,
+                StaleRecoveries = staleRecoveries,
+                AverageDurationMs = avg,
+                P50DurationMs = p50,
+                P90DurationMs = p90,
+                P95DurationMs = p95,
+                SuccessRatePercentage = successRate,
+                FailureRatePercentage = failureRate
+            };
+
+            return Task.FromResult(summary);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            _circuitBreakerStates[provider] = state.ToString();
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var copy = new Dictionary<string, string>(_circuitBreakerStates, StringComparer.OrdinalIgnoreCase);
+            return Task.FromResult<IReadOnlyDictionary<string, string>>(copy);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(alert);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            _recentAlerts.Add(alert);
+            while (_recentAlerts.Count > 50)
+            {
+                _recentAlerts.RemoveAt(0);
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_syncRoot)
+        {
+            var copy = _recentAlerts.AsEnumerable().Reverse().ToList();
+            return Task.FromResult<IReadOnlyList<IncidentAlert>>(copy);
+        }
+    }
+
+    private static double GetPercentile(double[] sortedValues, double percentile)
+    {
+        if (sortedValues.Length == 0) return 0;
+        if (sortedValues.Length == 1) return sortedValues[0];
+
+        double rank = percentile * (sortedValues.Length - 1);
+        int low = (int)Math.Floor(rank);
+        int high = (int)Math.Ceiling(rank);
+        if (low == high) return sortedValues[low];
+
+        double weight = rank - low;
+        return sortedValues[low] * (1.0 - weight) + sortedValues[high] * weight;
     }
 
     /// <inheritdoc />
@@ -531,6 +712,8 @@ public sealed class InMemoryJobStore : IJobStore
             job.LastRetryRequestedAt = now;
             job.UpdatedAt = now;
             job.AttemptCount = 0;
+
+            _metrics?.RecordJobRetried(job.Type, isManual: true, 1);
 
             return Task.FromResult(CloneJob(job));
         }
