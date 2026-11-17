@@ -40,6 +40,43 @@ jobs:
         run: dotnet build AiExamBank.slnx --configuration Release --no-restore --warnaserror
       - name: Test .NET modules and architecture
         run: dotnet test AiExamBank.slnx --configuration Release --no-build --no-restore
+      - name: Verify Blueprint authorization and concurrency on SQL Server
+        shell: bash
+        run: |
+          export MSSQL_SA_PASSWORD="Ci9!$(openssl rand -hex 18)"
+          echo "::add-mask::$MSSQL_SA_PASSWORD"
+          export ACCEPT_EULA=Y
+          export ASPNETCORE_ENVIRONMENT=Development
+          export AIEXAMBANK_BOOTSTRAP_USERNAME=ci-blueprint-admin
+          export AIEXAMBANK_BOOTSTRAP_PASSWORD="Bp9!$(openssl rand -hex 18)"
+          echo "::add-mask::$AIEXAMBANK_BOOTSTRAP_PASSWORD"
+          export ConnectionStrings__DefaultConnection="Server=127.0.0.1,1433;Database=BlueprintCI;User ID=sa;Password=$MSSQL_SA_PASSWORD;TrustServerCertificate=True"
+          export BLUEPRINT_TEST_CONNECTION="$ConnectionStrings__DefaultConnection"
+          export Jobs__DisableEmbeddedWorker=true
+          export Jobs__StorePath="$RUNNER_TEMP/blueprint-jobs.json"
+          trap 'if [ -n "${api_pid:-}" ]; then kill "$api_pid" 2>/dev/null || true; fi; docker rm -f blueprint-sql >/dev/null 2>&1 || true' EXIT
+          docker run -d --name blueprint-sql -e ACCEPT_EULA -e MSSQL_SA_PASSWORD -p 127.0.0.1:1433:1433 \
+            mcr.microsoft.com/mssql/server:2022-latest
+          for attempt in {1..60}; do
+            if docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" blueprint-sql \
+              /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -Q 'SELECT 1' >/dev/null 2>&1; then break; fi
+            if [ "$attempt" -eq 60 ]; then echo "SQL Server failed to start"; exit 1; fi
+            sleep 2
+          done
+          dotnet tool install dotnet-ef --version 10.0.13 --tool-path "$RUNNER_TEMP/blueprint-tools"
+          "$RUNNER_TEMP/blueprint-tools/dotnet-ef" database update --no-build --configuration Release \
+            --project Persistence/AiExamBank.Persistence --startup-project Api
+          dotnet test tests/Persistence.Tests --configuration Release --no-build --no-restore \
+            --filter FullyQualifiedName~BlueprintPersistenceTests
+          dotnet run --project Api --configuration Release --no-build --no-launch-profile -- --bootstrap-ministry-admin
+          dotnet run --project Api --configuration Release --no-build --no-launch-profile --urls http://127.0.0.1:65529 &
+          api_pid=$!
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:65529/health/live >/dev/null; then break; fi
+            if [ "$attempt" -eq 30 ]; then echo "API failed to start"; exit 1; fi
+            sleep 1
+          done
+          pwsh -NoProfile -File tests/blueprint-smoke.ps1
       - name: Smoke test API liveness and error response
         run: python tests/smoke/test_api_health.py
       - name: Smoke test infrastructure health boundaries
