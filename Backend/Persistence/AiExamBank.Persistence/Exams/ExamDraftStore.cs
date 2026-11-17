@@ -42,7 +42,8 @@ public sealed class ExamDraftStore(AiExamBankDbContext db, IQuestionWriter write
                 .SingleOrDefaultAsync(x => x.ExamId == examId && x.JobId == jobId, ct);
             if (previous is not null)
             {
-                if (previous.Fingerprint != fingerprint) throw new DbUpdateConcurrencyException("Job output changed.");
+                // The saved batch is this job's final result. A rerun after a lost lease regenerates AI output that never
+                // matches the fingerprint, so return the stored links instead of failing and discard the new output.
                 var existing = await Links(examId, jobId).ToArrayAsync(ct);
                 await tx.CommitAsync(ct);
                 return existing;
