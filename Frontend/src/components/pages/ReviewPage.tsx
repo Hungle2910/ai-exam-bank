@@ -30,6 +30,23 @@ interface ReviewItem {
   source: 'MANUAL' | 'IMPORT' | 'AI_DRAFT' | 'SEED';
 }
 
+function isReviewItem(value: unknown): value is ReviewItem {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === 'string' && item.id.length > 0 &&
+    Number.isInteger(item.revision) && Number(item.revision) > 0 &&
+    Number.isInteger(item.version) && Number(item.version) > 0 &&
+    typeof item.content === 'string' &&
+    Array.isArray(item.options) && item.options.length === 4 &&
+    item.options.every(option => typeof option === 'string') &&
+    Number.isInteger(item.correctIndex) && Number(item.correctIndex) >= 0 && Number(item.correctIndex) < 4 &&
+    typeof item.subject === 'string' && typeof item.topic === 'string' &&
+    (item.difficulty === 'EASY' || item.difficulty === 'MEDIUM' || item.difficulty === 'HARD') &&
+    typeof item.author === 'string' && typeof item.submittedAt === 'string' &&
+    item.status === 'REVIEW_REQUIRED' &&
+    (item.source === 'MANUAL' || item.source === 'IMPORT' || item.source === 'AI_DRAFT' || item.source === 'SEED');
+}
+
 const DIFF_LABEL: Record<Difficulty, [string, string]> = {
   EASY: ['Dễ', 'badge-green'], MEDIUM: ['Trung bình', 'badge-amber'], HARD: ['Khó', 'badge-red'],
 };
@@ -48,6 +65,7 @@ export default function ReviewPage() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -57,8 +75,8 @@ export default function ReviewPage() {
       const response = await fetch('/api/v1/reviews/pending?page=1&pageSize=20', { credentials: 'include' });
       if (!response.ok) throw new Error(`Review API returned ${response.status}`);
       const data: unknown = await response.json();
-      if (!Array.isArray(data)) throw new Error('Invalid review response');
-      setItems(data as ReviewItem[]);
+      if (!Array.isArray(data) || !data.every(isReviewItem)) throw new Error('Invalid review response');
+      setItems(data);
       setLoadError(false);
     } catch {
       setItems([]);
@@ -82,19 +100,21 @@ export default function ReviewPage() {
   const decide = async (approve: boolean) => {
     if (!selected) return;
     if (!approve && !reason.trim()) { showError('Vui lòng nhập lý do trả lại'); return; }
+    if (!csrfToken) { showError('Phiên bảo mật chưa sẵn sàng. Hãy tải lại trang.'); return; }
     setBusy(true);
     try {
       const res = await fetch(`/api/v1/reviews/${encodeURIComponent(selected.id)}/revisions/${selected.revision}/decision`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}) },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
         body: JSON.stringify({ decision: approve ? 'Approve' : 'Reject', reason: approve ? undefined : reason.trim(), expectedVersion: selected.version }),
       });
-      if (res.status === 409) { showError('Câu hỏi đã được người khác xử lý. Đang tải lại…'); await load(); return; }
+      if (res.status === 409) { setConfirming(false); showError('Câu hỏi đã được người khác xử lý. Đang tải lại…'); await load(); return; }
+      if (res.status === 401 || res.status === 403) { setConfirming(false); showError('Phiên hoặc quyền duyệt đã thay đổi. Đang tải lại…'); await load(); return; }
       if (!res.ok) { showError('Không thể lưu quyết định'); return; }
       await load();
       success(approve ? 'Đã duyệt câu hỏi' : 'Đã trả lại câu hỏi');
-      setRejecting(false); setReason(''); setSelectedId(null);
+      setRejecting(false); setConfirming(false); setReason(''); setSelectedId(null);
     } catch {
       showError('Lỗi kết nối');
     } finally {
@@ -134,7 +154,7 @@ export default function ReviewPage() {
           ) : (
             <div>
               {visible.map(i => (
-                <button key={i.id} onClick={() => { setSelectedId(i.id); setRejecting(false); }} id={`review-item-${i.id}`}
+                <button key={i.id} onClick={() => { setSelectedId(i.id); setRejecting(false); setConfirming(false); setReason(''); }} id={`review-item-${i.id}`}
                   className="review-list-item"
                   style={{
                     display: 'block', width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', cursor: 'pointer',
@@ -209,7 +229,14 @@ export default function ReviewPage() {
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                    {rejecting ? (
+                    {confirming ? (
+                      <>
+                        <button className="btn btn-secondary" onClick={() => setConfirming(false)} id="btn-cancel-approve">Hủy</button>
+                        <button className={clsx('btn btn-success', busy && 'btn-loading')} disabled={busy} onClick={() => decide(true)} id="btn-confirm-approve">
+                          <Check size={14} />Xác nhận duyệt revision {selected.revision}
+                        </button>
+                      </>
+                    ) : rejecting ? (
                       <>
                         <button className="btn btn-secondary" onClick={() => { setRejecting(false); setReason(''); }} id="btn-cancel-reject">Hủy</button>
                         <button className={clsx('btn btn-danger', busy && 'btn-loading')} disabled={busy} onClick={() => decide(false)} id="btn-confirm-reject">
@@ -218,8 +245,8 @@ export default function ReviewPage() {
                       </>
                     ) : (
                       <>
-                        <button className="btn btn-secondary" onClick={() => setRejecting(true)} id="btn-reject"><X size={14} />Trả lại</button>
-                        <button className={clsx('btn btn-success', busy && 'btn-loading')} disabled={busy} onClick={() => decide(true)} id="btn-approve">
+                        <button className="btn btn-secondary" onClick={() => { setRejecting(true); setConfirming(false); }} id="btn-reject"><X size={14} />Trả lại</button>
+                        <button className={clsx('btn btn-success', busy && 'btn-loading')} disabled={busy} onClick={() => setConfirming(true)} id="btn-approve">
                           <Check size={14} />Duyệt
                         </button>
                       </>
