@@ -1,5 +1,7 @@
 # AI Exam Bank — Phân công triển khai cho đội 5 người
 
+Xem [đề xuất rebaseline MVP](MVP_REBASELINE_PROPOSAL.md) để đối chiếu các gói việc và phụ thuộc cần đội xác nhận theo phạm vi nhiều trường và kỳ thi cấp Bộ.
+
 Ngày lập: 04/10/2026. Member mapping: M1 Gia Hưng; M2 Hữu Phước; M3 Minh Phúc; M4 Thiên Phúc; M5 Gia Bảo.
 
 **Cập nhật phạm vi 09/10/2026:** Project owner đã mở rộng MVP sang nhiều trường và kỳ thi cấp Bộ ([ADR 0004](adr/0004-multi-school-ministry-mvp.md)). Các gói việc, effort 926 giờ và demo flow bên dưới là **baseline lịch sử trước khi mở rộng**, không phải estimate/DoD đã đủ cho phạm vi mới. M1–M5 phải bổ sung và ước lượng việc về phân tách dữ liệu trường, gán quyền theo bộ môn/kỳ thi, hai người xác nhận đề cấp Bộ, migration, kiểm thử xuyên trường và chi phí AWS trước khi chốt lại milestone. [Permission matrix](IDENTITY_AND_PERMISSIONS.md) là nguồn sự thật cho role mới.

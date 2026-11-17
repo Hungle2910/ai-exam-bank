@@ -21,7 +21,7 @@
             </div>
             <div>
                 <h1>AI Exam Bank</h1>
-                <span class="badge-role">M5-03 Retry, Idempotency & Resilient Adapters</span>
+                <span class="badge-role">M5-05 Application Metrics, Alarms & SNS</span>
             </div>
         </div>
 
@@ -48,6 +48,14 @@
                 <span class="dot pulse"></span>
                 <span class="label">Auto-Polling (2s)</span>
             </div>
+            <button id="btnTestAlertModal" class="btn btn-warning" title="Kích hoạt kiểm tra cảnh báo diễn tập qua SNS">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                Diễn Tập SNS
+            </button>
             <button id="btnCreateJobModal" class="btn btn-primary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -66,6 +74,39 @@
     </header>
 
     <main class="dashboard-container">
+        <!-- Telemetry & Reliability KPI Bar (M5-05) -->
+        <section class="telemetry-bar glass-card">
+            <div class="telemetry-item">
+                <span class="telemetry-label">Tỷ lệ thành công</span>
+                <span class="telemetry-value text-emerald" id="metricSuccessRate">100%</span>
+            </div>
+            <div class="telemetry-divider"></div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Độ trễ trung bình (Avg)</span>
+                <span class="telemetry-value text-cyan" id="metricAvgDuration">0 ms</span>
+            </div>
+            <div class="telemetry-divider"></div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Phân vị P95</span>
+                <span class="telemetry-value text-cyan" id="metricP95Duration">0 ms</span>
+            </div>
+            <div class="telemetry-divider"></div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Stale Leases Recovered</span>
+                <span class="telemetry-value text-amber" id="metricStaleRecoveries">0</span>
+            </div>
+            <div class="telemetry-divider"></div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Circuit Breaker (Bedrock)</span>
+                <span class="badge-circuit-breaker status-closed" id="metricCircuitBreaker">Closed</span>
+            </div>
+            <div class="telemetry-divider"></div>
+            <div class="telemetry-item">
+                <span class="telemetry-label">Cảnh báo SNS gần nhất</span>
+                <span class="telemetry-value text-rose" id="metricAlertCount">0</span>
+            </div>
+        </section>
+
         <!-- Stats Overview Cards -->
         <section class="stats-grid">
             <div class="stat-card" data-status="All">
@@ -154,6 +195,39 @@
             </div>
         </section>
     </main>
+
+    <!-- Modal Diễn Tập Cảnh Báo SNS (M5-05) -->
+    <div class="modal-overlay" id="testAlertModal" inert>
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h3>Diễn Tập Cảnh Báo Sự Cố qua SNS</h3>
+                <button class="btn-close" id="btnCloseTestAlertModal">&times;</button>
+            </div>
+            <form id="testAlertForm">
+                <div class="form-group">
+                    <label for="modalAlertIncidentType">Loại sự cố (Incident Type):</label>
+                    <select id="modalAlertIncidentType" required>
+                        <option value="DRILL_TEST_ALERT">DRILL_TEST_ALERT (Diễn tập kiểm tra đường truyền)</option>
+                        <option value="CIRCUIT_BREAKER_OPEN">CIRCUIT_BREAKER_OPEN (Mô phỏng ngắt mạch Bedrock)</option>
+                        <option value="STALE_LEASE_DETECTED">STALE_LEASE_DETECTED (Mô phỏng Worker Crash / Stale Lease)</option>
+                        <option value="RETRY_BUDGET_EXHAUSTED">RETRY_BUDGET_EXHAUSTED (Mô phỏng cạn ngân sách retry)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="modalAlertTitle">Tiêu đề cảnh báo (Title):</label>
+                    <input type="text" id="modalAlertTitle" value="Controlled Failure Drill Alert" required>
+                </div>
+                <div class="form-group">
+                    <label for="modalAlertDetails">Chi tiết sự cố (Details):</label>
+                    <textarea id="modalAlertDetails" rows="3" class="form-textarea" required>Thử nghiệm phát thông báo sự cố có kiểm soát để xác minh định tuyến SNS và kiểm định payload khử dữ liệu nhạy cảm (CWE-209).</textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="btnCancelTestAlertModal">Hủy</button>
+                    <button type="submit" class="btn btn-warning" id="btnSubmitTestAlert">Phát Cảnh Báo SNS</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Modal Tạo Tác Vụ Mới -->
     <div class="modal-overlay" id="createJobModal" inert>

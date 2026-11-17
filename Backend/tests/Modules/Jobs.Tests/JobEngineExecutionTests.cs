@@ -1377,6 +1377,21 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
             => _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+            => _inner.GetStoreMetricsSummaryAsync(cancellationToken);
+
+        public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default)
+            => _inner.RecordCircuitBreakerStateAsync(provider, state, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default)
+            => _inner.GetCircuitBreakerStatesAsync(cancellationToken);
+
+        public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default)
+            => _inner.RecordIncidentAlertAsync(alert, cancellationToken);
+
+        public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default)
+            => _inner.GetRecentAlertsAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1493,6 +1508,21 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default)
             => _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default)
+            => _inner.GetStoreMetricsSummaryAsync(cancellationToken);
+
+        public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default)
+            => _inner.RecordCircuitBreakerStateAsync(provider, state, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default)
+            => _inner.GetCircuitBreakerStatesAsync(cancellationToken);
+
+        public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default)
+            => _inner.RecordIncidentAlertAsync(alert, cancellationToken);
+
+        public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default)
+            => _inner.GetRecentAlertsAsync(cancellationToken);
     }
 
     private sealed class FastJobHandler : IJobHandler
@@ -1825,6 +1855,21 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
+
+        public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default) =>
+            _inner.RecordCircuitBreakerStateAsync(provider, state, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetCircuitBreakerStatesAsync(cancellationToken);
+
+        public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default) =>
+            _inner.RecordIncidentAlertAsync(alert, cancellationToken);
+
+        public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetRecentAlertsAsync(cancellationToken);
     }
 
     private sealed class ThrowingProgressJobStore : IJobStore
@@ -1870,6 +1915,21 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
+
+        public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default) =>
+            _inner.RecordCircuitBreakerStateAsync(provider, state, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetCircuitBreakerStatesAsync(cancellationToken);
+
+        public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default) =>
+            _inner.RecordIncidentAlertAsync(alert, cancellationToken);
+
+        public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetRecentAlertsAsync(cancellationToken);
     }
 
     private sealed class CountingSuccessfulJobHandler : IJobHandler
@@ -1978,5 +2038,20 @@ public sealed class JobEngineExecutionTests
 
         public Task<IReadOnlyList<JobAttempt>> GetAttemptsAsync(Guid jobId, CancellationToken cancellationToken = default) =>
             _inner.GetAttemptsAsync(jobId, cancellationToken);
+
+        public Task<JobStoreMetricsSummary> GetStoreMetricsSummaryAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetStoreMetricsSummaryAsync(cancellationToken);
+
+        public Task RecordCircuitBreakerStateAsync(string provider, CircuitBreakerState state, CancellationToken cancellationToken = default) =>
+            _inner.RecordCircuitBreakerStateAsync(provider, state, cancellationToken);
+
+        public Task<IReadOnlyDictionary<string, string>> GetCircuitBreakerStatesAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetCircuitBreakerStatesAsync(cancellationToken);
+
+        public Task RecordIncidentAlertAsync(IncidentAlert alert, CancellationToken cancellationToken = default) =>
+            _inner.RecordIncidentAlertAsync(alert, cancellationToken);
+
+        public Task<IReadOnlyList<IncidentAlert>> GetRecentAlertsAsync(CancellationToken cancellationToken = default) =>
+            _inner.GetRecentAlertsAsync(cancellationToken);
     }
 }
