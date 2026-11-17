@@ -1,6 +1,6 @@
 # M3 weeks 8–10: review and security handoff
 
-This guide prepares the remaining M3 checks. It is not a release sign-off. On 2026-11-17, the review API and its revision history are on `dev` through PR #95. M3 role-scope evidence is in PR #105; AI content gate, role audit reader, review confirmation and regression checks are in PRs #106–#109 awaiting review. M1's approved selection/finalization work and M4's AI retrieval/generation are not yet on `dev`; no release candidate or tag is available.
+This guide prepares the remaining M3 checks. It is not a release sign-off. On 2026-11-17, the review API and its revision history are on `dev` through PR #95. M3 role-scope evidence in PR #105, the AI content gate in PR #106, role audit reader in PR #107, review confirmation in PR #108, and regression checks in PR #109 are also merged into `dev`. These are partial slices; the remaining acceptance checks below still apply. M1's approved selection/finalization work and M4's AI retrieval/generation are not yet on `dev`; no release candidate or tag is available.
 
 ## Week 8: core and optional extension boundary
 
