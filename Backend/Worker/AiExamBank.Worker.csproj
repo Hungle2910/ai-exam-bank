@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Jobs\AiExamBank.Modules.Jobs.csproj" />
+    <ProjectReference Include="..\Persistence\AiExamBank.Persistence\AiExamBank.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,11 +1,23 @@
 using AiExamBank.Modules.Jobs.Contracts;
 using AiExamBank.Modules.Jobs.Domain;
 using AiExamBank.Modules.Jobs.Infrastructure;
+using AiExamBank.Persistence;
+using AiExamBank.Persistence.Exams;
+using AiExamBank.Persistence.Questions;
 using AiExamBank.Worker;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (!string.IsNullOrWhiteSpace(connectionString))
+{
+    builder.Services.AddDbContext<AiExamBankDbContext>(options => options.UseSqlServer(connectionString));
+    builder.Services.AddQuestionBank();
+    builder.Services.AddExamSelection();
+}
 
 // Cấu hình Telemetry Metrics và Amazon SNS Alerting cho Job Engine (M5-05)
 builder.Services.AddSingleton<JobMetrics>(sp =>
