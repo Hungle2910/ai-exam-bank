@@ -18,10 +18,13 @@ public sealed class ExamGenerationStore(AiExamBankDbContext db, BlueprintStore b
     {
         if (string.IsNullOrWhiteSpace(key) || key.Length > 128) throw new ArgumentException("Idempotency key must have 1–128 characters.");
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var old = await Accessible(actor, school).SingleOrDefaultAsync(e => e.IdempotencyKey == key, ct);
+        // Seek the unique (OwnerUserId, IdempotencyKey) index only. Joining roles here widens the serializable
+        // range lock, so two teachers generating at once could deadlock on insert.
+        var old = await db.Set<ExamGenerationEntity>().SingleOrDefaultAsync(e => e.OwnerUserId == actor && e.IdempotencyKey == key, ct);
         if (old is not null)
         {
-            if (old.BlueprintId != blueprintId || old.BlueprintVersion != version || old.Seed != seed)
+            if (old.SchoolId != school || !await Accessible(actor, school).AnyAsync(e => e.Id == old.Id, ct) ||
+                old.BlueprintId != blueprintId || old.BlueprintVersion != version || old.Seed != seed)
                 throw new DbUpdateConcurrencyException("The idempotency key belongs to a different request.");
             await tx.CommitAsync(ct);
             return old;
@@ -49,7 +52,21 @@ public sealed class ExamGenerationStore(AiExamBankDbContext db, BlueprintStore b
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var exam = await Accessible(actor, school).SingleOrDefaultAsync(x => x.Id == examId, ct);
         if (exam is null) return false;
-        if (exam.Status is "PARTIAL" or "NEEDS_REVIEW") { await tx.CommitAsync(ct); return true; }
+        // A rerun after a saved result is a completed job, never a second selection. The unique (ExamId, QuestionId)
+        // index would reject duplicate items, so check the stored rows as well as the status.
+        var hasItems = await db.Set<ExamItemEntity>().AnyAsync(x => x.ExamId == examId, ct);
+        var hasGaps = await db.Set<ExamGapEntity>().AnyAsync(x => x.ExamId == examId, ct);
+        if (exam.Status != ExamGenerationStatus.Queued || hasItems || hasGaps)
+        {
+            if (exam.Status == ExamGenerationStatus.Queued)
+            {
+                // Rows exist but the status was never set: repair the status from the stored result.
+                exam.Status = hasGaps ? ExamGenerationStatus.Partial : ExamGenerationStatus.NeedsReview;
+                await db.SaveChangesAsync(ct);
+            }
+            await tx.CommitAsync(ct);
+            return true;
+        }
         var blueprint = await blueprints.Accessible(actor, school).SingleOrDefaultAsync(x => x.Id == exam.BlueprintId, ct);
         if (blueprint is null || blueprint.ArchivedAtUtc is not null || Convert.ToBase64String(blueprint.RowVersion) != exam.BlueprintVersion) return false;
         var matrix = JsonSerializer.Deserialize<BlueprintMatrix>(exam.MatrixJson) ?? throw new InvalidOperationException("Missing stored matrix.");

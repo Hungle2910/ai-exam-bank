@@ -12,15 +12,24 @@ namespace AiExamBank.Modules.Jobs.Infrastructure;
 public sealed class JobService : IJobPublisher, IJobTracker
 {
     private readonly IJobStore _store;
+    private readonly IJobMetrics? _metrics;
+    private readonly ISnsAlertPublisher? _alertPublisher;
 
     /// <summary>
     /// Khởi tạo JobService với một kho lưu trữ tác vụ hợp lệ (IJobStore).
     /// </summary>
     /// <param name="store">Kho lưu trữ tác vụ (InMemoryJobStore hoặc FileJobStore).</param>
+    /// <param name="metrics">Hệ thống đo lường metrics tùy chọn.</param>
+    /// <param name="alertPublisher">Dịch vụ phát cảnh báo sự cố SNS tùy chọn.</param>
     /// <exception cref="ArgumentNullException">Ném ra khi store là null.</exception>
-    public JobService(IJobStore store)
+    public JobService(
+        IJobStore store,
+        IJobMetrics? metrics = null,
+        ISnsAlertPublisher? alertPublisher = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _metrics = metrics;
+        _alertPublisher = alertPublisher;
     }
 
     /// <inheritdoc />
@@ -224,6 +233,83 @@ public sealed class JobService : IJobPublisher, IJobTracker
         }
 
         return await _store.GetAttemptsAsync(jobRef.Value, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lấy bản tổng hợp chỉ số độ tin cậy và hiệu năng hệ thống (Reliability Summary).
+    /// </summary>
+    public async Task<ReliabilitySummaryDto> GetReliabilitySummaryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Đọc tổng hợp số liệu trực tiếp từ kho lưu trữ bền vững (IJobStore)
+        // để đảm bảo tính nhất quán (Consistent View) ngay cả khi API Host và Worker Host chạy ở các tiến trình độc lập.
+        var storeSummary = await _store.GetStoreMetricsSummaryAsync(cancellationToken);
+        var storeCbStates = await _store.GetCircuitBreakerStatesAsync(cancellationToken);
+        var storeRecentAlerts = await _store.GetRecentAlertsAsync(cancellationToken);
+
+        var snapshot = _metrics?.GetSnapshot() ?? new JobMetricsSnapshot();
+        var recentAlerts = storeRecentAlerts.Count > 0 ? storeRecentAlerts : (_alertPublisher?.GetRecentAlerts() ?? Array.Empty<IncidentAlert>());
+        var cbStates = storeCbStates.Count > 0 ? storeCbStates : snapshot.CircuitBreakerStates;
+
+        var summary = new ReliabilitySummaryDto
+        {
+            TotalEnqueued = storeSummary.TotalJobs > 0 ? storeSummary.TotalJobs : snapshot.TotalEnqueued,
+            TotalCompleted = storeSummary.CompletedJobs > 0 ? storeSummary.CompletedJobs : snapshot.TotalCompleted,
+            TotalFailed = storeSummary.FailedJobs > 0 ? storeSummary.FailedJobs : snapshot.TotalFailed,
+            TotalRetries = storeSummary.TotalAttempts > storeSummary.TotalJobs ? (storeSummary.TotalAttempts - storeSummary.TotalJobs) : snapshot.TotalRetries,
+            ActivePending = storeSummary.TotalJobs > 0 ? storeSummary.PendingJobs : snapshot.ActivePending,
+            ActiveRunning = storeSummary.TotalJobs > 0 ? storeSummary.RunningJobs : snapshot.ActiveRunning,
+            StaleLeaseRecoveries = storeSummary.StaleRecoveries > 0 ? storeSummary.StaleRecoveries : snapshot.StaleLeaseRecoveries,
+            SuccessRatePercentage = storeSummary.TotalJobs > 0 ? storeSummary.SuccessRatePercentage : snapshot.SuccessRatePercentage,
+            FailureRatePercentage = storeSummary.TotalJobs > 0 ? storeSummary.FailureRatePercentage : snapshot.FailureRatePercentage,
+            AverageDurationMs = storeSummary.AverageDurationMs > 0 ? storeSummary.AverageDurationMs : snapshot.AverageDurationMs,
+            P50DurationMs = storeSummary.P50DurationMs > 0 ? storeSummary.P50DurationMs : snapshot.P50DurationMs,
+            P90DurationMs = storeSummary.P90DurationMs > 0 ? storeSummary.P90DurationMs : snapshot.P90DurationMs,
+            P95DurationMs = storeSummary.P95DurationMs > 0 ? storeSummary.P95DurationMs : snapshot.P95DurationMs,
+            CircuitBreakerStates = cbStates,
+            ProviderErrors = snapshot.ProviderErrors,
+            RecentAlerts = recentAlerts,
+            CalculatedAt = DateTimeOffset.UtcNow
+        };
+
+        return summary;
+    }
+
+    /// <summary>
+    /// Kích hoạt một cảnh báo sự cố diễn tập (Drill Test Alert) để kiểm tra khả năng định tuyến và kiểm định payload SNS.
+    /// </summary>
+    public async Task<PublishAlertResult> TriggerTestAlertAsync(
+        string requesterId,
+        string? title = null,
+        string? details = null,
+        string? jobType = null,
+        string? provider = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_alertPublisher is null)
+        {
+            return PublishAlertResult.Failed("SNS Alert Publisher is not configured.");
+        }
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.DrillTestAlert,
+            Severity = IncidentSeverity.Info,
+            Title = string.IsNullOrWhiteSpace(title) ? "Controlled Failure Drill Test Alert" : title.Trim(),
+            Details = string.IsNullOrWhiteSpace(details)
+                ? $"Drill initiated by {requesterId} to verify Amazon SNS alert routing and notification payload integrity."
+                : details.Trim(),
+            JobType = jobType,
+            Provider = provider ?? "AWS_BEDROCK",
+            RecommendedAction = "No action required. This is an operational drill to confirm notification channel delivery.",
+            RunbookUrl = "https://github.com/Hungle2910/ai-exam-bank/blob/dev/Backend/docs/M5_04/M5_04_FAILURE_DRILL_RUNBOOK.md",
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+
+        return await _alertPublisher.PublishIncidentAlertAsync(alert, cancellationToken);
     }
 
     private static JobStatusDto MapToDto(BackgroundJob job)
