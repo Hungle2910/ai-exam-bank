@@ -17,7 +17,7 @@ afterEach(() => {
 
 const item = {
   id: 'question-1', revision: 2, version: 7, content: 'What is 2 + 2?',
-  options: ['3', '4'], correctIndex: 1, subject: 'Math', topic: 'Arithmetic',
+  options: ['3', '4', '5', '6'], correctIndex: 1, subject: 'Math', topic: 'Arithmetic',
   difficulty: 'EASY', points: 1, author: 'Teacher', submittedAt: '2026-11-01T00:00:00Z',
   status: 'REVIEW_REQUIRED', source: 'MANUAL',
 };
@@ -42,6 +42,8 @@ it('sends the selected revision and version, then reloads the pending list', asy
   const view = render(<ReviewPage />);
   await waitFor(() => expect(view.getAllByText('What is 2 + 2?').length).toBe(2));
   fireEvent.click(view.getByRole('button', { name: 'Duyệt' }));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.click(view.getByRole('button', { name: 'Xác nhận duyệt revision 2' }));
 
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   const [url, init] = fetchMock.mock.calls[1];
@@ -61,8 +63,19 @@ it('reloads after a stale decision and never reports success', async () => {
   const view = render(<ReviewPage />);
   await waitFor(() => expect(view.getAllByText('What is 2 + 2?').length).toBe(2));
   fireEvent.click(view.getByRole('button', { name: 'Duyệt' }));
+  fireEvent.click(view.getByRole('button', { name: 'Xác nhận duyệt revision 2' }));
 
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   expect(toast.error).toHaveBeenCalledWith('Câu hỏi đã được người khác xử lý. Đang tải lại…');
   expect(toast.success).not.toHaveBeenCalled();
+});
+
+it('fails closed when the pending API returns an invalid revision', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ ...item, version: 0 }] });
+  vi.stubGlobal('fetch', fetchMock);
+
+  const view = render(<ReviewPage />);
+  await waitFor(() => expect(view.getByText('Không tải được hàng chờ duyệt. Vui lòng thử lại.')).toBeDefined());
+  expect(view.queryByRole('button', { name: 'Duyệt' })).toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });
