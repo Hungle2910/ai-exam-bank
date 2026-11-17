@@ -74,7 +74,7 @@ public sealed class RecoveryDrillAndUxMvpTests
         Assert.AreEqual(2, finalStatus.AttemptCount);
         Assert.IsTrue(finalStatus.IsRecoveredFromFailure);
         Assert.AreEqual(expectedSnapshotId, finalStatus.ResultId);
-        Assert.AreEqual($"/exams/preview?snapshotId={expectedSnapshotId}", finalStatus.ResultUrl);
+        Assert.AreEqual($"/jobs/?jobId={jobRef.Value:D}&resultId={expectedSnapshotId}&jobType=ExamGeneration", finalStatus.ResultUrl);
         Assert.IsNotNull(finalStatus.UpdatedAt);
 
         var attempts = await service.GetJobAttemptsAsync(jobRef, "teacher-01", SchoolHn01);
@@ -133,12 +133,12 @@ public sealed class RecoveryDrillAndUxMvpTests
         Assert.IsTrue(csvResultAttempt2.Succeeded);
         Assert.AreEqual($"import-batch-{csvJobId.Value:N}", csvResultAttempt2.ResultId);
 
-        // Verify ResultUrl mapping for both ExamGeneration and CsvImport
+        // Verify ResultUrl mapping points to the real /jobs/ UI route for both ExamGeneration and CsvImport
         var examUrl = JobService.BuildResultUrl("ExamGeneration", examJobId.Value, examResultAttempt2.ResultId, JobStatus.Completed);
         var csvUrl = JobService.BuildResultUrl("CsvImport", csvJobId.Value, csvResultAttempt2.ResultId, JobStatus.Completed);
 
-        Assert.AreEqual($"/exams/preview?snapshotId=exam-snap-{examJobId.Value:N}", examUrl);
-        Assert.AreEqual($"/questions?importBatchId=import-batch-{csvJobId.Value:N}", csvUrl);
+        Assert.AreEqual($"/jobs/?jobId={examJobId.Value:D}&resultId=exam-snap-{examJobId.Value:N}&jobType=ExamGeneration", examUrl);
+        Assert.AreEqual($"/jobs/?jobId={csvJobId.Value:D}&resultId=import-batch-{csvJobId.Value:N}&jobType=CsvImport", csvUrl);
     }
 
     [TestMethod]
@@ -385,7 +385,7 @@ public sealed class RecoveryDrillAndUxMvpTests
                 Assert.IsTrue(reloadedStatus.IsRecoveredFromFailure);
                 Assert.AreEqual("Tự động phục hồi sau khi Worker bị mất tín hiệu Heartbeat.", reloadedStatus.RetryReason);
                 Assert.AreEqual(expectedSnapshotId, reloadedStatus.ResultId);
-                Assert.AreEqual($"/exams/preview?snapshotId={expectedSnapshotId}", reloadedStatus.ResultUrl);
+                Assert.AreEqual($"/jobs/?jobId={recoveredJobId:D}&resultId={expectedSnapshotId}&jobType=ExamGeneration", reloadedStatus.ResultUrl);
 
                 var reloadedAttempts = await service2.GetJobAttemptsAsync(JobRef.Create(recoveredJobId), "teacher-01", SchoolHn01);
                 Assert.HasCount(2, reloadedAttempts);
@@ -403,6 +403,67 @@ public sealed class RecoveryDrillAndUxMvpTests
             {
                 File.Delete(tempFile);
             }
+        }
+    }
+
+    [TestMethod]
+    public async Task SnsAlertPublisher_FailedLivePublish_DoesNotRecordAlertOrThrottleSubsequentRetryAcrossProcesses()
+    {
+        var store = new InMemoryJobStore();
+        var liveOptions = new SnsAlertOptions
+        {
+            IsEnabled = true,
+            UseMockSimulation = false,
+            TopicArn = "arn:aws:sns:ap-southeast-1:123456789012:ai-exam-bank-alerts",
+            ThrottleWindowSeconds = 300
+        };
+
+        var alert = new IncidentAlert
+        {
+            IncidentType = IncidentTypes.CircuitBreakerOpen,
+            Severity = IncidentSeverity.Critical,
+            Title = "AWS Bedrock Circuit Open",
+            Details = "5 consecutive failures detected.",
+            JobType = "ExamGeneration",
+            Provider = "AWS_BEDROCK"
+        };
+
+        // Process 1: Live SNS client throws network error -> Publish fails
+        var failingClient = new StubAwsSnsClient(shouldFail: true);
+        var publisherProcess1 = new SnsAlertPublisher(liveOptions, failingClient, store);
+
+        var failedResult = await publisherProcess1.PublishIncidentAlertAsync(alert);
+        Assert.IsFalse(failedResult.Success);
+        Assert.IsFalse(failedResult.WasThrottled);
+
+        // Shared store and in-memory queue must NOT record the failed alert
+        var alertsAfterFailure = await store.GetRecentAlertsAsync();
+        Assert.IsEmpty(alertsAfterFailure, "Failed SNS publish must not persist alert into shared store.");
+        Assert.IsEmpty(publisherProcess1.GetRecentAlerts());
+
+        // Process 2: Immediately retries the same alert within the 300s window using healthy SNS client -> Must succeed without being throttled
+        var healthyClient = new StubAwsSnsClient(shouldFail: false);
+        var publisherProcess2 = new SnsAlertPublisher(liveOptions, healthyClient, store);
+
+        var retryResult = await publisherProcess2.PublishIncidentAlertAsync(alert);
+        Assert.IsTrue(retryResult.Success, "Subsequent retry after failed SNS publish must not be throttled.");
+        Assert.IsFalse(retryResult.WasThrottled);
+        Assert.AreEqual("sns-live-msg-001", retryResult.MessageId);
+
+        var alertsAfterSuccess = await store.GetRecentAlertsAsync();
+        Assert.HasCount(1, alertsAfterSuccess);
+    }
+
+    private sealed class StubAwsSnsClient(bool shouldFail) : IAwsSnsClient
+    {
+        public Task<string> PublishAsync(string topicArn, string message, string? subject = null, CancellationToken cancellationToken = default)
+        {
+            if (shouldFail)
+            {
+                throw new HttpRequestException("Simulated transient network failure to Amazon SNS endpoint.");
+            }
+
+            return Task.FromResult("sns-live-msg-001");
         }
     }
 }

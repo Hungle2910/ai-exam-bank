@@ -182,44 +182,46 @@ def generate_redacted_evidence():
     print(f"[OK] Redacted evidence artifact saved: {OUTPUT_EVIDENCE}")
 
     m506_evidence = {
-        "engineVersion": "job-engine/v1.6-mvp-gate",
-        "releaseTag": "v1.6.0-mvp",
+        "engineVersion": "job-engine/v1.6-mvp-local-slice",
+        "releaseTag": "v1.6.0-local-slice",
         "drillExecutionTimeUtc": timestamp,
-        "gateStatus": "PASSED",
-        "rpoDataLoss": 0,
-        "duplicateCreationCount": 0,
+        "gateStatus": "PARTIAL_LOCAL_SIMULATED",
+        "evidenceScope": "Local Job Engine & Simulated Handler Contract (Staging/AWS & Real DB Persistence Pending)",
+        "simulated": True,
+        "liveAws": False,
+        "realDatabasePersistenceVerified": False,
         "scenarios": [
             {
                 "scenarioId": "M5-06-DRILL-01",
-                "name": "Worker Crash & Stale Lease Recovery with Zombie Worker Fencing",
-                "status": "PASSED",
+                "name": "Worker Crash & Stale Lease Recovery with Zombie Worker Fencing (Local Store)",
+                "status": "PASSED_LOCAL",
                 "attempt1State": "Abandoned (STALE_LEASE_RECOVERED)",
                 "attempt2State": "Completed",
                 "zombieLeaseTokenFenced": True,
-                "uxResultUrl": "/exams/preview?snapshotId=exam-snap-<jobId>",
+                "uxResultUrl": "/jobs/?jobId=<jobId>&resultId=exam-snap-<jobId>&jobType=ExamGeneration",
                 "isRecoveredFromFailure": True
             },
             {
                 "scenarioId": "M5-06-DRILL-02",
-                "name": "Timeout-After-Write Idempotency (ExamGeneration & CsvImport)",
-                "status": "PASSED",
-                "examResultReused": True,
-                "csvBatchResultReused": True,
-                "duplicateQuestionsOrSnapshots": 0
+                "name": "Timeout-After-Write Handler Contract (Simulated ResultId Reuse)",
+                "status": "PASSED_SIMULATED",
+                "simulatedExamResultReused": True,
+                "simulatedCsvBatchResultReused": True,
+                "realDbPersistenceIntegrated": False
             },
             {
                 "scenarioId": "M5-06-DRILL-03",
                 "name": "AI Provider Throttling (429) & Circuit Breaker Trip/Recovery",
-                "status": "PASSED",
+                "status": "PASSED_LOCAL",
                 "tripThreshold": "5 consecutive failures",
                 "deferredJobAttemptBudgetPreserved": True,
-                "snsAlertPublishedAndRedacted": True,
+                "snsAlertRecordedOnlyAfterPublishSuccess": True,
                 "cooldownRecoveryState": "Closed"
             },
             {
                 "scenarioId": "M5-06-DRILL-04",
                 "name": "Permanent Validation & S3 Access Denied (403) + CWE-209 Redaction",
-                "status": "PASSED",
+                "status": "PASSED_LOCAL",
                 "isRetryEligible": False,
                 "forcedRetryHttpStatus": 409,
                 "secretsRedacted": True
@@ -227,7 +229,7 @@ def generate_redacted_evidence():
             {
                 "scenarioId": "M5-06-DRILL-05",
                 "name": "User Cancellation & Zero-Trust Scoped Manual Retry",
-                "status": "PASSED",
+                "status": "PASSED_LOCAL",
                 "crossScopeBlocked": True,
                 "ownerManualRetryAllowed": True,
                 "noAutoApproveOrFinalizePrivilegeEscalation": True
@@ -235,7 +237,7 @@ def generate_redacted_evidence():
             {
                 "scenarioId": "M5-06-RESTART-CONSISTENCY",
                 "name": "FileJobStore Cross-Restart State & Result Link Preservation",
-                "status": "PASSED",
+                "status": "PASSED_LOCAL",
                 "jobsPreserved": True,
                 "attemptsPreserved": True,
                 "telemetrySummaryPreserved": True

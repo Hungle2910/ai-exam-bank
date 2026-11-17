@@ -138,31 +138,15 @@ public class SnsAlertPublisher : ISnsAlertPublisher
             TimestampUtc = now
         };
 
-        // 3. Cập nhật timestamp lần phát gần nhất
-        _lastAlertTimestamps[throttleKey] = now;
-
-        // 4. Lưu vết vào Recent Alerts Audit Queue (cả in-memory và store bền vững liên tiến trình)
-        _recentAlerts.Enqueue(sanitizedAlert);
-        while (_recentAlerts.Count > MaxRecentAlerts && _recentAlerts.TryDequeue(out _)) { }
-        if (store != null)
-        {
-            try
-            {
-                await store.RecordIncidentAlertAsync(sanitizedAlert, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Log($"[SNS-ALERT] Failed to persist incident alert to shared store: {ex.Message}");
-            }
-        }
-
-        // 5. Định dạng thông điệp theo chuẩn AWS SNS Payload
+        // 3. Định dạng thông điệp theo chuẩn AWS SNS Payload
         var snsMessageBody = FormatSnsPayload(sanitizedAlert);
 
-        // 6. Phát cảnh báo: Phân biệt rõ chế độ Mock Simulation vs Live AWS SNS
+        // 4. Phát cảnh báo: Phân biệt rõ chế độ Mock Simulation vs Live AWS SNS.
+        // Chỉ ghi nhận vào bộ nhớ và IJobStore SAU KHI gửi thành công để tránh việc lần gửi lỗi chặn (throttle) lần thử lại kế tiếp.
         if (_options.UseMockSimulation)
         {
             var mockMessageId = $"sns-mock-{Guid.NewGuid():N}";
+            await RecordPublishedAlertAsync(throttleKey, now, sanitizedAlert, store, cancellationToken);
             Log($"🧪 [SNS ALERT SIMULATED] [{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType} - {sanitizedAlert.Title}. MessageId: {mockMessageId}. Mode: MockSimulation. Target Topic: {_options.TopicArn ?? "arn:aws:sns:local:mock-topic"}");
             Log($"SNS Payload:\n{snsMessageBody}");
             return PublishAlertResult.Succeeded(mockMessageId);
@@ -191,6 +175,7 @@ public class SnsAlertPublisher : ISnsAlertPublisher
                 $"[{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType}",
                 cancellationToken);
 
+            await RecordPublishedAlertAsync(throttleKey, now, sanitizedAlert, store, cancellationToken);
             Log($"🚨 [SNS ALERT PUBLISHED LIVE] [{sanitizedAlert.Severity}] {sanitizedAlert.IncidentType} - {sanitizedAlert.Title}. MessageId: {liveMessageId}. Target Topic: {_options.TopicArn}");
             return PublishAlertResult.Succeeded(liveMessageId);
         }
@@ -199,6 +184,30 @@ public class SnsAlertPublisher : ISnsAlertPublisher
             var error = $"AWS SNS Publish failed: {ex.Message}";
             Log($"❌ [SNS ALERT FAILED] {error}");
             return PublishAlertResult.Failed(error);
+        }
+    }
+
+    private async Task RecordPublishedAlertAsync(
+        string throttleKey,
+        DateTimeOffset timestamp,
+        IncidentAlert sanitizedAlert,
+        IJobStore? store,
+        CancellationToken cancellationToken)
+    {
+        _lastAlertTimestamps[throttleKey] = timestamp;
+        _recentAlerts.Enqueue(sanitizedAlert);
+        while (_recentAlerts.Count > MaxRecentAlerts && _recentAlerts.TryDequeue(out _)) { }
+
+        if (store != null)
+        {
+            try
+            {
+                await store.RecordIncidentAlertAsync(sanitizedAlert, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log($"[SNS-ALERT] Failed to persist incident alert to shared store: {ex.Message}");
+            }
         }
     }
 

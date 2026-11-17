@@ -344,7 +344,8 @@ public sealed class JobService : IJobPublisher, IJobTracker
     }
 
     /// <summary>
-    /// Xây dựng liên kết điều hướng trực tiếp tới tài nguyên kết quả dựa trên loại tác vụ.
+    /// Xây dựng liên kết điều hướng trực tiếp tới trang tra cứu kết quả thực tế trên Status UI (/jobs/).
+    /// Tránh trỏ tới các route chưa tồn tại (/exams/preview, /questions) gây lỗi 404 khi bấm mở kết quả.
     /// </summary>
     public static string? BuildResultUrl(string jobType, Guid jobId, string? resultId, JobStatus status)
     {
@@ -354,16 +355,7 @@ public sealed class JobService : IJobPublisher, IJobTracker
         }
 
         var encodedResultId = Uri.EscapeDataString(resultId.Trim());
-        if (string.Equals(jobType, "ExamGeneration", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"/exams/preview?snapshotId={encodedResultId}";
-        }
-
-        if (string.Equals(jobType, "CsvImport", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"/questions?importBatchId={encodedResultId}";
-        }
-
-        return $"/jobs?jobId={jobId:D}&resultId={encodedResultId}";
+        var encodedJobType = Uri.EscapeDataString(string.IsNullOrWhiteSpace(jobType) ? "Job" : jobType.Trim());
+        return $"/jobs/?jobId={jobId:D}&resultId={encodedResultId}&jobType={encodedJobType}";
     }
 }

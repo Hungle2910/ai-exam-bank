@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentFetchJobsSequence = 0;
     let isFetchingJobs = false;
     let lastFetchError = null;
+    let hasHandledInitialDeepLink = false;
 
     // DOM Elements
     const scopeKindSelect = document.getElementById('scopeKindSelect');
@@ -230,6 +231,18 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTable();
             fetchMetricsSummary(); // Đồng bộ số liệu đo lường Telemetry (M5-05)
 
+            if (!hasHandledInitialDeepLink && jobsList.length > 0) {
+                const params = new URLSearchParams(window.location.search);
+                const deepJobId = params.get('jobId');
+                if (deepJobId && jobsList.some(j => j.jobId.toLowerCase() === deepJobId.toLowerCase())) {
+                    hasHandledInitialDeepLink = true;
+                    const matched = jobsList.find(j => j.jobId.toLowerCase() === deepJobId.toLowerCase());
+                    if (matched) {
+                        window.viewJobDetail(matched.jobId, true);
+                    }
+                }
+            }
+
             // Adaptive Polling: nếu còn job Running hoặc Pending thì poll nhanh (2s), nếu không thì giãn cách (5s)
             const hasActiveJobs = jobsList.some(j => j.status === 'Running' || j.status === 'Pending');
             adjustPollingInterval(hasActiveJobs ? 2000 : 5000);
@@ -389,10 +402,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     : '');
 
             if (isCompleted && job.resultId) {
-                const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || `/jobs?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}`;
+                const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || `/jobs/?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}`;
                 detailHtml = `
                     <div class="result-link-group">
-                        <a href="${escapeHtml(safeResultUrl)}" class="result-link-pill" title="Điều hướng tới tài nguyên: ${escapeHtml(job.resultId)}">
+                        <a href="${escapeHtml(safeResultUrl)}" class="result-link-pill" onclick="window.openJobResult('${job.jobId}', event)" title="Mở chi tiết kết quả: ${escapeHtml(job.resultId)}">
                             🔗 ${escapeHtml(job.resultId)}
                         </a>
                         ${recoveryBadgeHtml}
@@ -419,9 +432,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isPending || isRunning) {
                 actionHtml = `<button class="btn btn-xs btn-danger-outline" onclick="window.cancelJob('${job.jobId}')">Hủy</button>`;
             } else if (isCompleted) {
-                const safeOpenUrl = sanitizeRelativeUrl(job.resultUrl);
+                const safeOpenUrl = sanitizeRelativeUrl(job.resultUrl) || (job.resultId ? `/jobs/?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}` : null);
                 const openLinkBtn = safeOpenUrl
-                    ? `<a href="${escapeHtml(safeOpenUrl)}" class="btn btn-xs btn-primary-outline" title="Mở trực tiếp tài nguyên kết quả">🔗 Mở KQ</a>`
+                    ? `<a href="${escapeHtml(safeOpenUrl)}" class="btn btn-xs btn-primary-outline" onclick="window.openJobResult('${job.jobId}', event)" title="Mở trực tiếp kết quả tác vụ">🔗 Mở KQ</a>`
                     : '';
                 actionHtml = `
                     ${openLinkBtn}
@@ -484,6 +497,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (job && job.resultId) {
             window.copyToClipboard(job.resultId);
         }
+    };
+
+    window.copyResultLinkByJob = (jobId) => {
+        const job = jobsList.find(j => j.jobId === jobId);
+        if (!job) return;
+        const relUrl = sanitizeRelativeUrl(job.resultUrl) || `/jobs/?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId || '')}`;
+        const fullUrl = new URL(relUrl, window.location.origin).toString();
+        window.copyToClipboard(fullUrl);
+    };
+
+    window.openJobResult = (jobId, event) => {
+        if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+        }
+        const job = jobsList.find(j => j.jobId === jobId);
+        if (!job) return;
+        const safeUrl = sanitizeRelativeUrl(job.resultUrl) || `/jobs/?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId || '')}`;
+        if (window.history && typeof window.history.replaceState === 'function') {
+            window.history.replaceState(null, '', safeUrl);
+        }
+        window.viewJobDetail(jobId, true);
     };
 
     window.retryJob = async (jobId) => {
@@ -564,11 +598,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    window.viewJobDetail = (jobId) => {
+    window.viewJobDetail = (jobId, focusResult = false) => {
         const job = jobsList.find(j => j.jobId === jobId);
         if (!job) return;
 
-        drawerTitle.textContent = `Tác vụ #${job.jobId.substring(0, 8)}...`;
+        drawerTitle.textContent = focusResult
+            ? `Kết quả tác vụ #${job.jobId.substring(0, 8)}...`
+            : `Tác vụ #${job.jobId.substring(0, 8)}...`;
 
         let errorBannerHtml = '';
         if (job.status === 'Failed') {
@@ -612,8 +648,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
         }
 
-        const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || (job.resultId ? `/jobs?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}` : null);
+        const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || (job.resultId ? `/jobs/?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}` : null);
         const updatedAtText = job.updatedAt ? new Date(job.updatedAt).toLocaleString('vi-VN') : '—';
+        const resultTypeLabel = job.jobType === 'ExamGeneration'
+            ? 'Bản chụp Đề thi (Exam Snapshot Reference)'
+            : (job.jobType === 'CsvImport' ? 'Lô nhập Câu hỏi (CSV Import Batch Reference)' : 'Đầu ra Tác vụ (Job Output Reference)');
 
         drawerBody.innerHTML = `
             <div class="drawer-item">
@@ -633,14 +672,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="item-value">${job.progressPercentage !== null ? job.progressPercentage + '%' : 'Không đo lường (null)'}</div>
             </div>
             ${job.resultId ? `
-            <div class="drawer-item result-highlight-box">
-                <div class="item-label">Tài nguyên Kết quả sinh ra (Result Link)</div>
-                <div class="item-value" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px;">
+            <div class="drawer-item result-highlight-box" id="drawerResultCard">
+                <div class="item-label">🎯 ${escapeHtml(resultTypeLabel)}</div>
+                <div class="item-value" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px;">
                     <code class="text-emerald font-mono">${escapeHtml(job.resultId)}</code>
                     <div style="display:flex;gap:6px;">
-                        <button class="btn btn-xs btn-secondary" onclick="window.copyResultIdByJob('${escapeHtml(job.jobId)}')">📋 Copy ID</button>
-                        ${safeResultUrl ? `<a href="${escapeHtml(safeResultUrl)}" class="btn btn-xs btn-primary">🔗 Mở tài nguyên kết quả</a>` : ''}
+                        <button class="btn btn-xs btn-secondary" onclick="window.copyResultIdByJob('${escapeHtml(job.jobId)}')">📋 Copy Mã KQ</button>
+                        ${safeResultUrl ? `<button class="btn btn-xs btn-primary" onclick="window.copyResultLinkByJob('${escapeHtml(job.jobId)}')">🔗 Copy Link KQ</button>` : ''}
                     </div>
+                </div>
+                <div class="text-muted" style="font-size:0.74rem;margin-top:6px;">
+                    Đường dẫn tra cứu: <code class="font-mono">${escapeHtml(safeResultUrl || '')}</code>
                 </div>
             </div>` : ''}
             ${recoveryBannerHtml}
