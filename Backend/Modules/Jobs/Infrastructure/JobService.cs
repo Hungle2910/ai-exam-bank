@@ -320,6 +320,12 @@ public sealed class JobService : IJobPublisher, IJobTracker
             ? null
             : AwsErrorMapping.GetActionableMessage(job.ErrorCode, job.SafeErrorMessage);
 
+        var resultUrl = BuildResultUrl(job.Type, job.Id, job.ResultId, job.Status);
+        var isRecovered = (job.Status == JobStatus.Completed || job.Status == JobStatus.Pending || job.Status == JobStatus.Running) &&
+                          (job.AttemptCount > 1 ||
+                           string.Equals(job.ErrorCode, AwsErrorCodes.StaleLeaseRecovered, StringComparison.OrdinalIgnoreCase) ||
+                           !string.IsNullOrWhiteSpace(job.RetryReason));
+
         return new(
             JobRef.Create(job.Id),
             job.Type,
@@ -329,6 +335,35 @@ public sealed class JobService : IJobPublisher, IJobTracker
             job.ErrorCode,
             job.SafeErrorMessage,
             isEligible,
-            actionableReason);
+            actionableReason,
+            job.AttemptCount,
+            job.RetryReason,
+            resultUrl,
+            isRecovered,
+            job.UpdatedAt);
+    }
+
+    /// <summary>
+    /// Xây dựng liên kết điều hướng trực tiếp tới tài nguyên kết quả dựa trên loại tác vụ.
+    /// </summary>
+    public static string? BuildResultUrl(string jobType, Guid jobId, string? resultId, JobStatus status)
+    {
+        if (status != JobStatus.Completed || string.IsNullOrWhiteSpace(resultId))
+        {
+            return null;
+        }
+
+        var encodedResultId = Uri.EscapeDataString(resultId.Trim());
+        if (string.Equals(jobType, "ExamGeneration", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"/exams/preview?snapshotId={encodedResultId}";
+        }
+
+        if (string.Equals(jobType, "CsvImport", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"/questions?importBatchId={encodedResultId}";
+        }
+
+        return $"/jobs?jobId={jobId:D}&resultId={encodedResultId}";
     }
 }

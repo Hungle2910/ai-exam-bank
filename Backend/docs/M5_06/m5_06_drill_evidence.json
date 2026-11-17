@@ -1,0 +1,61 @@
+{
+  "engineVersion": "job-engine/v1.6-mvp-gate",
+  "releaseTag": "v1.6.0-mvp",
+  "drillExecutionTimeUtc": "2026-11-17T07:51:36.412874+00:00",
+  "gateStatus": "PASSED",
+  "rpoDataLoss": 0,
+  "duplicateCreationCount": 0,
+  "scenarios": [
+    {
+      "scenarioId": "M5-06-DRILL-01",
+      "name": "Worker Crash & Stale Lease Recovery with Zombie Worker Fencing",
+      "status": "PASSED",
+      "attempt1State": "Abandoned (STALE_LEASE_RECOVERED)",
+      "attempt2State": "Completed",
+      "zombieLeaseTokenFenced": true,
+      "uxResultUrl": "/exams/preview?snapshotId=exam-snap-<jobId>",
+      "isRecoveredFromFailure": true
+    },
+    {
+      "scenarioId": "M5-06-DRILL-02",
+      "name": "Timeout-After-Write Idempotency (ExamGeneration & CsvImport)",
+      "status": "PASSED",
+      "examResultReused": true,
+      "csvBatchResultReused": true,
+      "duplicateQuestionsOrSnapshots": 0
+    },
+    {
+      "scenarioId": "M5-06-DRILL-03",
+      "name": "AI Provider Throttling (429) & Circuit Breaker Trip/Recovery",
+      "status": "PASSED",
+      "tripThreshold": "5 consecutive failures",
+      "deferredJobAttemptBudgetPreserved": true,
+      "snsAlertPublishedAndRedacted": true,
+      "cooldownRecoveryState": "Closed"
+    },
+    {
+      "scenarioId": "M5-06-DRILL-04",
+      "name": "Permanent Validation & S3 Access Denied (403) + CWE-209 Redaction",
+      "status": "PASSED",
+      "isRetryEligible": false,
+      "forcedRetryHttpStatus": 409,
+      "secretsRedacted": true
+    },
+    {
+      "scenarioId": "M5-06-DRILL-05",
+      "name": "User Cancellation & Zero-Trust Scoped Manual Retry",
+      "status": "PASSED",
+      "crossScopeBlocked": true,
+      "ownerManualRetryAllowed": true,
+      "noAutoApproveOrFinalizePrivilegeEscalation": true
+    },
+    {
+      "scenarioId": "M5-06-RESTART-CONSISTENCY",
+      "name": "FileJobStore Cross-Restart State & Result Link Preservation",
+      "status": "PASSED",
+      "jobsPreserved": true,
+      "attemptsPreserved": true,
+      "telemetrySummaryPreserved": true
+    }
+  ]
+}

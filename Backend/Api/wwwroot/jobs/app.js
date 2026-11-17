@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCancelCreateModal = document.getElementById('btnCancelCreateModal');
     const createForm = document.getElementById('createJobForm');
     const modalJobType = document.getElementById('modalJobType');
+    const modalDrillPreset = document.getElementById('modalDrillPreset');
     const modalPayloadRef = document.getElementById('modalPayloadRef');
     const modalIdempotencyKey = document.getElementById('modalIdempotencyKey');
     const btnGenKey = document.getElementById('btnGenKey');
@@ -107,6 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function sanitizeRelativeUrl(url) {
+        if (!url || typeof url !== 'string') return null;
+        const trimmed = url.trim();
+        if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+            return trimmed;
+        }
+        return null;
     }
 
     let autoFetchedScopeKey = null;
@@ -370,10 +380,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>`;
             }
 
-            // Result or Safe Error
+            // Result or Safe Error + Recovery Indicator (M5-06)
             let detailHtml = '<span class="text-muted">—</span>';
+            const recoveryBadgeHtml = (job.isRecoveredFromFailure && job.attemptCount > 1 && isCompleted)
+                ? `<span class="badge-recovered" title="${escapeHtml(job.retryReason || 'Đã tự động phục hồi sau sự cố')}">⚡ Phục hồi (Lượt #${job.attemptCount})</span>`
+                : (isPending && (job.isRecoveredFromFailure || job.errorCode === 'STALE_LEASE_RECOVERED')
+                    ? `<span class="badge-recovering" title="${escapeHtml(job.retryReason || 'Đang chờ thử lại tự động')}">⏳ Chờ phục hồi (Lượt #${(job.attemptCount || 1) + 1})</span>`
+                    : '');
+
             if (isCompleted && job.resultId) {
-                detailHtml = `<span class="text-emerald" title="${escapeHtml(job.resultId)}">Kết quả: ${escapeHtml(job.resultId)}</span>`;
+                const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || `/jobs?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}`;
+                detailHtml = `
+                    <div class="result-link-group">
+                        <a href="${escapeHtml(safeResultUrl)}" class="result-link-pill" title="Điều hướng tới tài nguyên: ${escapeHtml(job.resultId)}">
+                            🔗 ${escapeHtml(job.resultId)}
+                        </a>
+                        ${recoveryBadgeHtml}
+                    </div>`;
             } else if (isFailed) {
                 const errorPreview = job.actionableReason 
                     ? `⚠️ [${escapeHtml(job.errorCode || 'FAILED')}]: ${escapeHtml(job.safeMessage || 'Lỗi')} — 💡 ${escapeHtml(job.actionableReason)}`
@@ -381,6 +404,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 detailHtml = `<span class="result-cell has-error" onclick="window.viewJobDetail('${job.jobId}')" title="Bấm để xem chi tiết lỗi và hướng dẫn khắc phục">
                     ${errorPreview}
                 </span>`;
+            } else if (isPending && recoveryBadgeHtml) {
+                detailHtml = `
+                    <div class="result-link-group">
+                        ${recoveryBadgeHtml}
+                        ${job.retryReason ? `<span class="text-muted" style="font-size:0.78rem;">${escapeHtml(job.retryReason)}</span>` : ''}
+                    </div>`;
             } else if (isCancelled) {
                 detailHtml = `<span class="text-muted">Tác vụ đã bị hủy</span>`;
             }
@@ -390,7 +419,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isPending || isRunning) {
                 actionHtml = `<button class="btn btn-xs btn-danger-outline" onclick="window.cancelJob('${job.jobId}')">Hủy</button>`;
             } else if (isCompleted) {
-                actionHtml = `<button class="btn btn-xs btn-success-outline" onclick="window.viewJobDetail('${job.jobId}')">Xem KQ</button>`;
+                const safeOpenUrl = sanitizeRelativeUrl(job.resultUrl);
+                const openLinkBtn = safeOpenUrl
+                    ? `<a href="${escapeHtml(safeOpenUrl)}" class="btn btn-xs btn-primary-outline" title="Mở trực tiếp tài nguyên kết quả">🔗 Mở KQ</a>`
+                    : '';
+                actionHtml = `
+                    ${openLinkBtn}
+                    <button class="btn btn-xs btn-success-outline" onclick="window.viewJobDetail('${job.jobId}')">Chi tiết</button>`;
             } else if (isFailed) {
                 const canRetry = job.isRetryEligible !== false;
                 const retryBtn = canRetry
@@ -440,8 +475,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     window.copyToClipboard = (text) => {
         navigator.clipboard.writeText(text).then(() => {
-            showToast('Đã sao chép Job ID vào bộ nhớ đệm.', 'success');
+            showToast('Đã sao chép vào bộ nhớ đệm.', 'success');
         });
+    };
+
+    window.copyResultIdByJob = (jobId) => {
+        const job = jobsList.find(j => j.jobId === jobId);
+        if (job && job.resultId) {
+            window.copyToClipboard(job.resultId);
+        }
     };
 
     window.retryJob = async (jobId) => {
@@ -553,15 +595,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
         }
 
+        let recoveryBannerHtml = '';
+        if (job.status !== 'Failed' && job.status !== 'Cancelled' &&
+            (job.isRecoveredFromFailure || job.retryReason || (job.attemptCount && job.attemptCount > 1))) {
+            const isNowCompleted = job.status === 'Completed';
+            recoveryBannerHtml = `
+                <div class="recovery-banner ${isNowCompleted ? 'recovered-success' : 'recovering-pending'}">
+                    <div class="recovery-banner-title">
+                        ${isNowCompleted ? '⚡ Đã Phục Hồi Tự Động Sau Sự Cố' : '⏳ Trạng Thái Cứu Hộ &amp; Thử Lại (Resilience)'}
+                    </div>
+                    <p>
+                        <strong>Số lượt thực thi:</strong> ${job.attemptCount || 1} / 3 lượt<br />
+                        ${job.retryReason ? `<strong>Lý do thử lại gần nhất:</strong> ${escapeHtml(job.retryReason)}<br />` : ''}
+                        ${job.actionableReason ? `<strong>Hướng dẫn hệ thống:</strong> ${escapeHtml(job.actionableReason)}` : ''}
+                    </p>
+                </div>`;
+        }
+
+        const safeResultUrl = sanitizeRelativeUrl(job.resultUrl) || (job.resultId ? `/jobs?jobId=${encodeURIComponent(job.jobId)}&resultId=${encodeURIComponent(job.resultId)}` : null);
+        const updatedAtText = job.updatedAt ? new Date(job.updatedAt).toLocaleString('vi-VN') : '—';
+
         drawerBody.innerHTML = `
             <div class="drawer-item">
                 <div class="item-label">Job ID Đầy đủ</div>
                 <div class="item-value font-mono">${escapeHtml(job.jobId)}</div>
             </div>
             <div class="drawer-item">
-                <div class="item-label">Trạng thái hiện tại</div>
-                <div class="item-value">
+                <div class="item-label">Trạng thái &amp; Lượt chạy</div>
+                <div class="item-value" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span class="status-badge ${job.status}">${job.status}</span>
+                    <span class="attempt-count-pill">Lượt chạy: #${job.attemptCount || 1} / 3</span>
+                    <span class="text-muted" style="font-size:0.75rem;">Cập nhật: ${escapeHtml(updatedAtText)}</span>
                 </div>
             </div>
             <div class="drawer-item">
@@ -569,10 +633,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="item-value">${job.progressPercentage !== null ? job.progressPercentage + '%' : 'Không đo lường (null)'}</div>
             </div>
             ${job.resultId ? `
-            <div class="drawer-item">
-                <div class="item-label">Kết quả sinh ra (ResultId)</div>
-                <div class="item-value text-emerald font-mono">${escapeHtml(job.resultId)}</div>
+            <div class="drawer-item result-highlight-box">
+                <div class="item-label">Tài nguyên Kết quả sinh ra (Result Link)</div>
+                <div class="item-value" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px;">
+                    <code class="text-emerald font-mono">${escapeHtml(job.resultId)}</code>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-xs btn-secondary" onclick="window.copyResultIdByJob('${escapeHtml(job.jobId)}')">📋 Copy ID</button>
+                        ${safeResultUrl ? `<a href="${escapeHtml(safeResultUrl)}" class="btn btn-xs btn-primary">🔗 Mở tài nguyên kết quả</a>` : ''}
+                    </div>
+                </div>
             </div>` : ''}
+            ${recoveryBannerHtml}
             ${errorBannerHtml}
             <div id="drawerAttemptsContainer">
                 <div class="text-muted" style="font-size: 0.75rem; margin-top: 1rem;">Đang tải lịch sử thực thi (Attempts)...</div>
@@ -614,13 +685,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? `${att.executionDurationMs} ms`
                             : (att.status === 'Started' ? 'Đang chạy...' : '—');
                         const isManual = att.isManualRetry;
+                        const isAbandoned = att.status === 'Abandoned' || att.errorCode === 'STALE_LEASE_RECOVERED';
                         const startedTime = att.startedAt ? new Date(att.startedAt).toLocaleTimeString() : '—';
                         return `
-                            <div class="attempt-card">
+                            <div class="attempt-card ${isAbandoned ? 'attempt-abandoned' : ''}">
                                 <div class="attempt-card-header">
                                     <div class="attempt-num">
                                         Lượt #${att.attemptNumber}
                                         ${isManual ? '<span class="badge-manual">Thử lại thủ công</span>' : ''}
+                                        ${isAbandoned ? '<span class="badge-recovered">⚡ Stale Lease Thu Hồi</span>' : ''}
                                     </div>
                                     <span class="badge-attempt-status ${escapeHtml(att.status)}">${escapeHtml(att.status)}</span>
                                 </div>
@@ -722,6 +795,29 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCloseCreateModal.addEventListener('click', closeCreateModal);
     btnCancelCreateModal.addEventListener('click', closeCreateModal);
     btnGenKey.addEventListener('click', () => modalIdempotencyKey.value = generateIdempotencyKey());
+
+    if (modalDrillPreset) {
+        modalDrillPreset.addEventListener('change', () => {
+            const preset = modalDrillPreset.value;
+            if (preset === 'normal') {
+                modalPayloadRef.value = modalJobType.value === 'CsvImport'
+                    ? 's3://ai-exam-bank/imports/questions-grade12-batch01.csv'
+                    : 's3://ai-exam-bank/blueprints/blueprint-math-12.json';
+            } else if (preset === 'timeout-after-write') {
+                modalJobType.value = 'ExamGeneration';
+                modalPayloadRef.value = 's3://ai-exam-bank/blueprints/simulate-timeout-after-write.json';
+            } else if (preset === 'bedrock-throttled') {
+                modalJobType.value = 'ExamGeneration';
+                modalPayloadRef.value = 's3://ai-exam-bank/blueprints/simulate-bedrock-throttled.json';
+            } else if (preset === 's3-access-denied') {
+                modalJobType.value = 'CsvImport';
+                modalPayloadRef.value = 's3://ai-exam-bank/imports/simulate-s3-access-denied.csv';
+            } else if (preset === 'transient-error') {
+                modalJobType.value = 'SampleJob';
+                modalPayloadRef.value = 's3://ai-exam-bank/samples/simulate-transient-error.json';
+            }
+        });
+    }
 
     // Submit Enqueue Job
     createForm.addEventListener('submit', async (e) => {

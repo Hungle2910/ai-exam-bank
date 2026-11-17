@@ -70,13 +70,41 @@ public class SnsAlertPublisher : ISnsAlertPublisher
             return PublishAlertResult.Throttled("SNS alerts disabled.");
         }
 
-        // 1. Kiểm tra Throttling để chống Alert Storm
+        // 1. Kiểm tra Throttling để chống Alert Storm (kết hợp bộ nhớ tiến trình và kho lưu trữ liên tiến trình)
         var throttleKey = $"{alert.IncidentType}:{alert.JobType ?? "all"}:{alert.Provider ?? "all"}";
         var now = DateTimeOffset.UtcNow;
 
-        if (_lastAlertTimestamps.TryGetValue(throttleKey, out var lastSent))
+        DateTimeOffset? effectiveLastSent = null;
+        if (_lastAlertTimestamps.TryGetValue(throttleKey, out var memLastSent))
         {
-            var elapsedSeconds = (now - lastSent).TotalSeconds;
+            effectiveLastSent = memLastSent;
+        }
+
+        var store = Store;
+        if (store != null)
+        {
+            try
+            {
+                var recentStoreAlerts = await store.GetRecentAlertsAsync(cancellationToken);
+                foreach (var storeAlert in recentStoreAlerts)
+                {
+                    var storeKey = $"{storeAlert.IncidentType}:{storeAlert.JobType ?? "all"}:{storeAlert.Provider ?? "all"}";
+                    if (string.Equals(storeKey, throttleKey, StringComparison.OrdinalIgnoreCase) &&
+                        (!effectiveLastSent.HasValue || storeAlert.TimestampUtc > effectiveLastSent.Value))
+                    {
+                        effectiveLastSent = storeAlert.TimestampUtc;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log($"[SNS-ALERT] Unable to read recent alerts from shared store for throttling check: {ex.Message}");
+            }
+        }
+
+        if (effectiveLastSent.HasValue)
+        {
+            var elapsedSeconds = (now - effectiveLastSent.Value).TotalSeconds;
 
             // Xử lý giãn cách riêng cho cảnh báo diễn tập (DRILL_TEST_ALERT) để ngăn chặn spam/DoS
             if (alert.IncidentType == IncidentTypes.DrillTestAlert)
@@ -116,7 +144,17 @@ public class SnsAlertPublisher : ISnsAlertPublisher
         // 4. Lưu vết vào Recent Alerts Audit Queue (cả in-memory và store bền vững liên tiến trình)
         _recentAlerts.Enqueue(sanitizedAlert);
         while (_recentAlerts.Count > MaxRecentAlerts && _recentAlerts.TryDequeue(out _)) { }
-        _ = Store?.RecordIncidentAlertAsync(sanitizedAlert);
+        if (store != null)
+        {
+            try
+            {
+                await store.RecordIncidentAlertAsync(sanitizedAlert, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log($"[SNS-ALERT] Failed to persist incident alert to shared store: {ex.Message}");
+            }
+        }
 
         // 5. Định dạng thông điệp theo chuẩn AWS SNS Payload
         var snsMessageBody = FormatSnsPayload(sanitizedAlert);
@@ -166,11 +204,12 @@ public class SnsAlertPublisher : ISnsAlertPublisher
 
     public IReadOnlyList<IncidentAlert> GetRecentAlerts()
     {
-        if (Store != null)
+        var store = Store;
+        if (store != null)
         {
             try
             {
-                var storeAlerts = Store.GetRecentAlertsAsync().GetAwaiter().GetResult();
+                var storeAlerts = store.GetRecentAlertsAsync().GetAwaiter().GetResult();
                 if (storeAlerts.Count > 0)
                 {
                     return storeAlerts;
