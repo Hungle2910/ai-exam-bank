@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using AiExamBank.Persistence.Questions;
 
 namespace AiExamBank.Persistence;
 
@@ -14,10 +15,30 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
     public DbSet<SchoolEntity> Schools => Set<SchoolEntity>();
     public DbSet<DepartmentEntity> Departments => Set<DepartmentEntity>();
     public DbSet<RoleAssignmentAuditEntity> RoleAssignmentAudits => Set<RoleAssignmentAuditEntity>();
+    public DbSet<SubjectEntity> Subjects => Set<SubjectEntity>();
+    public DbSet<TopicEntity> Topics => Set<TopicEntity>();
+    public DbSet<SchoolSubjectEntity> SchoolSubjects => Set<SchoolSubjectEntity>();
+    public DbSet<QuestionEntity> Questions => Set<QuestionEntity>();
+    public DbSet<QuestionRevisionEntity> QuestionRevisions => Set<QuestionRevisionEntity>();
+    public DbSet<QuestionOptionEntity> QuestionOptions => Set<QuestionOptionEntity>();
+    public DbSet<ReviewDecisionEntity> ReviewDecisions => Set<ReviewDecisionEntity>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        QuestionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        QuestionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) //liên kết mỗi vai trò với một người dùng và lưu tên vai trò dạng chữ
     {
         base.OnModelCreating(modelBuilder);
+        AiExamBank.Persistence.Exams.BlueprintModel.ApplyBlueprints(modelBuilder);
 
         modelBuilder.Entity<SchoolEntity>(entity =>
         {
@@ -84,6 +105,21 @@ public sealed class AiExamBankDbContext : IdentityUserContext<AppUser, Guid>
             entity.HasOne<AppUser>().WithMany()
                 .HasForeignKey(x => x.TargetUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.ApplyQuestionBank();
+        modelBuilder.Entity<ReviewDecisionEntity>(entity =>
+        {
+            entity.ToTable("ReviewDecisions");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Decision).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.Reason).HasMaxLength(2000);
+            // Mỗi revision chỉ có một quyết định cuối cùng, kể cả khi request bị gửi lại.
+            entity.HasIndex(x => new { x.QuestionId, x.Revision }).IsUnique();
+            entity.HasOne<QuestionRevisionEntity>().WithMany()
+                .HasForeignKey(x => new { x.QuestionId, x.Revision }).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>().WithMany()
+                .HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
