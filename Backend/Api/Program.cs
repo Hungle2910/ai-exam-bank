@@ -229,6 +229,7 @@ app.MapBlueprintEndpoints();
 app.MapReviewEndpoints();
 app.MapSchoolSubjectEndpoints();
 app.MapRoleAdministrationEndpoints();
+app.MapRoleAuditEndpoints();
 app.MapSchoolAdministrationEndpoints();
 app.MapUserAdministrationEndpoints();
 
