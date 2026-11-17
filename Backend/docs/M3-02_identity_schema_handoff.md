@@ -1,6 +1,6 @@
 # M3-02 Identity schema handoff for M1 review
 
-**Status:** Implemented on the M3 branch against local SQL Server `AiExamBankDev`. UI was deferred by the user. These are M3's implementation decisions; they do not assert team-wide approval of ADR 0003.
+**Status:** Identity/admin UI and resource policies are on `dev`. Week 2 Blueprint/Question API scope smoke passed against a separate local SQL Server database on 2026-11-17. Job identity integration and staging evidence remain open. These are M3's implementation decisions; they do not assert team-wide approval of ADR 0003.
 
 ## Current shape
 
@@ -20,7 +20,7 @@ The development-only `LocalDemoUser:BootstrapMinistryAdmin=true` option gives th
 
 Authentication uses ASP.NET Core Identity password hashing, an HttpOnly cookie, antiforgery protection on mutations, and login rate limiting. The cookie lifetime defaults to 1800 seconds; `Auth:SessionLifetimeSeconds` permits 1–86400 seconds to test expiry. Set a short lifetime only for a separate test run.
 
-`ResourceAccessPolicy` and the DB-backed `ResourceAuthorizationService` now implement school-resource decisions for Question, Blueprint and Job, with unit tests for ownership, school/department scope, self-review and current-role revocation. The modules currently have contracts/domain types but no resource API or persistence records to load before calling this service. Endpoint guards and direct-API IDOR tests still require those actual resources; the current admin IDOR checks do not cover them. Ministry exam content remains denied until event assignments have a persisted contract.
+`ResourceAccessPolicy` and the DB-backed `ResourceAuthorizationService` implement school-resource decisions for Question, Blueprint and Job. Blueprint and Question now have persisted resources and HTTP APIs on `dev`; their stores enforce owner, school, department and current assignment scope. `Backend/tests/blueprint-smoke.ps1` passed direct-API cross-scope and same-session revocation cases for both against isolated SQL Server database `AiExamBankM3W02_20261117044809` on 2026-11-17; see [feature notes](M3-02_feature_notes.md) for the evidence and limits. Job endpoints still use a separate Bearer identity with string scope; the M3-to-M5 identity and revocation contract is not integrated. Ministry exam content remains denied until event assignments have a persisted contract.
 
 ## M3 implementation decisions and integration notes
 
