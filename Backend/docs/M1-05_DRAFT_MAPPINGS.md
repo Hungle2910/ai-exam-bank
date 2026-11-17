@@ -14,7 +14,7 @@ Three new tables belong to Exams:
 - ExamDraftSlots: per-job slot status, correlation ID and safe error code.
 - ExamDraftLinks: slot/ordinal to question ID + pinned revision + job + citation. Its primary key is unique across jobs for the same exam slot/ordinal.
 
-The transaction uses SERIALIZABLE isolation. An identical replay returns existing links; changed output for the same exam/job fails with a concurrency exception. A new job cannot fill a slot that already has draft links. FAILED slots have no links, so a subsequent job may retry them. A deadlock/unique race must be retried through the future M5 handler using a fresh scope and the same persisted validated output, not by blindly regenerating different content under the same job identity. Concurrent-race behavior has not been load-tested.
+The transaction uses SERIALIZABLE isolation. A replay for the same exam/job returns the stored links and writes nothing, even when regenerated AI output differs, so a rerun after a saved result completes instead of failing. A new job cannot fill a slot that already has draft links. FAILED slots have no links, so a subsequent job may retry them. A deadlock/unique race must be retried through the future M5 handler using a fresh scope. Concurrent-race behavior has not been load-tested.
 
 All questions are created through M4 `IQuestionWriter` with `QuestionProvenance.AiDraft()`. The writer joins the transaction. Any failure rolls back the batch, links and questions together, and clears tracked state. A question remains DRAFT; slot REVIEW_REQUIRED describes orchestration output, not submission into M3's approval queue. This change does not add questions to approved exam items, remove deficits or promote the exam from PARTIAL.
 
